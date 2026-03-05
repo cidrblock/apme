@@ -1,0 +1,13 @@
+Ansible Forward (APME Engine)
+Copyright 2024-2026 The Ansible Forward Authors
+
+This product includes software derived from:
+
+  Ansible Risk Insight (ARI)
+  https://github.com/ansible/ansible-risk-insight
+  Copyright IBM Corporation
+  Licensed under the Apache License, Version 2.0
+
+  The engine code in src/apme_engine/engine/ is derived from ARI's
+  scanner, parser, tree loader, variable resolver, and annotator
+  components. It has been modified and integrated into this project.

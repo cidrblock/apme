@@ -1,0 +1,12 @@
+# Dependencies for APME engine (vendored ARI + runtime)
+setuptools
+jsonpickle
+PyYAML
+ruamel.yaml
+tabulate
+filelock
+rapidfuzz
+requests
+joblib
+gitdb
+smmap

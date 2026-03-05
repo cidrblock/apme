@@ -1,0 +1,60 @@
+---
+# Integration test playbook: triggers multiple OPA + native + ansible validator rules.
+# Expected violations are asserted in test_e2e.sh.
+
+# L003 (OPA): play without a name
+- hosts: all
+  become: true
+  tasks:
+    # L001 (OPA): shell task without name + L024 (OPA): task without name
+    - ansible.builtin.shell: echo "hello"
+
+    # L002 (OPA): non-FQCN module + ansible:fqcn (ansible validator)
+    - name: Install package
+      yum:
+        name: httpd
+        state: present
+
+    # L006 (OPA): command used in place of module (apt-get)
+    - name: Install with apt-get
+      ansible.builtin.command: apt-get install nginx
+
+    # L007 (OPA): shell when command would suffice
+    - name: List files
+      ansible.builtin.shell: ls -la /tmp
+
+    # L010 (OPA): ignore_errors without register
+    - name: Risky task
+      ansible.builtin.command: /bin/might-fail
+      ignore_errors: true
+
+    # L013 (OPA): command/shell without changed_when
+    - name: Run a command
+      ansible.builtin.command: whoami
+
+    # L025 (OPA): name not starting uppercase
+    - name: lowercase start
+      ansible.builtin.debug:
+        msg: "oops"
+
+    # R118 (OPA): inbound transfer (annotation-based rule)
+    - name: Download an artifact
+      ansible.builtin.get_url:
+        url: https://example.com/artifact.tar.gz
+        dest: /tmp/artifact.tar.gz
+
+    # ansible:args -- invalid parameter for ansible.builtin.file
+    - name: Create a file with bad args
+      ansible.builtin.file:
+        path: /tmp/testfile
+        state: touch
+        invalid_param: true
+
+- name: Second play
+  hosts: webservers
+  tasks:
+    # L002 (OPA): non-FQCN (copy) + ansible:fqcn
+    - name: Copy a file
+      copy:
+        src: /tmp/foo
+        dest: /tmp/bar

@@ -1,0 +1,85 @@
+"""Run the integrated scan engine and return a ScanContext."""
+
+import os
+import tempfile
+from pathlib import Path
+
+from apme_engine.engine.scanner import ARIScanner
+from apme_engine.validators.base import ScanContext
+
+
+def run_scan_playbook_yaml(
+    yaml_content: str,
+    project_root: str | None = None,
+    include_scandata: bool = True,
+) -> ScanContext:
+    """
+    Run the engine on a playbook given as a YAML string (e.g. for integration tests).
+    Writes content to a temporary playbook file and runs the scanner.
+
+    Args:
+        yaml_content: Full playbook YAML string (e.g. a list of plays with hosts and tasks).
+        project_root: Root directory for the scan. If None, a temp directory is used.
+        include_scandata: If True, attach the SingleScan to context for native validator.
+
+    Returns:
+        ScanContext with hierarchy_payload and optionally scandata.
+    """
+    root_dir = project_root or os.path.expanduser("~/.apme-data")
+    with tempfile.TemporaryDirectory(prefix="apme_rule_doc_") as tmpdir:
+        playbook_path = os.path.join(tmpdir, "playbook.yml")
+        with open(playbook_path, "w") as f:
+            f.write(yaml_content)
+        # Use temp dir as project root so scanner writes under tmpdir (works in sandbox)
+        return run_scan(playbook_path, tmpdir, include_scandata=include_scandata)
+
+
+def run_scan(
+    target_path: str,
+    project_root: str,
+    include_scandata: bool = True,
+) -> ScanContext:
+    """
+    Run the engine on target_path and return a ScanContext for validators.
+
+    Args:
+        target_path: Path to playbook file, taskfile, or project directory.
+        project_root: Root directory for the scan (data dir).
+        include_scandata: If True, attach the SingleScan to context for ARI native validator.
+
+    Returns:
+        ScanContext with hierarchy_payload and optionally scandata.
+    """
+    root_dir = project_root or os.path.expanduser("~/.apme-data")
+    scanner = ARIScanner(
+        root_dir=root_dir,
+        rules_dir="",  # no native rules at scan time; ARI validator runs rules
+        silent=True,
+    )
+    path = Path(target_path).resolve()
+    if not path.exists():
+        raise FileNotFoundError(f"Target path does not exist: {target_path}")
+    if path.is_file():
+        name = str(path)
+        base_dir = str(path.parent)
+        scan_type = "playbook"
+    else:
+        name = str(path)
+        base_dir = str(path)
+        scan_type = "project"
+    scanner.evaluate(
+        type=scan_type,
+        name=name,
+        path=name,
+        base_dir=base_dir,
+        install_dependencies=True,
+        skip_dependency=False,
+    )
+    scandata = scanner._current
+    if not scandata or not getattr(scandata, "hierarchy_payload", None):
+        return ScanContext(hierarchy_payload={}, scandata=scandata if include_scandata else None, root_dir=root_dir)
+    return ScanContext(
+        hierarchy_payload=scandata.hierarchy_payload,
+        scandata=scandata if include_scandata else None,
+        root_dir=root_dir,
+    )

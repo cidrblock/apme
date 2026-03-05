@@ -1,0 +1,89 @@
+# Podman pod (4 app containers + 1 infra; CLI on-the-fly)
+
+Backend services run in a single **pod** so they share a network (localhost). Podman creates one extra **infra** container per pod to hold the pod’s shared network namespace, so `podman pod list` shows **5** containers (primary, ansible, opa, cache-maintainer, plus the infra container). That’s expected. The **CLI is not part of the pod** and is run on-the-fly with your current directory mounted so you can scan any project without baking a path into the pod.
+
+## Prerequisites
+
+- Podman
+- Run all commands from the **repo root** (or use absolute paths)
+
+## Build and start
+
+```bash
+# From repo root
+./containers/podman/build.sh   # build all images
+./containers/podman/up.sh      # start the pod (primary, ansible, opa, cache-maintainer)
+./containers/podman/wait-for-pod.sh   # wait until pod status is Running (not Degraded)
+```
+
+Only run the health-check once the pod is **Running**. Use `wait-for-pod.sh` to wait for that, then run the health-check (or use `wait-for-pod.sh --health-check` to wait and then run the check in one step).
+
+The pod creates:
+
+- **apme-cache** — directory in repo root used as the collection cache (cache-maintainer writes here; ansible reads it).
+- OPA bundle is mounted from **src/apme_engine/validators/opa/bundle**.
+
+## Run a scan (CLI on-the-fly)
+
+From **any directory** you want to scan:
+
+```bash
+/path/to/ansible-forward/containers/podman/run-cli.sh
+```
+
+Or from the repo root, to scan a project elsewhere:
+
+```bash
+./containers/podman/run-cli.sh
+# scans current directory
+
+cd /path/to/project
+/path/to/ansible-forward/containers/podman/run-cli.sh
+# or with options
+/path/to/ansible-forward/containers/podman/run-cli.sh --json .
+```
+
+The script mounts `$(pwd)` at `/workspace` in the CLI container and joins the pod so the CLI can reach Primary at `127.0.0.1:50051`.
+
+## Health check
+
+Run the health-check only after the pod is **Running** (not Degraded). Wait first, then check:
+
+```bash
+./containers/podman/wait-for-pod.sh              # wait until pod is Running
+.venv/bin/apme-scan health-check --primary-addr 127.0.0.1:50051
+```
+
+Or wait and run the health-check in one step:
+
+```bash
+./containers/podman/wait-for-pod.sh --health-check
+```
+
+This checks **Primary**, **Ansible**, **Cache maintainer** (gRPC) and **OPA** (REST). Use `--json` for machine-readable output. Addresses for Ansible, Cache, and OPA are derived from the primary host (ports 50053, 50052, 8181) or set via env: `ANSIBLE_GRPC_ADDRESS`, `APME_CACHE_GRPC_ADDRESS`, `OPA_URL`.
+
+## Stop the pod
+
+```bash
+podman pod stop apme-pod
+podman pod rm -f apme-pod
+```
+
+## Troubleshooting
+
+If the **primary** container keeps restarting (pod stays Degraded), inspect its logs:
+
+```bash
+podman logs apme-pod-primary
+```
+
+Common causes:
+
+- **Port in use** — Ensure no other process on the host is using 50051 (or 50052, 50053, 8181). Restart the pod after stopping any conflicting services.
+- **Import or runtime error** — The primary process logs exceptions to stderr before exiting; the traceback in `podman logs` will show the cause.
+
+To run the primary container interactively to see startup errors:
+
+```bash
+podman run --rm -it --pod apme-pod -e APME_PRIMARY_LISTEN=0.0.0.0:50051 -e OPA_URL=http://127.0.0.1:8181 -e ANSIBLE_GRPC_ADDRESS=127.0.0.1:50053 apme-primary:latest apme-primary
+```

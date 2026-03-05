@@ -1,0 +1,41 @@
+{
+  "apme": {
+    "ansible": {
+      "deprecated_modules": [
+        "accelerate", "aos_asn_pool", "aos_blueprint", "aos_blueprint_param", "aos_blueprint_virtnet",
+        "aos_device", "aos_external_router", "aos_ip_pool", "aos_logical_device", "aos_logical_device_map",
+        "aos_login", "aos_rack_type", "aos_template", "azure", "cl_bond", "cl_bridge", "cl_img_install",
+        "cl_interface", "cl_interface_policy", "cl_license", "cl_ports", "cs_nic", "docker", "ec2_ami_find",
+        "ec2_ami_search", "ec2_remote_facts", "ec2_vpc", "kubernetes", "netscaler", "nxos_ip_interface",
+        "nxos_mtu", "nxos_portchannel", "nxos_switchport", "oc", "panos_nat_policy", "panos_security_policy",
+        "vsphere_guest", "win_msi", "include"
+      ],
+      "command_to_module": {
+        "apt-get": "apt-get",
+        "chkconfig": "service",
+        "curl": "get_url or uri",
+        "git": "git",
+        "hg": "hg",
+        "letsencrypt": "acme_certificate",
+        "mktemp": "tempfile",
+        "mount": "mount",
+        "patch": "patch",
+        "rpm": "yum or rpm_key",
+        "rsync": "synchronize",
+        "sed": "template, replace or lineinfile",
+        "service": "service",
+        "supervisorctl": "supervisorctl",
+        "svn": "subversion",
+        "systemctl": "systemd",
+        "tar": "unarchive",
+        "unzip": "unarchive",
+        "wget": "get_url or uri",
+        "yum": "yum"
+      },
+      "command_shell_modules": ["ansible.builtin.command", "ansible.builtin.shell", "ansible.builtin.raw", "ansible.legacy.command", "ansible.legacy.shell", "ansible.legacy.raw", "command", "shell", "raw"],
+      "package_modules": ["ansible.builtin.apt", "ansible.builtin.dnf", "ansible.builtin.yum", "ansible.builtin.package", "ansible.legacy.apt", "ansible.legacy.dnf", "ansible.legacy.yum", "ansible.legacy.package", "apt", "dnf", "yum", "package"],
+      "copy_template_modules": ["ansible.builtin.copy", "ansible.builtin.template", "ansible.legacy.copy", "ansible.legacy.template", "copy", "template", "win_copy", "win_template"],
+      "file_permission_modules": ["ansible.builtin.copy", "ansible.builtin.file", "ansible.builtin.template", "ansible.builtin.lineinfile", "ansible.builtin.replace", "ansible.builtin.synchronize", "ansible.builtin.unarchive", "ansible.legacy.copy", "ansible.legacy.file", "ansible.legacy.template", "ansible.legacy.lineinfile", "ansible.legacy.replace", "ansible.legacy.synchronize", "ansible.legacy.unarchive", "copy", "file", "template", "lineinfile", "replace", "synchronize", "unarchive", "assemble"]
+    }
+  }
+}

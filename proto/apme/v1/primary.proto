@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package apme.v1;
+
+import "apme/v1/common.proto";
+
+// Primary is the orchestrator daemon: receives chunked fs, runs engine + validators, returns violations.
+service Primary {
+  rpc Scan(ScanRequest) returns (ScanResponse);
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
+
+message ScanOptions {
+  bool include_scandata = 1;
+  string ansible_core_version = 2;
+  repeated string collection_specs = 3;
+}
+
+message ScanRequest {
+  string scan_id = 1;
+  string project_root = 2;
+  repeated File files = 3;
+  ScanOptions options = 4;
+}
+
+message ScanResponse {
+  repeated Violation violations = 1;
+  string scan_id = 2;
+  bytes hierarchy_payload = 3;  // optional, for debugging
+}

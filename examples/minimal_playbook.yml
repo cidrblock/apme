@@ -1,0 +1,8 @@
+---
+- name: minimal play
+  hosts: localhost
+  tasks:
+    - name: ping
+      ansible.builtin.ping:
+    - shell: "echo hi"
+      # no name - may trigger task-name rule if we add it for shell

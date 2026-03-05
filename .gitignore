@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.eggs/
+*.egg-info/
+*.egg
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+.tox/
+
+# gRPC generated stubs (checked in, but ignore local re-gen artifacts)
+# src/apme/v1/*_pb2.py and *_pb2_grpc.py ARE checked in
+
+# ARI/APME runtime data
+/tmp/ari-data/
+.apme-data/
+
+# Collection cache (created by pod)
+apme-cache/
+
+# OPA
+/tmp/opa_input.json
+
+# Container/pod runtime
+*.pid
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*~
+.cursor/
+
+# OS
+.DS_Store
+Thumbs.db

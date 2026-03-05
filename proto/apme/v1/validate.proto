@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package apme.v1;
+
+import "apme/v1/common.proto";
+
+// Validator is the unified gRPC contract for all validation backends
+// (native, OPA, Ansible). Every validator container implements this service.
+service Validator {
+  rpc Validate(ValidateRequest) returns (ValidateResponse);
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
+
+message ValidateRequest {
+  string project_root = 1;
+  repeated File files = 2;
+  bytes hierarchy_payload = 3;    // JSON-encoded hierarchy (OPA uses this)
+  bytes scandata = 4;             // serialized engine scandata (native uses this)
+  string ansible_core_version = 5;
+  repeated string collection_specs = 6;
+}
+
+message ValidateResponse {
+  repeated Violation violations = 1;
+}

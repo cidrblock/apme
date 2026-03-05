@@ -1,0 +1,31 @@
+---
+rule_id: Sample101
+validator: native
+description: Example rule that returns task block.
+---
+
+## Sample rule (Sample101)
+
+Example rule that returns task block.
+
+### Example: violation
+
+```yaml
+- name: Example play
+  hosts: localhost
+  connection: local
+  tasks:
+    - name: Bad
+      ansible.builtin.shell: whoami
+```
+
+### Example: pass
+
+```yaml
+- name: Example play
+  hosts: localhost
+  connection: local
+  tasks:
+    - name: Ok
+      ansible.builtin.command: whoami
+```
