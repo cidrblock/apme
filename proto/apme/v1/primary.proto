@@ -28,6 +28,19 @@ message ScanResponse {
   repeated Violation violations = 1;
   string scan_id = 2;
   bytes hierarchy_payload = 3;  // optional, for debugging
+  ScanDiagnostics diagnostics = 4;
+}
+
+message ScanDiagnostics {
+  double engine_parse_ms = 1;
+  double engine_annotate_ms = 2;
+  double engine_total_ms = 3;
+  int32  files_scanned = 4;
+  int32  trees_built = 5;
+  int32  total_violations = 6;
+  repeated ValidatorDiagnostics validators = 7;
+  double fan_out_ms = 8;
+  double total_ms = 9;
 }
 
 message FormatRequest {

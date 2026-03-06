@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 import grpc
-from apme.v1 import primary_pb2_grpc
+from apme.v1 import primary_pb2, primary_pb2_grpc
 from apme_engine.daemon.chunked_fs import build_scan_request
 from apme_engine.daemon.violation_convert import violation_proto_to_dict
 from apme_engine.runner import run_scan
@@ -50,6 +50,122 @@ def _deduplicate_violations(violations: list[dict]) -> list[dict]:
             seen.add(key)
             out.append(v)
     return out
+
+
+def _fmt_ms(ms: float) -> str:
+    """Format milliseconds for human display."""
+    if ms < 1:
+        return "<1ms"
+    if ms < 1000:
+        return f"{ms:.0f}ms"
+    return f"{ms / 1000:.1f}s"
+
+
+def _print_diagnostics_v(diag: "primary_pb2.ScanDiagnostics"):
+    """Print -v level diagnostics: validator summaries + top 10 slowest rules."""
+    w = sys.stderr.write
+
+    engine_detail = ""
+    if diag.engine_parse_ms or diag.engine_annotate_ms:
+        parts = []
+        if diag.engine_parse_ms:
+            parts.append(f"parse: {_fmt_ms(diag.engine_parse_ms)}")
+        if diag.engine_annotate_ms:
+            parts.append(f"annotate: {_fmt_ms(diag.engine_annotate_ms)}")
+        engine_detail = f" ({', '.join(parts)})"
+    w(f"\n  Engine:       {_fmt_ms(diag.engine_total_ms)}{engine_detail}\n")
+
+    if diag.files_scanned:
+        w(f"  Files:        {diag.files_scanned}\n")
+
+    w(f"  Fan-out:      {_fmt_ms(diag.fan_out_ms)}\n")
+    validators = list(diag.validators)
+    for i, vd in enumerate(validators):
+        connector = "\u2514\u2500\u2500" if i == len(validators) - 1 else "\u251c\u2500\u2500"
+        meta_parts = []
+        for k, v in sorted(vd.metadata.items()):
+            if k not in ("opa_response_size", "files_written"):
+                meta_parts.append(f"{k}={v}")
+        meta_str = f" | {', '.join(meta_parts)}" if meta_parts else ""
+        w(f"  {connector} {vd.validator_name.title():10s} {_fmt_ms(vd.total_ms):>8s} | {vd.violations_found:3d} violation(s){meta_str}\n")
+
+    w(f"  Total:        {_fmt_ms(diag.total_ms)}\n")
+
+    all_timings = []
+    for vd in validators:
+        for rt in vd.rule_timings:
+            if rt.rule_id.startswith(("opa_query", "gitleaks_subprocess")):
+                continue
+            all_timings.append((rt.elapsed_ms, rt.rule_id, vd.validator_name, rt.violations))
+    all_timings.sort(reverse=True)
+
+    if all_timings:
+        top = all_timings[:10]
+        w("\n  Top slowest rules:\n")
+        for rank, (ms, rid, vname, viols) in enumerate(top, 1):
+            w(f"    {rank:2d}. {rid:15s} ({vname:8s}) {_fmt_ms(ms):>8s}   {viols} violation(s)\n")
+    w("\n")
+
+
+def _print_diagnostics_vv(diag: "primary_pb2.ScanDiagnostics"):
+    """Print -vv level diagnostics: full per-rule breakdown for every validator."""
+    w = sys.stderr.write
+
+    engine_detail = ""
+    if diag.engine_parse_ms or diag.engine_annotate_ms:
+        parts = []
+        if diag.engine_parse_ms:
+            parts.append(f"parse: {_fmt_ms(diag.engine_parse_ms)}")
+        if diag.engine_annotate_ms:
+            parts.append(f"annotate: {_fmt_ms(diag.engine_annotate_ms)}")
+        engine_detail = f" ({', '.join(parts)})"
+    w(f"\n  Engine:       {_fmt_ms(diag.engine_total_ms)}{engine_detail}")
+    if diag.files_scanned:
+        w(f", {diag.files_scanned} file(s)")
+    if diag.trees_built:
+        w(f", {diag.trees_built} tree(s)")
+    w("\n\n")
+
+    for vd in diag.validators:
+        w(f"  {vd.validator_name.title()} ({_fmt_ms(vd.total_ms)}, {vd.violations_found} violation(s)):\n")
+        for rt in vd.rule_timings:
+            ms_str = _fmt_ms(rt.elapsed_ms) if rt.elapsed_ms > 0 else "-"
+            w(f"    {rt.rule_id:20s} {ms_str:>8s}   {rt.violations} violation(s)\n")
+        if vd.metadata:
+            meta = ", ".join(f"{k}={v}" for k, v in sorted(vd.metadata.items()))
+            w(f"    metadata: {meta}\n")
+        w("\n")
+
+    w(f"  Fan-out:      {_fmt_ms(diag.fan_out_ms)}\n")
+    w(f"  Total:        {_fmt_ms(diag.total_ms)}\n\n")
+
+
+def _diag_to_dict(diag: "primary_pb2.ScanDiagnostics") -> dict:
+    """Convert ScanDiagnostics proto to a JSON-serializable dict."""
+    validators = []
+    for vd in diag.validators:
+        validators.append({
+            "validator_name": vd.validator_name,
+            "total_ms": round(vd.total_ms, 1),
+            "files_received": vd.files_received,
+            "violations_found": vd.violations_found,
+            "rule_timings": [
+                {"rule_id": rt.rule_id, "elapsed_ms": round(rt.elapsed_ms, 1), "violations": rt.violations}
+                for rt in vd.rule_timings
+            ],
+            "metadata": dict(vd.metadata),
+        })
+    return {
+        "engine_parse_ms": round(diag.engine_parse_ms, 1),
+        "engine_annotate_ms": round(diag.engine_annotate_ms, 1),
+        "engine_total_ms": round(diag.engine_total_ms, 1),
+        "files_scanned": diag.files_scanned,
+        "trees_built": diag.trees_built,
+        "total_violations": diag.total_violations,
+        "fan_out_ms": round(diag.fan_out_ms, 1),
+        "total_ms": round(diag.total_ms, 1),
+        "validators": validators,
+    }
 
 
 def _run_scan(args):
@@ -109,6 +225,8 @@ def _run_scan(args):
 
 def _run_scan_grpc(args, primary_addr: str):
     """Send chunked fs to Primary daemon and print violations."""
+    verbosity = getattr(args, "verbose", 0) or 0
+
     try:
         req = build_scan_request(
             args.target,
@@ -133,11 +251,22 @@ def _run_scan_grpc(args, primary_addr: str):
     violations = [violation_proto_to_dict(v) for v in resp.violations]
     violations = _deduplicate_violations(_sort_violations(violations))
 
+    has_diag = resp.HasField("diagnostics")
+
     if args.json:
-        print(json.dumps({"violations": violations, "count": len(violations)}, indent=2))
+        out = {"violations": violations, "count": len(violations), "scan_id": resp.scan_id}
+        if verbosity and has_diag:
+            out["diagnostics"] = _diag_to_dict(resp.diagnostics)
+        print(json.dumps(out, indent=2))
         return
 
     print(f"Scan: {resp.scan_id} | Violations: {len(violations)}")
+
+    if verbosity >= 2 and has_diag:
+        _print_diagnostics_vv(resp.diagnostics)
+    elif verbosity >= 1 and has_diag:
+        _print_diagnostics_v(resp.diagnostics)
+
     for v in violations:
         line = v.get("line")
         line_str = str(line) if line is not None else "?"
@@ -428,6 +557,12 @@ def main():
         nargs="*",
         default=None,
         help="Collection specs to make available (e.g. community.general:9.0.0 amazon.aws)",
+    )
+    scan_parser.add_argument(
+        "-v", "--verbose",
+        action="count",
+        default=0,
+        help="Diagnostics verbosity: -v for summary + top 10, -vv for full per-rule breakdown",
     )
 
     cache_parser = subparsers.add_parser("cache", help="Manage collection cache (Galaxy + GitHub)")

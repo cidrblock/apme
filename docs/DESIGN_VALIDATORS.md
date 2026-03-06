@@ -86,8 +86,16 @@ Every validator returns the same violation shape:
 - **Input**: `context.root_dir` (files on disk) + `context.hierarchy_payload`
 - **Execution**: Uses ansible-core's plugin loader, `ansible-playbook --syntax-check`, argspec extraction
 - **Rules**: L057–L059 (syntax/argspec), M001–M004 (FQCN resolution, deprecation, redirects, removed modules)
-- **Container**: `apme-ansible` with pre-built venvs for ansible-core 2.18/2.19/2.20
+- **Container**: `apme-ansible` with UV cache pre-warmed for ansible-core 2.18/2.19/2.20; ephemeral per-request venvs created at runtime
 - **Why separate container**: Requires actual ansible-core installation; multi-version support needs isolated venvs; collection cache mounted read-only
+
+### Gitleaks (secrets)
+
+- **Input**: `request.files` (raw file content)
+- **Execution**: Writes files to temp dir, runs `gitleaks detect --no-git --report-format json`, parses JSON report
+- **Rules**: SEC:* (800+ patterns for credentials, API keys, private keys, tokens)
+- **Container**: `apme-gitleaks` (gitleaks binary + Python gRPC wrapper)
+- **Why separate container**: Requires Go binary; wraps external tool output into the unified violation format. Adds Ansible-aware filtering: vault-encrypted files and Jinja2 expressions are automatically excluded.
 
 ---
 
@@ -117,11 +125,11 @@ Everything downstream (validators, daemon, CLI) calls `run_scan()` and works wit
 
 ## Parallel execution
 
-Primary calls all three validators concurrently using `concurrent.futures.ThreadPoolExecutor`. Each validator is a gRPC call to an independent container. The `ValidateRequest` is immutable and shared across all calls.
+Primary calls all four validators concurrently using `asyncio.gather()` with async gRPC stubs (`grpc.aio`). Each validator is a gRPC call to an independent container. The `ValidateRequest` is immutable and shared across all calls.
 
-Total latency = `max(native, opa, ansible)` instead of `sum`.
+Total latency = `max(native, opa, ansible, gitleaks)` instead of `sum`.
 
-Each validator is discovered by environment variable. If a variable is unset, that validator is skipped — no error, just fewer results. This makes it possible to run a subset of validators during development or testing.
+Each validator is discovered by environment variable (`NATIVE_GRPC_ADDRESS`, `OPA_GRPC_ADDRESS`, `ANSIBLE_GRPC_ADDRESS`, `GITLEAKS_GRPC_ADDRESS`). If a variable is unset, that validator is skipped — no error, just fewer results. This makes it possible to run a subset of validators during development or testing.
 
 ---
 
@@ -155,8 +163,34 @@ Deduplication happens at the Primary level by `(rule_id, file, line)`. If two va
 
 ---
 
+## Diagnostics contract
+
+Every validator returns structured timing data in `ValidateResponse.diagnostics`:
+
+```python
+ValidatorDiagnostics(
+    validator_name="native",       # identifies the validator
+    request_id="scan-uuid",        # echoed for correlation
+    total_ms=42.0,                 # wall-clock time
+    files_received=10,             # input file count
+    violations_found=5,            # output violation count
+    rule_timings=[                 # per-rule granularity
+        RuleTiming(rule_id="L028", elapsed_ms=3.5, violations=2),
+    ],
+    metadata={"key": "value"},     # validator-specific data
+)
+```
+
+Primary aggregates all `ValidatorDiagnostics` plus engine phase timing into `ScanDiagnostics` on the `ScanResponse`. The CLI displays diagnostics with `-v` (summary + top 10 slowest rules) or `-vv` (full per-rule breakdown).
+
+---
+
 ## Future considerations
 
 - **Additional validators**: A yamllint adapter, a custom Go plugin validator, or an AI-assisted reviewer could be added as new containers implementing the same `Validator` service.
 - **Streaming results**: The current contract is unary (one request, one response). For very large projects, server-side streaming (`stream ValidateResponse`) could reduce memory pressure.
 - **Validator-specific configuration**: Rules can be enabled/disabled per-validator via configuration (not yet implemented at the gRPC level — currently done at the rule level within each validator).
+
+## Decision records
+
+See [ADR.md](ADR.md) for the Architecture Decision Record covering all major design choices.

@@ -1,11 +1,12 @@
 """Run the integrated scan engine and return a ScanContext."""
 
 import os
+import time
 import tempfile
 from pathlib import Path
 
 from apme_engine.engine.scanner import ARIScanner
-from apme_engine.validators.base import ScanContext
+from apme_engine.validators.base import EngineDiagnostics, ScanContext
 
 
 def run_scan_playbook_yaml(
@@ -67,6 +68,8 @@ def run_scan(
         name = str(path)
         base_dir = str(path)
         scan_type = "project"
+
+    t0 = time.monotonic()
     scanner.evaluate(
         type=scan_type,
         name=name,
@@ -75,11 +78,44 @@ def run_scan(
         install_dependencies=True,
         skip_dependency=False,
     )
+    engine_total_ms = (time.monotonic() - t0) * 1000
+
     scandata = scanner._current
+    diag = _extract_engine_diagnostics(scandata, engine_total_ms)
+
     if not scandata or not getattr(scandata, "hierarchy_payload", None):
-        return ScanContext(hierarchy_payload={}, scandata=scandata if include_scandata else None, root_dir=root_dir)
+        return ScanContext(hierarchy_payload={}, scandata=scandata if include_scandata else None, root_dir=root_dir, engine_diagnostics=diag)
     return ScanContext(
         hierarchy_payload=scandata.hierarchy_payload,
         scandata=scandata if include_scandata else None,
         root_dir=root_dir,
+        engine_diagnostics=diag,
     )
+
+
+def _extract_engine_diagnostics(scandata, engine_total_ms: float) -> EngineDiagnostics:
+    """Pull per-phase elapsed times from the scanner's time_records."""
+    diag = EngineDiagnostics(total_ms=engine_total_ms)
+    if not scandata:
+        return diag
+
+    tr = {}
+    if hasattr(scandata, "findings") and scandata.findings:
+        tr = getattr(scandata.findings, "metadata", {}).get("time_records", {})
+
+    def _ms(key: str) -> float:
+        return tr.get(key, {}).get("elapsed", 0.0) * 1000
+
+    diag.parse_ms = _ms("target_load") + _ms("prm_load") + _ms("metadata_load")
+    diag.annotate_ms = _ms("module_annotators") + _ms("variable_resolution")
+    diag.tree_build_ms = _ms("tree_construction")
+
+    trees = getattr(scandata, "trees", None)
+    if trees:
+        diag.trees_built = len(trees)
+
+    root_defs = getattr(scandata, "root_definitions", None)
+    if root_defs:
+        diag.files_scanned = len(root_defs)
+
+    return diag

@@ -28,11 +28,12 @@ Seven containers, one pod. All inter-service communication is gRPC. The CLI is r
 ## Key features
 
 - **Single parse, multiple validators** — the engine parses Ansible content once and produces a hierarchy payload + scandata; validators consume it independently.
-- **Parallel fan-out** — Primary calls Native, OPA, and Ansible validators concurrently via `ThreadPoolExecutor`; total latency = max(validators), not sum.
+- **Parallel fan-out** — Primary calls Native, OPA, Ansible, and Gitleaks validators concurrently via `asyncio.gather()`; total latency = max(validators), not sum.
 - **Unified gRPC contract** — every validator implements the same `Validator` service (`validate.proto`); adding a new validator means implementing one RPC.
 - **100+ rules** across four backends: OPA Rego (L002–L025, R118), native Python (L026–L056, R101–R501), Ansible runtime (L057–L059, M001–M004), Gitleaks (SEC:* — 800+ secret patterns).
 - **Secret scanning** — Gitleaks binary wrapped in gRPC; scans all project files for hardcoded credentials, API keys, private keys. Vault-encrypted files and Jinja2 expressions are automatically filtered.
-- **Multi ansible-core version support** — the Ansible validator pre-builds venvs for ansible-core 2.18, 2.19, 2.20; argspec and deprecation checks run against the requested version.
+- **Multi ansible-core version support** — the Ansible validator creates ephemeral per-request venvs (UV-cached) for ansible-core 2.18, 2.19, 2.20; argspec and deprecation checks run against the requested version.
+- **Structured diagnostics** — every validator reports per-rule timing data via the gRPC contract; use `-v` for summaries or `-vv` for full per-rule breakdowns.
 - **Collection cache** — pull from Galaxy or clone GitHub orgs; mount read-only into the Ansible validator. Managed by a dedicated Cache Maintainer service.
 - **YAML formatter** — normalize indentation, key ordering, Jinja spacing, and tab removal with comment preservation. Idempotent by design; runs as a pre-pass before semantic fixes.
 - **Colocated tests** — every rule has a `*_test.py` (native), `*_test.rego` (OPA), or `.md` doc with violation/pass examples usable as integration tests.
@@ -55,6 +56,12 @@ apme-scan --json .
 # Skip specific validators
 apme-scan --no-opa .
 apme-scan --no-native .
+
+# Diagnostics: summary + top 10 slowest rules
+apme-scan scan --primary-addr localhost:50051 -v .
+
+# Diagnostics: full per-rule breakdown
+apme-scan scan --primary-addr localhost:50051 -vv .
 
 # Format YAML files (show diff)
 apme-scan format /path/to/project
@@ -151,6 +158,7 @@ tests/                  unit, integration, rule doc coverage
 | [PODMAN_OPA_ISSUES.md](docs/PODMAN_OPA_ISSUES.md) | Podman rootless troubleshooting |
 | [DESIGN_REMEDIATION.md](docs/DESIGN_REMEDIATION.md) | Remediation engine: transform registry, AI escalation, convergence loop |
 | [RESEARCH_REVIEW.md](docs/RESEARCH_REVIEW.md) | Analysis of early research concepts and roadmap pull-ins |
+| [ADR.md](docs/ADR.md) | Architecture Decision Record — 13 key design decisions with context, alternatives, and rationale |
 
 ## Roadmap
 

@@ -1,16 +1,27 @@
 #!/usr/bin/env bash
-# Pre-build ansible-core venvs at image build time.
-# Each venv lives at /opt/ansible-venvs/<major.minor> (e.g. /opt/ansible-venvs/2.20).
+# Pre-warm UV cache for ansible-core versions at image build time.
+# Venvs are now ephemeral (created per-request and destroyed after),
+# but UV caches the wheels so runtime venv creation is near-instant.
 set -e
 
-VENVS_ROOT="${1:-/opt/ansible-venvs}"
 VERSIONS="2.18 2.19 2.20"
+UV_CACHE="${UV_CACHE_DIR:-/opt/uv-cache}"
+
+if ! command -v uv &>/dev/null; then
+    echo "uv not found, installing..."
+    pip install uv
+fi
+
+export UV_CACHE_DIR="$UV_CACHE"
 
 for ver in $VERSIONS; do
-    echo "==> Building venv for ansible-core ~=${ver}.0 at ${VENVS_ROOT}/${ver}"
-    python3 -m venv "${VENVS_ROOT}/${ver}"
-    "${VENVS_ROOT}/${ver}/bin/pip" install --no-cache-dir "ansible-core~=${ver}.0"
-    echo "    $(${VENVS_ROOT}/${ver}/bin/ansible-playbook --version | head -1)"
+    echo "==> Pre-warming UV cache for ansible-core ~=${ver}.0"
+    TMP_VENV=$(mktemp -d)
+    uv venv "$TMP_VENV"
+    uv pip install --python "$TMP_VENV/bin/python" "ansible-core~=${ver}.0"
+    echo "    Cached: ansible-core~=${ver}.0"
+    rm -rf "$TMP_VENV"
 done
 
-echo "Pre-built venvs: $(ls ${VENVS_ROOT})"
+echo "UV cache populated at ${UV_CACHE_DIR}"
+echo "Cache size: $(du -sh "${UV_CACHE_DIR}" 2>/dev/null | cut -f1)"

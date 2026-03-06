@@ -51,15 +51,17 @@ src/apme_engine/
 │       ├── _venv.py        venv resolution
 │       └── rules/          L057–L059, M001–M004 + .md docs
 │
-├── daemon/                 gRPC server implementations
-│   ├── primary_server.py   Primary orchestrator (engine + fan-out)
-│   ├── primary_main.py     entry point: apme-primary
-│   ├── native_validator_server.py
+├── daemon/                 async gRPC servers (all use grpc.aio)
+│   ├── primary_server.py   Primary orchestrator (engine + async fan-out via asyncio.gather)
+│   ├── primary_main.py     entry point: apme-primary (asyncio.run)
+│   ├── native_validator_server.py   (async, CPU work in run_in_executor)
 │   ├── native_validator_main.py
-│   ├── opa_validator_server.py
+│   ├── opa_validator_server.py      (async, httpx.AsyncClient for OPA REST)
 │   ├── opa_validator_main.py
-│   ├── ansible_validator_server.py
+│   ├── ansible_validator_server.py  (async, ephemeral venvs in executor)
 │   ├── ansible_validator_main.py
+│   ├── gitleaks_validator_server.py (async, subprocess in executor)
+│   ├── gitleaks_validator_main.py
 │   ├── cache_maintainer_server.py
 │   ├── cache_maintainer_main.py
 │   ├── health_check.py     health check utilities
@@ -198,7 +200,7 @@ tests/
 ├── test_scanner_hierarchy.py      Engine hierarchy tests
 ├── test_formatter.py              YAML formatter tests (transforms, idempotency)
 ├── test_validators.py             Validator tests
-├── test_validator_servicers.py    gRPC servicer tests
+├── test_validator_servicers.py    async gRPC servicer tests (pytest-asyncio)
 ├── test_collection_cache_venv_builder.py
 ├── test_rule_doc_coverage.py      Asserts every rule has a .md doc
 ├── rule_doc_parser.py             Parses rule .md frontmatter
@@ -292,6 +294,47 @@ This runs the formatter, verifies idempotency (a second format pass produces zer
 ### gRPC Format RPC
 
 The Primary service exposes a `Format` RPC (`FormatRequest` / `FormatResponse` with `FileDiff` messages) for containerized formatting. The CLI uses local formatting; the gRPC path is for IDE/API integration.
+
+## Concurrency model
+
+All gRPC servers use `grpc.aio` (fully async). When writing new servicers:
+
+- Servicer methods must be `async def`
+- CPU-bound work (rule evaluation, engine scan) goes in `await loop.run_in_executor(None, fn)`
+- I/O-bound work (HTTP calls) uses async libraries (`httpx.AsyncClient`)
+- Each server sets `maximum_concurrent_rpcs` to control backpressure
+
+Every validator receives `request.request_id` and should include it in log output (`[req=xxx]`) for end-to-end tracing across concurrent requests. Echo it back in `ValidateResponse.request_id`.
+
+The Ansible validator creates ephemeral venvs per request — no shared venv state. UV's persistent wheel cache makes venv creation fast (~1-2s from warm cache).
+
+## Diagnostics
+
+Every validator collects per-rule timing data and returns it in `ValidateResponse.diagnostics`. The Primary aggregates engine timing + all validator diagnostics into `ScanDiagnostics` on the `ScanResponse`.
+
+### CLI verbosity flags
+
+```bash
+# Summary: engine time, validator summaries, top 10 slowest rules
+apme-scan scan --primary-addr localhost:50051 -v .
+
+# Full breakdown: per-rule timing for every validator, metadata, engine phases
+apme-scan scan --primary-addr localhost:50051 -vv .
+
+# JSON output includes diagnostics when -v or -vv is set
+apme-scan scan --primary-addr localhost:50051 -v --json .
+```
+
+### Adding diagnostics to a new validator
+
+When implementing a new `ValidatorServicer`:
+
+1. Time each rule or phase using `time.monotonic()`
+2. Build `common_pb2.RuleTiming` entries for each rule
+3. Build a `common_pb2.ValidatorDiagnostics` with `validator_name`, `total_ms`, `files_received`, `violations_found`, `rule_timings`, and any validator-specific `metadata`
+4. Set `diagnostics=diag` on the `ValidateResponse`
+
+The Primary automatically collects diagnostics from all validators and includes them in `ScanDiagnostics`.
 
 ## Rule ID conventions
 

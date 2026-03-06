@@ -66,27 +66,33 @@ User runs:  apme-scan scan /path/to/project
 │     - scandata = jsonpickle.encode(ctx.scandata)                 │
 │     - files, ansible_core_version, collection_specs              │
 │                                                                  │
-│  7. Parallel fan-out (ThreadPoolExecutor):                       │
+│  7. Parallel fan-out (asyncio.gather):                           │
 │     ┌─────────────────────────────────────────────────────┐      │
 │     │                                                     │      │
 │     │  ┌─► Native :50055                                  │      │
 │     │  │   - jsonpickle.decode(scandata) → SingleScan     │      │
 │     │  │   - Build ScanContext, run NativeValidator        │      │
 │     │  │   - Python rules on contexts/trees               │      │
-│     │  │   → violations[]                                 │      │
+│     │  │   → violations[] + ValidatorDiagnostics          │      │
 │     │  │                                                  │      │
 │     │  ├─► OPA :50054                                     │      │
 │     │  │   - json.loads(hierarchy_payload)                 │      │
 │     │  │   - POST to local OPA REST (:8181)               │      │
 │     │  │   - Rego eval: data.apme.rules.violations        │      │
-│     │  │   → violations[]                                 │      │
+│     │  │   → violations[] + ValidatorDiagnostics          │      │
 │     │  │                                                  │      │
-│     │  └─► Ansible :50053                                 │      │
+│     │  ├─► Ansible :50053                                 │      │
+│     │  │   - Write files to temp dir                      │      │
+│     │  │   - Create ephemeral venv (UV-cached)            │      │
+│     │  │   - Run AnsibleValidator (syntax, argspec,       │      │
+│     │  │     FQCN, deprecation, redirect, removed)        │      │
+│     │  │   → violations[] + ValidatorDiagnostics          │      │
+│     │  │                                                  │      │
+│     │  └─► Gitleaks :50056                                │      │
 │     │      - Write files to temp dir                      │      │
-│     │      - Resolve venv for ansible_core_version        │      │
-│     │      - Run AnsibleValidator (syntax, argspec,       │      │
-│     │        FQCN, deprecation, redirect, removed)        │      │
-│     │      → violations[]                                 │      │
+│     │      - Run gitleaks detect --no-git                 │      │
+│     │      - Filter vault + Jinja false positives         │      │
+│     │      → violations[] + ValidatorDiagnostics          │      │
 │     │                                                     │      │
 │     └─────────────────────────────────────────────────────┘      │
 │                                                                  │
@@ -94,16 +100,25 @@ User runs:  apme-scan scan /path/to/project
 │  9. Deduplicate by (rule_id, file, line)                         │
 │ 10. Sort by (file, line)                                         │
 │ 11. Convert to proto Violation messages                          │
+│ 12. Aggregate diagnostics:                                       │
+│     - Engine timing (parse, annotate, tree build)                │
+│     - Each validator's ValidatorDiagnostics                      │
+│     - Fan-out wall-clock, total wall-clock                       │
 │                                                                  │
-│  Return: ScanResponse(violations=[], scan_id)                    │
+│  Return: ScanResponse(violations, scan_id, diagnostics)          │
 └──────────────────────────────────────────────────────────────────┘
                          │
                          ▼
 ┌───────────────────────────────────────────────┐
 │  CLI                                          │
 │                                               │
-│ 12. Print violations (table or --json)        │
+│ 13. Print violations (table or --json)        │
 │     rule_id | level | file:line | message     │
+│                                               │
+│ 14. If -v: show validator summaries +         │
+│     top 10 slowest rules                      │
+│     If -vv: full per-rule breakdown,          │
+│     metadata, engine phase timing             │
 └───────────────────────────────────────────────┘
 ```
 
@@ -204,7 +219,26 @@ Two serialization formats in one `ValidateRequest`:
 
 ### Validators → Primary (gRPC)
 
-Each validator returns `ValidateResponse` containing protobuf `Violation` messages. Primary converts these to dicts, merges, deduplicates, and converts back to proto for the `ScanResponse`.
+Each validator returns `ValidateResponse` containing:
+- Protobuf `Violation` messages
+- `ValidatorDiagnostics` with per-rule timing, violation counts, and validator-specific metadata
+
+Primary converts violations to dicts, merges, deduplicates, and converts back to proto. It also aggregates all `ValidatorDiagnostics` with engine phase timing into a `ScanDiagnostics` message on the `ScanResponse`.
+
+### Diagnostics flow
+
+```
+Engine → EngineDiagnostics (parse_ms, annotate_ms, tree_build_ms, total_ms)
+                              ↓
+Native  → ValidatorDiagnostics (per-rule timing from detect() records)
+OPA     → ValidatorDiagnostics (opa_query_ms, per-rule violation counts)
+Ansible → ValidatorDiagnostics (per-phase: syntax, introspect, argspec; venv_build_ms)
+Gitleaks→ ValidatorDiagnostics (subprocess_ms, files_written)
+                              ↓
+Primary aggregates → ScanDiagnostics
+                              ↓
+ScanResponse.diagnostics → CLI (-v / -vv) or JSON consumer
+```
 
 ## Violation shape
 

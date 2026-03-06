@@ -1,55 +1,100 @@
-"""OPA validator daemon: gRPC wrapper over OPA REST API (localhost:8181)."""
+"""OPA validator daemon: async gRPC wrapper over OPA REST API (localhost:8181)."""
 
 import json
+import os
 import sys
-from concurrent import futures
+import time
 
 import grpc
-import requests
+import grpc.aio
+import httpx
 from apme.v1 import validate_pb2, validate_pb2_grpc, common_pb2
 
 from apme_engine.daemon.violation_convert import violation_dict_to_proto
 
-OPA_REST_URL = "http://localhost:8181"
+OPA_REST_URL = os.environ.get("APME_OPA_REST_URL", "http://localhost:8181")
 OPA_VIOLATIONS_ENDPOINT = "/v1/data/apme/rules/violations"
+
+_MAX_CONCURRENT_RPCS = int(os.environ.get("APME_OPA_MAX_RPCS", "32"))
 
 
 class OpaValidatorServicer(validate_pb2_grpc.ValidatorServicer):
-    """gRPC facade: translates Validate RPCs into OPA REST queries."""
+    """Async gRPC facade: translates Validate RPCs into OPA REST queries via httpx."""
 
-    def Validate(self, request, context):
+    def __init__(self):
+        self._client = httpx.AsyncClient(timeout=30.0)
+
+    async def Validate(self, request, context):
+        req_id = request.request_id or ""
+        t0 = time.monotonic()
         violations: list[dict] = []
+        opa_query_ms = 0.0
+        opa_response_size = 0
         try:
             hierarchy_payload = {}
             if request.hierarchy_payload:
                 try:
                     hierarchy_payload = json.loads(request.hierarchy_payload)
                 except (json.JSONDecodeError, UnicodeDecodeError):
-                    sys.stderr.write("OPA wrapper: failed to decode hierarchy_payload\n")
-                    return validate_pb2.ValidateResponse(violations=[])
+                    sys.stderr.write(f"[req={req_id}] OPA: failed to decode hierarchy_payload\n")
+                    return validate_pb2.ValidateResponse(violations=[], request_id=req_id)
 
             url = f"{OPA_REST_URL}{OPA_VIOLATIONS_ENDPOINT}"
-            r = requests.post(url, json={"input": hierarchy_payload}, timeout=30)
+            tq = time.monotonic()
+            r = await self._client.post(url, json={"input": hierarchy_payload})
+            opa_query_ms = (time.monotonic() - tq) * 1000
+            opa_response_size = len(r.content)
 
             if r.status_code != 200:
-                sys.stderr.write(f"OPA returned HTTP {r.status_code}\n")
-                return validate_pb2.ValidateResponse(violations=[])
+                sys.stderr.write(f"[req={req_id}] OPA returned HTTP {r.status_code}\n")
+                sys.stderr.flush()
+                return validate_pb2.ValidateResponse(violations=[], request_id=req_id)
 
             data = r.json()
             result = data.get("result", [])
             violations = result if isinstance(result, list) else []
-            sys.stderr.write(f"OPA returned {len(violations)} violation(s)\n")
+            total_ms = (time.monotonic() - t0) * 1000
+            sys.stderr.write(
+                f"[req={req_id}] OPA: {len(violations)} violation(s) in {total_ms:.1f}ms\n"
+            )
+            sys.stderr.flush()
         except Exception as e:
-            sys.stderr.write(f"OPA wrapper error: {e}\n")
-            return validate_pb2.ValidateResponse(violations=[])
+            sys.stderr.write(f"[req={req_id}] OPA error: {e}\n")
+            sys.stderr.flush()
+            return validate_pb2.ValidateResponse(violations=[], request_id=req_id)
 
-        return validate_pb2.ValidateResponse(
-            violations=[violation_dict_to_proto(v) for v in violations]
+        total_ms = (time.monotonic() - t0) * 1000
+
+        from collections import Counter
+        rule_counts = Counter(v.get("rule_id", "unknown") for v in violations)
+        rule_timings = [
+            common_pb2.RuleTiming(rule_id="opa_query", elapsed_ms=opa_query_ms, violations=len(violations)),
+        ]
+        for rid, count in sorted(rule_counts.items()):
+            rule_timings.append(common_pb2.RuleTiming(rule_id=rid, elapsed_ms=0.0, violations=count))
+
+        diag = common_pb2.ValidatorDiagnostics(
+            validator_name="opa",
+            request_id=req_id,
+            total_ms=total_ms,
+            files_received=len(request.files),
+            violations_found=len(violations),
+            rule_timings=rule_timings,
+            metadata={
+                "opa_query_ms": f"{opa_query_ms:.1f}",
+                "opa_response_size": str(opa_response_size),
+            },
         )
 
-    def Health(self, request, context):
+        return validate_pb2.ValidateResponse(
+            violations=[violation_dict_to_proto(v) for v in violations],
+            request_id=req_id,
+            diagnostics=diag,
+        )
+
+    async def Health(self, request, context):
         try:
-            r = requests.get(f"{OPA_REST_URL}/health", timeout=5)
+            r = await self._client.get(f"{OPA_REST_URL}/health")
             if r.status_code == 200:
                 return common_pb2.HealthResponse(status="ok")
             return common_pb2.HealthResponse(status=f"opa unhealthy: HTTP {r.status_code}")
@@ -57,13 +102,14 @@ class OpaValidatorServicer(validate_pb2_grpc.ValidatorServicer):
             return common_pb2.HealthResponse(status=f"opa unreachable: {e}")
 
 
-def serve(listen: str = "0.0.0.0:50054"):
-    """Create and return a gRPC server with OPA servicer (caller must start it)."""
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
+async def serve(listen: str = "0.0.0.0:50054"):
+    """Create, bind, and start async gRPC server with OPA servicer."""
+    server = grpc.aio.server(maximum_concurrent_rpcs=_MAX_CONCURRENT_RPCS)
     validate_pb2_grpc.add_ValidatorServicer_to_server(OpaValidatorServicer(), server)
     if ":" in listen:
         _, _, port = listen.rpartition(":")
         server.add_insecure_port(f"[::]:{port}")
     else:
         server.add_insecure_port(listen)
+    await server.start()
     return server

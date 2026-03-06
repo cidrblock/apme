@@ -1,11 +1,10 @@
-"""Unit tests for the gitleaks scanner wrapper."""
+"""Unit tests for the gitleaks scanner wrapper and async gRPC servicer."""
 
 from __future__ import annotations
 
 import json
-import textwrap
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
 
@@ -185,18 +184,19 @@ class TestRunGitleaks:
 
 
 class TestGitleaksServicer:
-    """Test the gRPC servicer layer."""
+    """Test the async gRPC servicer layer."""
 
-    def test_validate_no_files(self):
+    async def test_validate_no_files(self):
         from apme_engine.daemon.gitleaks_validator_server import GitleaksValidatorServicer
         from apme.v1 import validate_pb2
 
         servicer = GitleaksValidatorServicer()
-        request = validate_pb2.ValidateRequest(files=[])
-        resp = servicer.Validate(request, None)
+        request = validate_pb2.ValidateRequest(files=[], request_id="gl-1")
+        resp = await servicer.Validate(request, None)
         assert len(resp.violations) == 0
+        assert resp.request_id == "gl-1"
 
-    def test_validate_with_files(self, tmp_path):
+    async def test_validate_with_files(self):
         from apme_engine.daemon.gitleaks_validator_server import GitleaksValidatorServicer
         from apme.v1 import validate_pb2, common_pb2
 
@@ -212,33 +212,38 @@ class TestGitleaksServicer:
         }]
 
         request = validate_pb2.ValidateRequest(
+            request_id="gl-2",
             files=[common_pb2.File(path="vars.yml", content=b"api_key: AKIAIOSFODNN7EXAMPLE\n")]
         )
 
         with patch("apme_engine.daemon.gitleaks_validator_server.run_gitleaks", return_value=fake_violations):
-            resp = servicer.Validate(request, None)
+            resp = await servicer.Validate(request, None)
 
         assert len(resp.violations) == 1
         assert resp.violations[0].rule_id == "SEC:aws-access-key-id"
+        assert resp.request_id == "gl-2"
 
-    def test_health_binary_present(self):
+    async def test_health_binary_present(self):
         from apme_engine.daemon.gitleaks_validator_server import GitleaksValidatorServicer
+        from apme.v1 import common_pb2
+        import asyncio
 
         servicer = GitleaksValidatorServicer()
+
         mock_proc = MagicMock()
         mock_proc.returncode = 0
-        mock_proc.stdout = "8.18.0"
+        mock_proc.communicate = AsyncMock(return_value=(b"8.18.0", b""))
 
-        with patch("subprocess.run", return_value=mock_proc):
-            from apme.v1 import common_pb2
-            resp = servicer.Health(common_pb2.HealthRequest(), None)
+        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_proc):
+            resp = await servicer.Health(common_pb2.HealthRequest(), None)
         assert "ok" in resp.status
+        assert "8.18.0" in resp.status
 
-    def test_health_binary_missing(self):
+    async def test_health_binary_missing(self):
         from apme_engine.daemon.gitleaks_validator_server import GitleaksValidatorServicer
         from apme.v1 import common_pb2
 
         servicer = GitleaksValidatorServicer()
-        with patch("subprocess.run", side_effect=FileNotFoundError):
-            resp = servicer.Health(common_pb2.HealthRequest(), None)
+        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, side_effect=FileNotFoundError):
+            resp = await servicer.Health(common_pb2.HealthRequest(), None)
         assert "not found" in resp.status

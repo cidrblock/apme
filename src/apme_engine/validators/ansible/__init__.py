@@ -5,11 +5,26 @@ Each rule module exports a run() function that returns a list of violation dicts
 """
 
 import sys
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from apme_engine.validators.base import ScanContext
 
 from .rules import L057_syntax, L058_argspec_doc, L059_argspec_mock, M001_M004_introspect
+
+
+@dataclass
+class AnsibleRuleTiming:
+    rule_id: str = ""
+    elapsed_ms: float = 0.0
+    violations: int = 0
+
+
+@dataclass
+class AnsibleRunResult:
+    violations: list = field(default_factory=list)
+    rule_timings: list = field(default_factory=list)
 
 
 def _extract_task_nodes(hierarchy_payload: dict) -> list[dict]:
@@ -45,55 +60,67 @@ class AnsibleValidator:
 
     def run(self, context: ScanContext) -> list[dict]:
         """Run all ansible checks and return violation dicts."""
+        return self.run_with_timing(context).violations
+
+    def run_with_timing(self, context: ScanContext) -> AnsibleRunResult:
+        """Run all ansible checks and return violations + per-rule timing."""
         violations: list[dict] = []
+        rule_timings: list[AnsibleRuleTiming] = []
         root_dir = Path(context.root_dir) if context.root_dir else None
 
-        # L057: Syntax check (needs files on disk)
         if root_dir and root_dir.is_dir():
+            t0 = time.monotonic()
             l057 = L057_syntax.run(
                 venv_root=self._venv_root,
                 root_dir=root_dir,
                 env_extra=self._env_extra,
             )
+            elapsed = (time.monotonic() - t0) * 1000
             violations.extend(l057)
-            sys.stderr.write(f"  L057 (syntax): {len(l057)} issue(s)\n")
+            rule_timings.append(AnsibleRuleTiming(rule_id="L057", elapsed_ms=elapsed, violations=len(l057)))
+            sys.stderr.write(f"  L057 (syntax): {len(l057)} issue(s) in {elapsed:.1f}ms\n")
 
-        # Hierarchy-payload-based checks
         task_nodes = _extract_task_nodes(context.hierarchy_payload) if context.hierarchy_payload else []
         if not task_nodes:
             sys.stderr.write(f"Ansible validator: total {len(violations)} violation(s)\n")
             sys.stderr.flush()
-            return violations
+            return AnsibleRunResult(violations=violations, rule_timings=rule_timings)
 
         sys.stderr.write(f"Ansible validator: checking {len(task_nodes)} task(s)\n")
 
-        # M001-M004: Plugin introspection
+        t0 = time.monotonic()
         m_violations = M001_M004_introspect.run(
             task_nodes=task_nodes,
             venv_root=self._venv_root,
             env_extra=self._env_extra,
         )
+        elapsed = (time.monotonic() - t0) * 1000
         violations.extend(m_violations)
-        sys.stderr.write(f"  M001-M004 (introspection): {len(m_violations)} issue(s)\n")
+        rule_timings.append(AnsibleRuleTiming(rule_id="M001-M004", elapsed_ms=elapsed, violations=len(m_violations)))
+        sys.stderr.write(f"  M001-M004 (introspection): {len(m_violations)} issue(s) in {elapsed:.1f}ms\n")
 
-        # L058: Argspec (docstring)
+        t0 = time.monotonic()
         l058 = L058_argspec_doc.run(
             task_nodes=task_nodes,
             venv_root=self._venv_root,
             env_extra=self._env_extra,
         )
+        elapsed = (time.monotonic() - t0) * 1000
         violations.extend(l058)
-        sys.stderr.write(f"  L058 (argspec-doc): {len(l058)} issue(s)\n")
+        rule_timings.append(AnsibleRuleTiming(rule_id="L058", elapsed_ms=elapsed, violations=len(l058)))
+        sys.stderr.write(f"  L058 (argspec-doc): {len(l058)} issue(s) in {elapsed:.1f}ms\n")
 
-        # L059: Argspec (mock/patch)
+        t0 = time.monotonic()
         l059 = L059_argspec_mock.run(
             task_nodes=task_nodes,
             venv_root=self._venv_root,
             env_extra=self._env_extra,
         )
+        elapsed = (time.monotonic() - t0) * 1000
         violations.extend(l059)
-        sys.stderr.write(f"  L059 (argspec-mock): {len(l059)} issue(s)\n")
+        rule_timings.append(AnsibleRuleTiming(rule_id="L059", elapsed_ms=elapsed, violations=len(l059)))
+        sys.stderr.write(f"  L059 (argspec-mock): {len(l059)} issue(s) in {elapsed:.1f}ms\n")
 
         sys.stderr.write(f"Ansible validator: total {len(violations)} violation(s)\n")
         sys.stderr.flush()
-        return violations
+        return AnsibleRunResult(violations=violations, rule_timings=rule_timings)
