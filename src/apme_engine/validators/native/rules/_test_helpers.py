@@ -1,13 +1,12 @@
 # Test helpers for colocated native rule tests. Build minimal Python context/task objects.
 
 from apme_engine.engine.models import (
-    Task,
-    TaskCall,
+    AnsibleRunContext,
+    ExecutableType,
     Role,
     RoleCall,
-    AnsibleRunContext,
-    RunTargetType,
-    ExecutableType,
+    Task,
+    TaskCall,
 )
 
 

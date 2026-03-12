@@ -7,8 +7,7 @@ import pytest
 from apme_engine.runner import run_scan_playbook_yaml
 from apme_engine.validators.native import NativeValidator
 from apme_engine.validators.opa import OpaValidator
-
-from tests.rule_doc_parser import discover_rule_docs, parse_rule_doc
+from tests.rule_doc_parser import discover_rule_docs
 
 
 def _repo_root():
@@ -25,16 +24,14 @@ def _opa_bundle_dir():
 
 def _violation_ids_for_rule(violations: list[dict], rule_id: str, validator: str) -> list[str]:
     """Return violation rule_id values that match this doc rule (for assertion)."""
-    if validator == "native":
-        expected = f"native:{rule_id}"
-    else:
-        expected = rule_id
+    expected = f"native:{rule_id}" if validator == "native" else rule_id
     return [v["rule_id"] for v in violations if v.get("rule_id") == expected]
 
 
 def _ensure_playbook(yaml_content: str) -> str:
     """If content is a single task or task list without a play, wrap in a play."""
     import yaml
+
     try:
         data = yaml.safe_load(yaml_content)
     except Exception:
@@ -47,7 +44,8 @@ def _ensure_playbook(yaml_content: str) -> str:
             return yaml_content
         return (
             "- name: Example play\n  hosts: localhost\n  connection: local\n  tasks:\n"
-            + "    - " + yaml.dump(data, default_flow_style=False).strip().replace("\n", "\n    ")
+            + "    - "
+            + yaml.dump(data, default_flow_style=False).strip().replace("\n", "\n    ")
         )
     # List: could be list of plays or list of tasks
     if isinstance(data, list) and data:
@@ -56,9 +54,8 @@ def _ensure_playbook(yaml_content: str) -> str:
             return yaml_content
         # List of tasks
         tasks_yaml = yaml.dump(data, default_flow_style=False)
-        return (
-            "- name: Example play\n  hosts: localhost\n  connection: local\n  tasks:\n"
-            + "\n".join("    " + line for line in tasks_yaml.splitlines())
+        return "- name: Example play\n  hosts: localhost\n  connection: local\n  tasks:\n" + "\n".join(
+            "    " + line for line in tasks_yaml.splitlines()
         )
     return yaml_content
 
@@ -124,10 +121,7 @@ def test_rule_doc_examples(md_path, doc, validators):
                 f"got: {[v['rule_id'] for v in violations]}"
             )
         else:
-            assert not matching, (
-                f"{md_path} example {i + 1} (pass): expected no {rule_id}, "
-                f"got: {matching}"
-            )
+            assert not matching, f"{md_path} example {i + 1} (pass): expected no {rule_id}, got: {matching}"
 
 
 def test_rule_doc_parser_smoke():

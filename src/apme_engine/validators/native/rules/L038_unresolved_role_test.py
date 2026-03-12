@@ -1,12 +1,12 @@
 # Colocated tests for L038 (UnresolvedRoleRule).
 
+from apme_engine.engine.models import ExecutableType
 from apme_engine.validators.native.rules._test_helpers import (
-    make_task_spec,
-    make_task_call,
     make_context,
+    make_task_call,
+    make_task_spec,
 )
 from apme_engine.validators.native.rules.L038_unresolved_role import UnresolvedRoleRule
-from apme_engine.engine.models import ExecutableType
 
 
 def test_L038_fires_when_role_unresolved():

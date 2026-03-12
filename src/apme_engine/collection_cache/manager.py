@@ -1,12 +1,11 @@
 """Populate and query the collection cache (Galaxy + GitHub)."""
 
-import re
 import subprocess
 from pathlib import Path
 
 from apme_engine.collection_cache.config import (
-    get_cache_root,
     galaxy_cache_dir,
+    get_cache_root,
     github_cache_dir,
 )
 
@@ -35,8 +34,12 @@ def pull_galaxy_collection(
     target = galaxy_cache_dir(root)
     target.mkdir(parents=True, exist_ok=True)
     cmd = [
-        "ansible-galaxy", "collection", "install", spec,
-        "-p", str(target),
+        "ansible-galaxy",
+        "collection",
+        "install",
+        spec,
+        "-p",
+        str(target),
         "--force",
     ]
     if galaxy_server:
@@ -70,9 +73,13 @@ def pull_galaxy_requirements(
     if not req_path.is_file():
         raise FileNotFoundError(f"Requirements file not found: {requirements_path}")
     cmd = [
-        "ansible-galaxy", "collection", "install",
-        "-r", str(req_path),
-        "-p", str(target),
+        "ansible-galaxy",
+        "collection",
+        "install",
+        "-r",
+        str(req_path),
+        "-p",
+        str(target),
         "--force",
     ]
     if galaxy_server:
@@ -189,6 +196,7 @@ def _list_org_repos(org: str, token: str) -> list[str]:
     try:
         import json
         import urllib.request
+
         url = f"https://api.github.com/orgs/{org}/repos?per_page=100"
         req = urllib.request.Request(url)
         if token:
@@ -237,11 +245,16 @@ def collection_path_in_cache(
                 if galaxy_yml.is_file():
                     try:
                         import yaml
+
                         with open(galaxy_yml) as f:
                             meta = yaml.safe_load(f)
                         if meta:
                             n = meta.get("namespace") or meta.get("name", "").split(".")[0]
-                            c = meta.get("name", "").split(".")[-1] if "." in meta.get("name", "") else meta.get("name", "")
+                            c = (
+                                meta.get("name", "").split(".")[-1]
+                                if "." in meta.get("name", "")
+                                else meta.get("name", "")
+                            )
                             if n == namespace and c == collection:
                                 return repo_dir
                     except Exception:
@@ -250,6 +263,7 @@ def collection_path_in_cache(
                 if runtime.is_file():
                     try:
                         import yaml
+
                         with open(runtime) as f:
                             meta = yaml.safe_load(f)
                         if meta:

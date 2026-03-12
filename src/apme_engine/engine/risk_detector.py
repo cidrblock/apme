@@ -1,27 +1,26 @@
 import argparse
-import os
+import contextlib
 import json
-import traceback
-from typing import List
+import os
 import time
+import traceback
 
 from . import logger
+from .analyzer import load_taskcalls_in_trees
+from .keyutil import detect_type, key_delimiter
 from .models import (
     AnsibleRunContext,
     ARIResult,
-    TargetResult,
-    NodeResult,
-    RuleResult,
-    Rule,
-    SpecMutation,
     FatalRuleResultError,
+    NodeResult,
+    Rule,
+    RuleResult,
     RunTarget,
+    SpecMutation,
+    TargetResult,
     TaskCall,
 )
-from .keyutil import detect_type, key_delimiter
-from .analyzer import load_taskcalls_in_trees
 from .utils import load_classes_in_dir
-
 
 rule_versions_filename = "rule_versions.json"
 
@@ -35,13 +34,11 @@ def load_rule_versions_file(filepath: str):
         return {}
 
     version_dict = {}
-    with open(filepath, "r") as file:
+    with open(filepath) as file:
         for line in file:
             d = None
-            try:
+            with contextlib.suppress(Exception):
                 d = json.loads(line)
-            except Exception:
-                pass
             if not d or not isinstance(d, dict):
                 continue
             rule_id = d.get("rule_id")
@@ -52,7 +49,11 @@ def load_rule_versions_file(filepath: str):
     return version_dict
 
 
-def load_rules(rules_dir: str = "", rule_id_list: list = [], fail_on_error: bool = False, exclude_rule_ids: list = None):
+def load_rules(
+    rules_dir: str = "", rule_id_list: list = None, fail_on_error: bool = False, exclude_rule_ids: list = None
+):
+    if rule_id_list is None:
+        rule_id_list = []
     if not rules_dir:
         return []
     if exclude_rule_ids is None:
@@ -74,20 +75,18 @@ def load_rules(rules_dir: str = "", rule_id_list: list = [], fail_on_error: bool
             try:
                 _rule = r()
                 # if `rule_id_list` is provided, filter out rules that are not in the list
-                if rule_id_list:
-                    if _rule.rule_id not in rule_id_list:
-                        continue
+                if rule_id_list and _rule.rule_id not in rule_id_list:
+                    continue
                 if _rule.rule_id in exclude_rule_ids:
                     continue
-                if versions_dict:
-                    if _rule.rule_id in versions_dict:
-                        _rule.commit_id = versions_dict[_rule.rule_id]
+                if versions_dict and _rule.rule_id in versions_dict:
+                    _rule.commit_id = versions_dict[_rule.rule_id]
                 _rules.append(_rule)
-            except Exception:
+            except Exception as err:
                 exc = traceback.format_exc()
                 msg = f"failed to load a rule `{r}`: {exc}"
                 if fail_on_error:
-                    raise ValueError(msg)
+                    raise ValueError(msg) from err
                 else:
                     logger.warning(f"The rule {r} was skipped: {msg}")
 
@@ -122,12 +121,20 @@ def make_subject_str(playbook_num: int, role_num: int):
     return subject
 
 
-def detect(contexts: List[AnsibleRunContext], rules_dir: str = "", rules: list = [], rules_cache: list = [], save_only_rule_result: bool = False, exclude_rule_ids: list = None):
+def detect(
+    contexts: list[AnsibleRunContext],
+    rules_dir: str = "",
+    rules: list = None,
+    rules_cache: list = None,
+    save_only_rule_result: bool = False,
+    exclude_rule_ids: list = None,
+):
+    if rules_cache is None:
+        rules_cache = []
+    if rules is None:
+        rules = []
     loaded_rules = []
-    if rules_cache:
-        loaded_rules = rules_cache
-    else:
-        loaded_rules = load_rules(rules_dir, rules, False, exclude_rule_ids=exclude_rule_ids or [])
+    loaded_rules = rules_cache or load_rules(rules_dir, rules, False, exclude_rule_ids=exclude_rule_ids or [])
 
     playbook_count = {"total": 0, "risk_found": 0}
     role_count = {"total": 0, "risk_found": 0}
@@ -171,7 +178,7 @@ def detect(contexts: List[AnsibleRunContext], rules_dir: str = "", rules: list =
             for rule in loaded_rules:
                 if not rule.enabled:
                     continue
-                rule_id = getattr(rule, "rule_id")
+                rule_id = rule.rule_id
                 start_time = time.time()
                 r_result = RuleResult(file=t.file_info(), rule=rule.get_metadata())
                 detail = {}
@@ -189,13 +196,12 @@ def detect(contexts: List[AnsibleRunContext], rules_dir: str = "", rules: list =
                         error = r_result.error or "unknown error"
                         error = f"ARI rule evaluation threw fatal exception: RuleID={rule_id}, error={error}"
                         raise FatalRuleResultError(error)
-                    if rule.spec_mutation:
-                        if isinstance(detail, dict):
-                            s_mutations = detail.get("spec_mutations", [])
-                            for s_mutation in s_mutations:
-                                if not isinstance(s_mutation, SpecMutation):
-                                    continue
-                                spec_mutations[s_mutation.key] = s_mutation
+                    if rule.spec_mutation and isinstance(detail, dict):
+                        s_mutations = detail.get("spec_mutations", [])
+                        for s_mutation in s_mutations:
+                            if not isinstance(s_mutation, SpecMutation):
+                                continue
+                            spec_mutations[s_mutation.key] = s_mutation
                 except FatalRuleResultError:
                     raise
                 except Exception:
@@ -216,14 +222,14 @@ def detect(contexts: List[AnsibleRunContext], rules_dir: str = "", rules: list =
 
 def omit_node_details(node: RunTarget):
     spec = None
-    if getattr(node, "spec"):
+    if node.spec:
         spec = {
-            "type": getattr(node.spec, "type"),
-            "name": getattr(node.spec, "name"),
-            "defined_in": getattr(node.spec, "defined_in"),
+            "type": node.spec.type,
+            "name": node.spec.name,
+            "defined_in": node.spec.defined_in,
         }
         if isinstance(node, TaskCall):
-            spec["line_num_in_file"] = (getattr(node.spec, "line_num_in_file"),)
+            spec["line_num_in_file"] = (node.spec.line_num_in_file,)
     summary = {
         "type": node.type,
         "spec": spec,

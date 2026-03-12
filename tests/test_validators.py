@@ -1,10 +1,8 @@
 """Tests for validator abstraction (ScanContext, OpaValidator, NativeValidator)."""
 
-import pytest
-
 from apme_engine.validators.base import ScanContext
-from apme_engine.validators.opa import OpaValidator
 from apme_engine.validators.native import NativeValidator
+from apme_engine.validators.opa import OpaValidator
 
 
 class TestScanContext:
@@ -24,6 +22,7 @@ class TestScanContext:
 class TestOpaValidator:
     def test_opa_validator_run_calls_run_opa(self, opa_bundle_path, sample_hierarchy_payload):
         from unittest.mock import patch
+
         ctx = ScanContext(hierarchy_payload=sample_hierarchy_payload)
         v = OpaValidator(str(opa_bundle_path))
         with patch("apme_engine.validators.opa.run_opa", return_value=[]) as mock_opa:
@@ -35,6 +34,7 @@ class TestOpaValidator:
 
     def test_opa_validator_run_returns_violations(self, sample_hierarchy_payload, tmp_path):
         from unittest.mock import patch
+
         (tmp_path / "bundle").mkdir()
         ctx = ScanContext(hierarchy_payload=sample_hierarchy_payload)
         v = OpaValidator(str(tmp_path / "bundle"))

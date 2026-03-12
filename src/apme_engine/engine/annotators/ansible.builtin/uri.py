@@ -1,5 +1,5 @@
-from apme_engine.engine.models import RiskAnnotation, TaskCall, DefaultRiskType, OutboundTransferDetail
 from apme_engine.engine.annotators.module_annotator_base import ModuleAnnotator, ModuleAnnotatorResult
+from apme_engine.engine.models import DefaultRiskType, OutboundTransferDetail, RiskAnnotation, TaskCall
 
 
 class URIAnnotator(ModuleAnnotator):

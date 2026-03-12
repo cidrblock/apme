@@ -1,10 +1,12 @@
+import json
+import os
+import re
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
-import re
-import os
-import json
+
 import yaml
-import traceback
+
 from .yaml_utils import FormattedYAML
 
 try:
@@ -14,10 +16,11 @@ try:
 except Exception:
     # otherwise, use Python based loader
     from yaml import SafeLoader as Loader
-from . import logger
-from .safe_glob import safe_glob
-from .awx_utils import could_be_playbook, search_playbooks
+import contextlib
 
+from . import logger
+from .awx_utils import could_be_playbook, search_playbooks
+from .safe_glob import safe_glob
 
 fqcn_module_name_re = re.compile(r"^[a-z0-9_]+\.[a-z0-9_]+\.[a-z0-9_]+$")
 module_name_re = re.compile(r"^[a-z0-9_.]+$")
@@ -54,10 +57,10 @@ class BuiltinModuleSet(metaclass=Singleton):
 
 
 p = Path(__file__).resolve().parent
-with open(p / "task_keywords.txt", "r") as f:
+with open(p / "task_keywords.txt") as f:
     TaskKeywordSet(set(f.read().splitlines()))
 
-with open(p / "builtin-modules.txt", "r") as f:
+with open(p / "builtin-modules.txt") as f:
     BuiltinModuleSet(set(f.read().splitlines()))
 
 
@@ -66,7 +69,7 @@ def get_builtin_module_names():
 
 
 def find_module_name(data_block):
-    keys = [k for k in data_block.keys()]
+    keys = [k for k in data_block]
     task_keywords = TaskKeywordSet().task_keywords
     builtin_modules = BuiltinModuleSet().builtin_modules
     for k in keys:
@@ -112,17 +115,17 @@ def get_task_blocks(
             d = yaml.load(yaml_str, Loader=Loader)
             yaml_lines = yaml_str
         except Exception as e:
-            logger.debug("failed to load this yaml string to get task blocks; {}".format(e.args[0]))
+            logger.debug(f"failed to load this yaml string to get task blocks; {e.args[0]}")
             return None, None
     elif fpath:
         if not os.path.exists(fpath):
             return None, None
-        with open(fpath, "r") as file:
+        with open(fpath) as file:
             try:
                 yaml_lines = file.read()
                 d = yaml.load(yaml_lines, Loader=Loader)
             except Exception as e:
-                logger.debug("failed to load this yaml file to get task blocks; {}".format(e.args[0]))
+                logger.debug(f"failed to load this yaml file to get task blocks; {e.args[0]}")
                 return None, None
     elif task_dict_list is not None:
         d = task_dict_list
@@ -150,7 +153,9 @@ def get_task_blocks(
 #         - some_module2
 #         - some_module3
 #
-def flatten_block_tasks(task_dict, jsonpath_prefix="", module_defaults={}):
+def flatten_block_tasks(task_dict, jsonpath_prefix="", module_defaults=None):
+    if module_defaults is None:
+        module_defaults = {}
     if task_dict is None:
         return []
     tasks = []
@@ -203,7 +208,9 @@ def flatten_block_tasks(task_dict, jsonpath_prefix="", module_defaults={}):
     return tasks
 
 
-def identify_lines_with_jsonpath(fpath: str = "", yaml_str: str = "", jsonpath: str = "") -> tuple[str, tuple[int, int]]:
+def identify_lines_with_jsonpath(
+    fpath: str = "", yaml_str: str = "", jsonpath: str = ""
+) -> tuple[str, tuple[int, int]]:
     if not jsonpath:
         return None, None
 
@@ -214,17 +221,17 @@ def identify_lines_with_jsonpath(fpath: str = "", yaml_str: str = "", jsonpath: 
             d = yaml.load(yaml_str, Loader=Loader)
             yaml_lines = yaml_str
         except Exception as e:
-            logger.debug("failed to load this yaml string to identify lines; {}".format(e.args[0]))
+            logger.debug(f"failed to load this yaml string to identify lines; {e.args[0]}")
             return None, None
     elif fpath:
         if not os.path.exists(fpath):
             return None, None
-        with open(fpath, "r") as file:
+        with open(fpath) as file:
             try:
                 yaml_lines = file.read()
                 d = yaml.load(yaml_lines, Loader=Loader)
             except Exception as e:
-                logger.debug("failed to load this yaml file to identify lines; {}".format(e.args[0]))
+                logger.debug(f"failed to load this yaml file to identify lines; {e.args[0]}")
                 return None, None
     if not d:
         return None, None
@@ -369,14 +376,16 @@ def find_child_yaml_block(yaml_str: str, key: str = "", line_num_offset: int = -
     return blocks
 
 
-def search_module_files(path, module_dir_paths=[]):
+def search_module_files(path, module_dir_paths=None):
+    if module_dir_paths is None:
+        module_dir_paths = []
     file_list = []
     # must copy the input here; otherwise, the added items are kept forever
     search_targets = [p for p in module_dir_paths]
     for module_dir_pattern in module_dir_patterns:
         search_targets.append(os.path.join(path, module_dir_pattern))
     for search_target in search_targets:
-        for dirpath, folders, files in os.walk(search_target):
+        for dirpath, _folders, files in os.walk(search_target):
             for file in files:
                 basename, ext = os.path.splitext(file)
                 if basename == "__init__":
@@ -386,7 +395,7 @@ def search_module_files(path, module_dir_paths=[]):
 
                     # check if "DOCUMENTATION" is found in the file
                     skip = False
-                    with open(fpath, "r") as f:
+                    with open(fpath) as f:
                         body = f.read()
                         if "DOCUMENTATION" not in body:
                             # if not, it is not a module file, so skip it
@@ -408,8 +417,10 @@ def find_module_dirs(role_root_dir):
     return module_dirs
 
 
-def search_taskfiles_for_playbooks(path, taskfile_dir_paths: list = []):
+def search_taskfiles_for_playbooks(path, taskfile_dir_paths: list = None):
     # must copy the input here; otherwise, the added items are kept forever
+    if taskfile_dir_paths is None:
+        taskfile_dir_paths = []
     search_targets = [p for p in taskfile_dir_paths]
     for playbook_taskfile_dir_pattern in playbook_taskfile_dir_patterns:
         search_targets.append(os.path.join(path, playbook_taskfile_dir_pattern))
@@ -425,11 +436,11 @@ def search_taskfiles_for_playbooks(path, taskfile_dir_paths: list = []):
             if could_be_playbook(f):
                 continue
             d = None
-            with open(f, "r") as file:
+            with open(f) as file:
                 try:
                     d = yaml.load(file, Loader=Loader)
                 except Exception as e:
-                    logger.debug("failed to load this yaml file to search task" " files; {}".format(e.args[0]))
+                    logger.debug(f"failed to load this yaml file to search task files; {e.args[0]}")
             # if d cannot be loaded as tasks yaml file, skip it
             if d is None or not isinstance(d, list):
                 continue
@@ -478,7 +489,7 @@ def find_best_repo_root_path(path):
     # ignore tests directory
     playbooks = [p for p in playbooks if "/tests/" not in p]
     if len(playbooks) == 0:
-        raise ValueError("no playbook files found under {}".format(path))
+        raise ValueError(f"no playbook files found under {path}")
     top_playbook_path = playbooks[0]
     top_playbook_relative_path = top_playbook_path[len(base_path) :]
     root_path = ""
@@ -525,22 +536,22 @@ def find_collection_name_of_repo(path):
         metadata_file = found_metadata_files[0]
         my_collection_info = None
         if metadata_file.endswith(".yml"):
-            with open(metadata_file, "r") as file:
+            with open(metadata_file) as file:
                 try:
                     my_collection_info = yaml.load(file, Loader=Loader)
                 except Exception as e:
-                    logger.debug("failed to load this yaml file to read galaxy.yml; {}".format(e.args[0]))
+                    logger.debug(f"failed to load this yaml file to read galaxy.yml; {e.args[0]}")
         elif metadata_file.endswith(".json"):
-            with open(metadata_file, "r") as file:
+            with open(metadata_file) as file:
                 try:
                     my_collection_info = json.load(file).get("collection_info", {})
                 except Exception as e:
-                    logger.debug("failed to load this json file to read MANIFEST.json; {}".format(e.args[0]))
+                    logger.debug(f"failed to load this json file to read MANIFEST.json; {e.args[0]}")
         if my_collection_info is None:
             return ""
         namespace = my_collection_info.get("namespace", "")
         name = my_collection_info.get("name", "")
-        my_collection_name = "{}.{}".format(namespace, name)
+        my_collection_name = f"{namespace}.{name}"
     return my_collection_name
 
 
@@ -559,16 +570,14 @@ def find_all_files(root_dir: str):
 def _get_body_data(body: str = "", data: list = None, fpath: str = ""):
     if fpath and not body and not data:
         try:
-            with open(fpath, "r") as file:
+            with open(fpath) as file:
                 body = file.read()
                 data = yaml.safe_load(body)
         except Exception:
             pass
     elif body and not data:
-        try:
+        with contextlib.suppress(Exception):
             data = yaml.safe_load(body)
-        except Exception:
-            pass
     return body, data, fpath
 
 
@@ -593,10 +602,7 @@ def could_be_playbook_detail(body: str = "", data: list = None, fpath: str = "")
     if "hosts" in data[0]:
         return True
 
-    if "import_playbook" in data[0] or "ansible.builtin.import_playbook" in data[0]:
-        return True
-
-    return False
+    return bool("import_playbook" in data[0] or "ansible.builtin.import_playbook" in data[0])
 
 
 def could_be_taskfile(body: str = "", data: list = None, fpath: str = ""):
@@ -620,11 +626,8 @@ def could_be_taskfile(body: str = "", data: list = None, fpath: str = ""):
     module_name = find_module_name(data[0])
     if module_name:
         short_module_name = module_name.split(".")[-1] if "." in module_name else module_name
-        if short_module_name == "import_playbook":
-            # if the found module name is import_playbook, the file is a playbook
-            return False
-        else:
-            return True
+        # if the found module name is import_playbook, the file is a playbook
+        return short_module_name != "import_playbook"
 
     return False
 
@@ -713,16 +716,12 @@ def get_project_info_for_file(fpath, root_dir):
 
 def is_meta_yml(yml_path):
     parts = yml_path.split("/")
-    if len(parts) > 2 and parts[-2] == "meta":
-        return True
-    return False
+    return bool(len(parts) > 2 and parts[-2] == "meta")
 
 
 def is_vars_yml(yml_path):
     parts = yml_path.split("/")
-    if len(parts) > 2 and parts[-2] in ["vars", "defaults"]:
-        return True
-    return False
+    return bool(len(parts) > 2 and parts[-2] in ["vars", "defaults"])
 
 
 def count_top_level_element(yml_body: str = ""):
@@ -731,9 +730,7 @@ def count_top_level_element(yml_body: str = ""):
         if not line.strip():
             return True
         # skip comment line
-        if line.strip()[0] == "#":
-            return True
-        return False
+        return line.strip()[0] == "#"
 
     lines = yml_body.splitlines()
     top_level_indent = 1024
@@ -774,7 +771,7 @@ def label_yml_file(yml_path: str = "", yml_body: str = "", task_num_thresh: int 
         body = yml_body
     elif not yml_body and yml_path:
         try:
-            with open(yml_path, "r") as file:
+            with open(yml_path) as file:
                 body = file.read()
         except Exception:
             error = {"type": "FileReadError", "detail": traceback.format_exc()}
@@ -785,18 +782,16 @@ def label_yml_file(yml_path: str = "", yml_body: str = "", task_num_thresh: int 
     # roughly count tasks
     name_count = len([line for line in lines if line.lstrip().startswith("- name:")])
 
-    if task_num_thresh > 0:
-        if name_count > task_num_thresh:
-            error_detail = f"The number of task names found in yml exceeds the threshold ({task_num_thresh})"
-            error = {"type": "TooManyTasksError", "detail": error_detail}
-            return "others", name_count, error
+    if task_num_thresh > 0 and name_count > task_num_thresh:
+        error_detail = f"The number of task names found in yml exceeds the threshold ({task_num_thresh})"
+        error = {"type": "TooManyTasksError", "detail": error_detail}
+        return "others", name_count, error
 
     top_level_element_count = count_top_level_element(body)
-    if task_num_thresh > 0:
-        if top_level_element_count > task_num_thresh:
-            error_detail = f"The number of top-level elements found in yml exceeds the threshold ({task_num_thresh})"
-            error = {"type": "TooManyTasksError", "detail": error_detail}
-            return "others", name_count, error
+    if task_num_thresh > 0 and top_level_element_count > task_num_thresh:
+        error_detail = f"The number of top-level elements found in yml exceeds the threshold ({task_num_thresh})"
+        error = {"type": "TooManyTasksError", "detail": error_detail}
+        return "others", name_count, error
 
     try:
         data = yaml.safe_load(body)
@@ -857,9 +852,9 @@ def get_yml_list(root_dir: str, task_num_threshold: int = -1):
         if role_info:
             if role_info["path"] and not role_info["path"].startswith(root_dir):
                 role_info["path"] = os.path.join(root_dir, role_info["path"])
-            role_info["is_external_dependency"] = True if "." in role_info["name"] else False
-        in_role = True if role_info else False
-        in_project = True if project_info else False
+            role_info["is_external_dependency"] = "." in role_info["name"]
+        in_role = bool(role_info)
+        in_project = bool(project_info)
         all_files.append(
             {
                 "filepath": yml_path,
@@ -973,7 +968,7 @@ def update_and_append_new_line(new_line, old_line, leading_spaces, data_copy):
 def update_the_yaml_target(file_path, line_number_list, new_content_list):
     try:
         # Read the original YAML file
-        with open(file_path, "r") as file:
+        with open(file_path) as file:
             data = file.read()
         yaml = FormattedYAML(
             # Ansible only uses YAML 1.1, but others files should use newer 1.2 (ruamel.yaml defaults to 1.2)
@@ -1044,18 +1039,21 @@ def update_the_yaml_target(file_path, line_number_list, new_content_list):
                                                 lines.pop(i)
                                             else:
                                                 break
-                                    new_line_content = update_and_append_new_line(new_line_content, lines[k], leading_spaces, data_copy)
+                                    new_line_content = update_and_append_new_line(
+                                        new_line_content, lines[k], leading_spaces, data_copy
+                                    )
                                     break
-                                elif old_key == new_key:
-                                    new_line_content = update_and_append_new_line(new_line_content, lines[k], 0, data_copy)
+                                elif (
+                                    old_key == new_key
+                                    or old_key.rstrip("\n") == new_key
+                                    or old_key.rstrip("\n") in new_key.split(".")
+                                ):
+                                    new_line_content = update_and_append_new_line(
+                                        new_line_content, lines[k], 0, data_copy
+                                    )
                                     break
-                                elif old_key.rstrip("\n") == new_key:
-                                    new_line_content = update_and_append_new_line(new_line_content, lines[k], 0, data_copy)
-                                    break
-                                elif old_key.rstrip("\n") in new_key.split("."):
-                                    new_line_content = update_and_append_new_line(new_line_content, lines[k], 0, data_copy)
-                                    break
-                        if new_line_content:  # if there wasn't a match with old line, so this seems updated by ARI and added to w/o any change
+                        # if there wasn't a match with old line, updated by ARI and added w/o change
+                        if new_line_content:
                             data_copy.append(new_line_content)
                 else:
                     return IndexError("Line number out of range.")
@@ -1071,4 +1069,6 @@ def update_the_yaml_target(file_path, line_number_list, new_content_list):
             with open(file_path, "w") as file:
                 yaml.dump(updated_parsed_data, file)
     except Exception as ex:
-        logger.warning("YAML LINES: ARI fix update yaml by lines failed for file: '%s', with error: '%s'", file_path, ex)
+        logger.warning(
+            "YAML LINES: ARI fix update yaml by lines failed for file: '%s', with error: '%s'", file_path, ex
+        )

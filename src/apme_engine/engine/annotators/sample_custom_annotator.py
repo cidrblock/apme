@@ -1,7 +1,6 @@
-from typing import List
-from apme_engine.engine.models import TaskCall, Annotation, RiskAnnotation, DefaultRiskType
-from apme_engine.engine.annotators.variable_resolver import VariableAnnotation
 from apme_engine.engine.annotators.risk_annotator_base import RiskAnnotator
+from apme_engine.engine.annotators.variable_resolver import VariableAnnotation
+from apme_engine.engine.models import Annotation, DefaultRiskType, RiskAnnotation, TaskCall
 
 
 class SampleCustomAnnotator(RiskAnnotator):
@@ -15,7 +14,7 @@ class SampleCustomAnnotator(RiskAnnotator):
         return False
 
     # extract analyzed_data from task and embed it
-    def run(self, task: TaskCall) -> List[Annotation]:
+    def run(self, task: TaskCall) -> list[Annotation]:
         resolved_name = task.spec.resolved_name
         options = task.spec.module_options
         var_annos = task.get_annotation_by_type(VariableAnnotation.type)

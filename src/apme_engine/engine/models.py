@@ -1,18 +1,25 @@
-import os
-from dataclasses import dataclass, field
-from typing import List, Union
-from collections.abc import Callable
-from tabulate import tabulate
-from ruamel.yaml.scalarstring import DoubleQuotedScalarString
-
-from copy import deepcopy
+import contextlib
 import json
+import os
+from collections.abc import Callable
+from copy import deepcopy
+from dataclasses import dataclass, field
+from pathlib import Path
+
 import jsonpickle
 from rapidfuzz.distance import Levenshtein
+from ruamel.yaml.scalarstring import DoubleQuotedScalarString
+from tabulate import tabulate
+
 from . import yaml as ariyaml
-from .utils import parse_bool
+from .finder import (
+    identify_lines_with_jsonpath,
+)
 from .keyutil import (
+    get_obj_info_by_key,
+    set_call_object_key,
     set_collection_key,
+    set_file_key,
     set_module_key,
     set_play_key,
     set_playbook_key,
@@ -20,16 +27,11 @@ from .keyutil import (
     set_role_key,
     set_task_key,
     set_taskfile_key,
-    set_file_key,
-    set_call_object_key,
-    get_obj_info_by_key,
 )
 from .utils import (
     equal,
+    parse_bool,
     recursive_copy_dict,
-)
-from .finder import (
-    identify_lines_with_jsonpath,
 )
 
 
@@ -45,7 +47,7 @@ class FatalRuleResultError(Exception):
     pass
 
 
-class JSONSerializable(object):
+class JSONSerializable:
     def dump(self):
         return self.to_json()
 
@@ -60,7 +62,7 @@ class JSONSerializable(object):
         return instance
 
 
-class Resolvable(object):
+class Resolvable:
     def resolve(self, resolver):
         if not hasattr(resolver, "apply"):
             raise ValueError("this resolver does not have apply() method")
@@ -139,7 +141,7 @@ class ObjectList(JSONSerializable):
         lines = [jsonpickle.encode(obj, make_refs=False) for obj in self.items]
         json_str = "\n".join(lines)
         if fpath != "":
-            open(fpath, "w").write(json_str)
+            Path(fpath).write_text(json_str)
         return json_str
 
     def to_one_line_json(self):
@@ -149,7 +151,7 @@ class ObjectList(JSONSerializable):
     def from_json(cls, json_str="", fpath=""):
         instance = cls()
         if fpath != "":
-            json_str = open(fpath, "r").read()
+            json_str = Path(fpath).read_text()
         lines = json_str.splitlines()
         items = [jsonpickle.decode(obj_str) for obj_str in lines]
         instance.items = items
@@ -164,7 +166,7 @@ class ObjectList(JSONSerializable):
 
     def merge(self, obj_list):
         if not isinstance(obj_list, ObjectList):
-            raise ValueError("obj_list must be an instance of ObjectList, but got {}".format(type(obj_list).__name__))
+            raise ValueError(f"obj_list must be an instance of ObjectList, but got {type(obj_list).__name__}")
         self.items.extend(obj_list.items)
         self._update_dict()
         return
@@ -239,7 +241,7 @@ class RunTargetType:
 
 
 @dataclass
-class RunTarget(object):
+class RunTarget:
     type: str = ""
 
     def file_info(self):
@@ -249,8 +251,8 @@ class RunTarget(object):
 
 
 @dataclass
-class RunTargetList(object):
-    items: List[RunTarget] = field(default_factory=list)
+class RunTargetList:
+    items: list[RunTarget] = field(default_factory=list)
 
     _i: int = 0
 
@@ -273,7 +275,7 @@ class RunTargetList(object):
 
 
 @dataclass
-class File(object):
+class File:
     type: str = "file"
     name: str = ""
     key: str = ""
@@ -302,7 +304,7 @@ class File(object):
 
 
 @dataclass
-class ModuleArgument(object):
+class ModuleArgument:
     name: str = ""
     type: str = None
     elements: str = None
@@ -409,7 +411,7 @@ class TaskCallsInTree(JSONSerializable):
 
 
 @dataclass
-class VariablePrecedence(object):
+class VariablePrecedence:
     name: str = ""
     order: int = -1
 
@@ -438,7 +440,7 @@ class VariablePrecedence(object):
         return not self.__lt__(__o)
 
 
-class VariableType(object):
+class VariableType:
     # When resolving variables, sometimes find unknown variables (e.g. undefined variable)
     # so we consider it as one type of variable
     Unknown = VariablePrecedence("unknown", -100)
@@ -479,7 +481,7 @@ immutable_var_types = [VariableType.LoopVars]
 
 
 @dataclass
-class Variable(object):
+class Variable:
     name: str = ""
     value: any = None
     type: VariableType = None
@@ -493,7 +495,7 @@ class Variable(object):
 
 
 @dataclass
-class VariableDict(object):
+class VariableDict:
     _dict: dict = field(default_factory=dict)
 
     @staticmethod
@@ -527,17 +529,17 @@ class VariableDict(object):
         return tabulate(table, headers="keys")
 
 
-class ArgumentsType(object):
+class ArgumentsType:
     SIMPLE = "simple"
     LIST = "list"
     DICT = "dict"
 
 
 @dataclass
-class Arguments(object):
+class Arguments:
     type: ArgumentsType = ""
     raw: any = None
-    vars: List[Variable] = field(default_factory=list)
+    vars: list[Variable] = field(default_factory=list)
     resolved: bool = False
     templated: any = None
     is_mutable: bool = False
@@ -592,10 +594,10 @@ class LocationType:
 
 
 @dataclass
-class Location(object):
+class Location:
     type: str = ""
     value: str = ""
-    vars: List[Variable] = field(default_factory=list)
+    vars: list[Variable] = field(default_factory=list)
 
     _args: Arguments = None
 
@@ -632,27 +634,20 @@ class Location(object):
 
         my_path = self.value
         target_path = target.value
-        if target_path.startswith(my_path):
-            return True
-        return False
+        return bool(target_path.startswith(my_path))
 
     def contains_any(self, target_list):
-        for target in target_list:
-            if self.contains(target):
-                return True
-        return False
+        return any(self.contains(target) for target in target_list)
 
     def contains_all(self, target_list):
         count = 0
         for target in target_list:
             if self.contains(target):
                 count += 1
-        if count == len(target_list):
-            return True
-        return False
+        return count == len(target_list)
 
 
-class AnnotationDetail(object):
+class AnnotationDetail:
     pass
 
 
@@ -710,12 +705,10 @@ class PackageInstallDetail(AnnotationDetail):
                 self.is_mutable_pkg = True
         if self._version_arg:
             self.version = self._version_arg.vars
-        if self._allow_downgrade_arg:
-            if _convert_to_bool(self._allow_downgrade_arg.raw):
-                self.allow_downgrade = True
-        if self._validate_certs_arg:
-            if not _convert_to_bool(self._validate_certs_arg.raw):
-                self.disable_validate_certs = True
+        if self._allow_downgrade_arg and _convert_to_bool(self._allow_downgrade_arg.raw):
+            self.allow_downgrade = True
+        if self._validate_certs_arg and not _convert_to_bool(self._validate_certs_arg.raw):
+            self.disable_validate_certs = True
 
 
 @dataclass
@@ -765,9 +758,8 @@ class FileChangeDetail(AnnotationDetail):
             self.src = Location(_args=self._src_arg)
             if self._src_arg.is_mutable:
                 self.is_mutable_src = True
-        if self._unsafe_write_arg:
-            if _convert_to_bool(self._unsafe_write_arg.raw):
-                self.is_unsafe_write = True
+        if self._unsafe_write_arg and _convert_to_bool(self._unsafe_write_arg.raw):
+            self.is_unsafe_write = True
 
 
 execution_programs: list = ["sh", "bash", "zsh", "fish", "ash", "python*", "java*", "node*"]
@@ -777,7 +769,7 @@ non_execution_programs: list = ["tar", "gunzip", "unzip", "mv", "cp"]
 @dataclass
 class CommandExecDetail(AnnotationDetail):
     command: Arguments = None
-    exec_files: List[Location] = field(default_factory=list)
+    exec_files: list[Location] = field(default_factory=list)
 
     def __post_init__(self):
         self.exec_files = self.extract_exec_files()
@@ -818,9 +810,8 @@ class CommandExecDetail(AnnotationDetail):
                         continue
                     # for the case that the program name is like "python-3.6"
                     for exec_p in execution_programs:
-                        if exec_p[-1] == "*":
-                            if program.startswith(exec_p[:-1]):
-                                continue
+                        if exec_p[-1] == "*" and program.startswith(exec_p[:-1]):
+                            continue
                 if p.startswith("-"):
                     continue
                 if found_program is None:
@@ -843,10 +834,7 @@ def _convert_to_bool(a: any):
     if type(a) is bool:
         return bool(a)
     if type(a) is str:
-        if a == "true" or a == "True" or a == "yes":
-            return True
-        else:
-            return False
+        return bool(a == "true" or a == "True" or a == "yes")
     return None
 
 
@@ -911,19 +899,17 @@ class RiskAnnotation(Annotation, NetworkTransferDetail, CommandExecDetail):
             return False
         self_dict = self.__dict__
         anno_dict = anno.__dict__
-        if not equal(self_dict, anno_dict):
-            return False
-        return True
+        return equal(self_dict, anno_dict)
 
 
 @dataclass
-class FindCondition(object):
+class FindCondition:
     def check(self, anno: RiskAnnotation):
         raise NotImplementedError
 
 
 @dataclass
-class AnnotationCondition(object):
+class AnnotationCondition:
     type: RiskType = ""
     attr_conditions: list = field(default_factory=list)
 
@@ -942,35 +928,32 @@ class AttributeCondition(FindCondition):
     result: any = None
 
     def check(self, anno: RiskAnnotation):
-        if self.attr:
-            if hasattr(anno.detail, self.attr):
-                anno_value = getattr(anno.detail, self.attr)
-                if anno_value == self.result:
-                    return True
-                if self.result is None:
-                    if isinstance(anno_value, bool) and anno_value:
-                        return True
+        if self.attr and hasattr(anno.detail, self.attr):
+            anno_value = getattr(anno.detail, self.attr)
+            if anno_value == self.result:
+                return True
+            if self.result is None and isinstance(anno_value, bool) and anno_value:
+                return True
         return False
 
 
 @dataclass
 class FunctionCondition(FindCondition):
     func: Callable = None
-    args: List[any] = None
+    args: list[any] = None
     result: any = None
 
     def check(self, anno: RiskAnnotation):
-        if self.func:
-            if callable(self.func):
-                result = self.func(anno, **self.args)
-                if result == self.result:
-                    return True
+        if self.func and callable(self.func):
+            result = self.func(anno, **self.args)
+            if result == self.result:
+                return True
         return False
 
 
 @dataclass
-class RiskAnnotationList(object):
-    items: List[RiskAnnotation] = field(default_factory=list)
+class RiskAnnotationList:
+    items: list[RiskAnnotation] = field(default_factory=list)
 
     _i: int = 0
 
@@ -994,7 +977,7 @@ class RiskAnnotationList(object):
             current = filter_annotations_by_type(current, risk_type)
         return current
 
-    def find(self, risk_type: RiskType = "", condition: Union[FindCondition, List[FindCondition]] = None):
+    def find(self, risk_type: RiskType = "", condition: FindCondition | list[FindCondition] = None):
         return search_risk_annotations(self, risk_type, condition)
 
 
@@ -1019,14 +1002,15 @@ def filter_annotations_by_type(anno_list: RiskAnnotationList, risk_type: RiskTyp
     return sub_list
 
 
-def search_risk_annotations(anno_list: RiskAnnotationList, risk_type: RiskType = "", condition: Union[FindCondition, List[FindCondition]] = None):
+def search_risk_annotations(
+    anno_list: RiskAnnotationList, risk_type: RiskType = "", condition: FindCondition | list[FindCondition] = None
+):
     matched = []
     for risk_anno in anno_list:
         if not isinstance(risk_anno, RiskAnnotation):
             continue
-        if risk_type:
-            if risk_anno.risk_type != risk_type:
-                continue
+        if risk_type and risk_anno.risk_type != risk_type:
+            continue
         if condition:
             if isinstance(condition, FindCondition):
                 condition = [condition]
@@ -1044,7 +1028,7 @@ class ExecutableType:
 
 
 @dataclass
-class BecomeInfo(object):
+class BecomeInfo:
     enabled: bool = False
     become: str = ""
     user: str = ""
@@ -1056,10 +1040,8 @@ class BecomeInfo(object):
         if "become" in options:
             become = options.get("become", "")
             enabled = False
-            try:
+            with contextlib.suppress(Exception):
                 enabled = parse_bool(become)
-            except Exception:
-                pass
             user = options.get("become_user", "")
             method = options.get("become_method", "")
             flags = options.get("become_flags", "")
@@ -1119,10 +1101,7 @@ class Task(Object, Resolvable):
             return
 
         lines = []
-        if yaml_lines:
-            lines = yaml_lines.splitlines()
-        else:
-            lines = open(fullpath, "r").read().splitlines()
+        lines = yaml_lines.splitlines() if yaml_lines else Path(fullpath).read_text().splitlines()
 
         if jsonpath:
             found_yaml, line_num = identify_lines_with_jsonpath(fpath=fullpath, yaml_str=yaml_lines, jsonpath=jsonpath)
@@ -1138,23 +1117,21 @@ class Task(Object, Resolvable):
         #       - if module option is dict, at least one key is included
         candidate_line_nums = []
         for i, line in enumerate(lines):
-
             # skip lines until `previous_task_line` if provided
-            if previous_task_line > 0:
-                if i <= previous_task_line - 1:
-                    continue
+            if previous_task_line > 0 and i <= previous_task_line - 1:
+                continue
 
             if task_name:
                 if task_name in line:
                     candidate_line_nums.append(i)
-            elif "{}:".format(module_name) in line:
+            elif f"{module_name}:" in line:
                 if isinstance(module_options, str):
                     if module_options in line:
                         candidate_line_nums.append(i)
                 elif isinstance(module_options, dict):
                     option_matched = False
                     for key in module_options:
-                        if i + 1 < len(lines) and "{}:".format(key) in lines[i + 1]:
+                        if i + 1 < len(lines) and f"{key}:" in lines[i + 1]:
                             option_matched = True
                             break
                     if option_matched:
@@ -1190,10 +1167,8 @@ class Task(Object, Resolvable):
                     if key not in reconstructed_data[0]:
                         reconstructed_data[0][key] = val
 
-            try:
+            with contextlib.suppress(Exception):
                 reconstructed_yaml = ariyaml.dump(reconstructed_data)
-            except Exception:
-                pass
 
             # find best match by edit distance
             if reconstructed_yaml:
@@ -1250,7 +1225,7 @@ class Task(Object, Resolvable):
                 if p != "":
                     break
                 _indent_of_block = i + 1
-            for i in range(len(lines)):
+            for _ in range(len(lines)):
                 index = begin_line_num
                 _line = lines[index]
                 is_top_of_block = _line.replace(" ", "").startswith("-")
@@ -1269,7 +1244,7 @@ class Task(Object, Resolvable):
         index = begin_line_num + 1
         end_found = False
         end_line_num = -1
-        for i in range(len(lines)):
+        for _ in range(len(lines)):
             if index >= len(lines):
                 break
             _line = lines[index]
@@ -1459,7 +1434,7 @@ class Task(Object, Resolvable):
 
 
 @dataclass
-class MutableContent(object):
+class MutableContent:
     _yaml: str = ""
     _task_spec: Task = None
 
@@ -1521,7 +1496,7 @@ class MutableContent(object):
         self._yaml = self._task_spec.yaml()
         self._task_spec.yaml_lines = self._yaml
         if need_restore:
-            for k, v in self._task_spec.options.items():
+            for k, _ in self._task_spec.options.items():
                 if k in keys_to_be_restored:
                     self._task_spec.options[k] = original_new_value
         return self
@@ -1627,7 +1602,7 @@ class TaskCall(CallObject, RunTarget):
     type: str = "taskcall"
     # annotations are used for storing generic analysis data
     # any Annotators in "annotators" dir can add them to this object
-    annotations: List[Annotation] = field(default_factory=list)
+    annotations: list[Annotation] = field(default_factory=list)
     args: Arguments = field(default_factory=Arguments)
     variable_set: dict = field(default_factory=dict)
     variable_use: dict = field(default_factory=dict)
@@ -1642,7 +1617,11 @@ class TaskCall(CallObject, RunTarget):
         return matched
 
     def get_annotation_by_type_and_attr(self, type_str="", key="", val=None):
-        matched = [an for an in self.annotations if hasattr(an, "type") and an.type == type_str and getattr(an, key, None) == val]
+        matched = [
+            an
+            for an in self.annotations
+            if hasattr(an, "type") and an.type == type_str and getattr(an, key, None) == val
+        ]
         return matched
 
     def set_annotation(self, key: str, value: any, rule_id: str):
@@ -1650,8 +1629,8 @@ class TaskCall(CallObject, RunTarget):
         for an in self.annotations:
             if not hasattr(an, "key"):
                 continue
-            if getattr(an, "key") == key:
-                setattr(an, "value", value)
+            if an.key == key:
+                an.value = value
                 end_to_set = True
                 break
         if not end_to_set:
@@ -1663,20 +1642,16 @@ class TaskCall(CallObject, RunTarget):
         for an in self.annotations:
             if not hasattr(an, "key"):
                 continue
-            if rule_id:
-                if hasattr(an, "rule_id"):
-                    if an.rule_id != rule_id:
-                        continue
-            if getattr(an, "key") == key:
+            if rule_id and hasattr(an, "rule_id") and an.rule_id != rule_id:
+                continue
+            if an.key == key:
                 value = getattr(an, "value", __default)
                 break
         return value
 
     def has_annotation_by_condition(self, cond: AnnotationCondition):
         anno = self.get_annotation_by_condition(cond)
-        if anno:
-            return True
-        return False
+        return bool(anno)
 
     def get_annotation_by_condition(self, cond: AnnotationCondition):
         _annotations = self.annotations
@@ -1711,7 +1686,7 @@ class TaskCall(CallObject, RunTarget):
 
 
 @dataclass
-class AnsibleRunContext(object):
+class AnsibleRunContext:
     sequence: RunTargetList = field(default_factory=RunTargetList)
     root_key: str = ""
     parent: Object = None
@@ -1749,7 +1724,9 @@ class AnsibleRunContext(object):
         return self.sequence[i]
 
     @staticmethod
-    def from_tree(tree: ObjectList, parent: Object = None, last_item: bool = False, ram_client=None, scan_metadata=None):
+    def from_tree(
+        tree: ObjectList, parent: Object = None, last_item: bool = False, ram_client=None, scan_metadata=None
+    ):
         if not tree:
             return AnsibleRunContext(parent=parent, last_item=last_item)
         if len(tree.items) == 0:
@@ -1763,19 +1740,33 @@ class AnsibleRunContext(object):
             sequence_items.append(item)
         tl = RunTargetList(items=sequence_items)
         return AnsibleRunContext(
-            sequence=tl, root_key=root_key, parent=parent, last_item=last_item, ram_client=ram_client, scan_metadata=scan_metadata
+            sequence=tl,
+            root_key=root_key,
+            parent=parent,
+            last_item=last_item,
+            ram_client=ram_client,
+            scan_metadata=scan_metadata,
         )
 
     @staticmethod
     def from_targets(
-        targets: List[RunTarget], root_key: str = "", parent: Object = None, last_item: bool = False, ram_client=None, scan_metadata=None
+        targets: list[RunTarget],
+        root_key: str = "",
+        parent: Object = None,
+        last_item: bool = False,
+        ram_client=None,
+        scan_metadata=None,
     ):
-        if not root_key:
-            if len(targets) > 0:
-                root_key = targets[0].spec.key
+        if not root_key and len(targets) > 0:
+            root_key = targets[0].spec.key
         tl = RunTargetList(items=targets)
         return AnsibleRunContext(
-            sequence=tl, root_key=root_key, parent=parent, last_item=last_item, ram_client=ram_client, scan_metadata=scan_metadata
+            sequence=tl,
+            root_key=root_key,
+            parent=parent,
+            last_item=last_item,
+            ram_client=ram_client,
+            scan_metadata=scan_metadata,
         )
 
     def find(self, target: RunTarget):
@@ -2217,7 +2208,7 @@ class GalaxyArtifact(Repository):
 
 
 @dataclass
-class ModuleMetadata(object):
+class ModuleMetadata:
     fqcn: str = ""
     # arguments: list = field(default_factory=list)
     type: str = ""
@@ -2264,11 +2255,17 @@ class ModuleMetadata(object):
     def __eq__(self, mm):
         if not isinstance(mm, ModuleMetadata):
             return False
-        return self.fqcn == mm.fqcn and self.name == mm.name and self.type == mm.type and self.version == mm.version and self.hash == mm.hash
+        return (
+            self.fqcn == mm.fqcn
+            and self.name == mm.name
+            and self.type == mm.type
+            and self.version == mm.version
+            and self.hash == mm.hash
+        )
 
 
 @dataclass
-class RoleMetadata(object):
+class RoleMetadata:
     fqcn: str = ""
     type: str = ""
     name: str = ""
@@ -2302,11 +2299,17 @@ class RoleMetadata(object):
     def __eq__(self, rm):
         if not isinstance(rm, ModuleMetadata):
             return False
-        return self.fqcn == rm.fqcn and self.name == rm.name and self.type == rm.type and self.version == rm.version and self.hash == rm.hash
+        return (
+            self.fqcn == rm.fqcn
+            and self.name == rm.name
+            and self.type == rm.type
+            and self.version == rm.version
+            and self.hash == rm.hash
+        )
 
 
 @dataclass
-class TaskFileMetadata(object):
+class TaskFileMetadata:
     key: str = ""
     type: str = ""
     name: str = ""
@@ -2340,11 +2343,17 @@ class TaskFileMetadata(object):
     def __eq__(self, tfm):
         if not isinstance(tfm, TaskFileMetadata):
             return False
-        return self.key == tfm.key and self.name == tfm.name and self.type == tfm.type and self.version == tfm.version and self.hash == tfm.hash
+        return (
+            self.key == tfm.key
+            and self.name == tfm.name
+            and self.type == tfm.type
+            and self.version == tfm.version
+            and self.hash == tfm.hash
+        )
 
 
 @dataclass
-class ActionGroupMetadata(object):
+class ActionGroupMetadata:
     group_name: str = ""
     group_modules: list = field(default_factory=list)
     type: str = ""
@@ -2425,7 +2434,7 @@ class RuleTag:
 
 
 @dataclass
-class RuleMetadata(object):
+class RuleMetadata:
     rule_id: str = ""
     description: str = ""
     name: str = ""
@@ -2437,7 +2446,7 @@ class RuleMetadata(object):
 
 
 @dataclass
-class SpecMutation(object):
+class SpecMutation:
     key: str = None
     changes: list = field(default_factory=list)
     object: Object = field(default_factory=Object)
@@ -2445,7 +2454,7 @@ class SpecMutation(object):
 
 
 @dataclass
-class RuleResult(object):
+class RuleResult:
     rule: RuleMetadata = None
 
     verdict: bool = False
@@ -2501,7 +2510,9 @@ class Rule(RuleMetadata):
         raise ValueError("this is a base class method")
 
     def print(self, result: RuleResult):
-        output = f"ruleID={self.rule_id}, severity={self.severity}, description={self.description}, result={result.verdict}"
+        output = (
+            f"ruleID={self.rule_id}, severity={self.severity}, description={self.description}, result={result.verdict}"
+        )
 
         if result.file:
             output += f", file={result.file}"
@@ -2532,7 +2543,7 @@ class Rule(RuleMetadata):
 @dataclass
 class NodeResult(JSONSerializable):
     node: RunTarget = None
-    rules: List[RuleResult] = field(default_factory=list)
+    rules: list[RuleResult] = field(default_factory=list)
 
     def results(self):
         return self.rules
@@ -2545,8 +2556,8 @@ class NodeResult(JSONSerializable):
 
     def search_results(
         self,
-        rule_id: Union[str, list] = None,
-        tag: Union[str, list] = None,
+        rule_id: str | list = None,
+        tag: str | list = None,
         matched: bool = None,
         verdict: bool = None,
     ):
@@ -2583,7 +2594,7 @@ class NodeResult(JSONSerializable):
 class TargetResult(JSONSerializable):
     target_type: str = ""  # playbook, role or taskfile
     target_name: str = ""
-    nodes: List[NodeResult] = field(default_factory=list)
+    nodes: list[NodeResult] = field(default_factory=list)
 
     def applied_rules(self):
         results = []
@@ -2650,7 +2661,7 @@ class TargetResult(JSONSerializable):
 
 @dataclass
 class ARIResult(JSONSerializable):
-    targets: List[TargetResult] = field(default_factory=list)
+    targets: list[TargetResult] = field(default_factory=list)
 
     def playbooks(self):
         return self._filter("playbook")
@@ -2725,7 +2736,9 @@ class ARIResult(JSONSerializable):
         filtered_targets = [
             tr
             for tr in type_only_result.targets
-            if tr.nodes and hasattr(tr.nodes[0].node.spec, "yaml_lines") and tr.nodes[0].node.spec.yaml_lines == yaml_str
+            if tr.nodes
+            and hasattr(tr.nodes[0].node.spec, "yaml_lines")
+            and tr.nodes[0].node.spec.yaml_lines == yaml_str
         ]
         if not filtered_targets:
             return None

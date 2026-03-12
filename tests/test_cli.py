@@ -1,11 +1,9 @@
 """Tests for apme_engine.cli."""
 
-import contextlib
 import json
-import sys
 from io import StringIO
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -28,24 +26,28 @@ class TestMain:
     def test_main_scan_failure_exits_1(self):
         """When run_scan raises, main writes to stderr and exits 1."""
         stderr_io = StringIO()
-        with patch.object(cli_module, "run_scan", side_effect=FileNotFoundError("path not found")):
-            with patch("sys.stderr", stderr_io):
-                with patch("sys.argv", ["apme-scan", "scan", "."]):
-                    with pytest.raises(SystemExit) as exc_info:
-                        cli_module.main()
-                    assert exc_info.value.code == 1
+        with (
+            patch.object(cli_module, "run_scan", side_effect=FileNotFoundError("path not found")),
+            patch("sys.stderr", stderr_io),
+            patch("sys.argv", ["apme-scan", "scan", "."]),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            cli_module.main()
+        assert exc_info.value.code == 1
         assert "path not found" in stderr_io.getvalue() or "Scan failed" in stderr_io.getvalue()
 
     def test_main_empty_payload_exits_0_with_json(self):
         """When hierarchy_payload is empty and --json, print JSON and exit 0."""
         stdout_io = StringIO()
-        with patch.object(cli_module, "run_scan", return_value=_make_context({})):
-            with patch("sys.stderr", StringIO()):
-                with patch("sys.stdout", stdout_io):
-                    with patch("sys.argv", ["apme-scan", "scan", "--json", "."]):
-                        with pytest.raises(SystemExit) as exc_info:
-                            cli_module.main()
-                        assert exc_info.value.code == 0
+        with (
+            patch.object(cli_module, "run_scan", return_value=_make_context({})),
+            patch("sys.stderr", StringIO()),
+            patch("sys.stdout", stdout_io),
+            patch("sys.argv", ["apme-scan", "scan", "--json", "."]),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            cli_module.main()
+        assert exc_info.value.code == 0
         out = stdout_io.getvalue()
         data = json.loads(out)
         assert data["violations"] == []
@@ -54,21 +56,25 @@ class TestMain:
     def test_main_empty_payload_exits_0_without_json(self):
         """When hierarchy_payload is empty and no --json, exit 0 after stderr message."""
         stderr_io = StringIO()
-        with patch.object(cli_module, "run_scan", return_value=_make_context({})):
-            with patch("sys.stderr", stderr_io):
-                with patch("sys.argv", ["apme-scan", "scan", "."]):
-                    with pytest.raises(SystemExit) as exc_info:
-                        cli_module.main()
-                    assert exc_info.value.code == 0
+        with (
+            patch.object(cli_module, "run_scan", return_value=_make_context({})),
+            patch("sys.stderr", stderr_io),
+            patch("sys.argv", ["apme-scan", "scan", "."]),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            cli_module.main()
+        assert exc_info.value.code == 0
         assert "No hierarchy payload" in stderr_io.getvalue()
 
     def test_main_no_validators_json_outputs_hierarchy_only(self, sample_hierarchy_payload):
         """With --no-opa --no-native and --json, output is hierarchy_payload only."""
         stdout_io = StringIO()
-        with patch.object(cli_module, "run_scan", return_value=_make_context(sample_hierarchy_payload)):
-            with patch("sys.argv", ["apme-scan", "scan", "--no-opa", "--no-native", "--json", "."]):
-                with patch("sys.stdout", stdout_io):
-                    cli_module.main()
+        with (
+            patch.object(cli_module, "run_scan", return_value=_make_context(sample_hierarchy_payload)),
+            patch("sys.argv", ["apme-scan", "scan", "--no-opa", "--no-native", "--json", "."]),
+            patch("sys.stdout", stdout_io),
+        ):
+            cli_module.main()
         out = stdout_io.getvalue()
         data = json.loads(out)
         assert "hierarchy_payload" in data
@@ -78,21 +84,27 @@ class TestMain:
     def test_main_no_validators_no_json_prints_message(self, sample_hierarchy_payload):
         """With --no-opa --no-native and no --json, print message about validators skipped."""
         stdout_io = StringIO()
-        with patch.object(cli_module, "run_scan", return_value=_make_context(sample_hierarchy_payload)):
-            with patch("sys.argv", ["apme-scan", "scan", "--no-opa", "--no-native", "."]):
-                with patch("sys.stdout", stdout_io):
-                    cli_module.main()
+        with (
+            patch.object(cli_module, "run_scan", return_value=_make_context(sample_hierarchy_payload)),
+            patch("sys.argv", ["apme-scan", "scan", "--no-opa", "--no-native", "."]),
+            patch("sys.stdout", stdout_io),
+        ):
+            cli_module.main()
         assert "validators skipped" in stdout_io.getvalue().lower() or "hierarchy" in stdout_io.getvalue().lower()
 
-    def test_main_with_opa_json_outputs_violations_and_count(self, sample_hierarchy_payload, opa_eval_result_with_violations):
+    def test_main_with_opa_json_outputs_violations_and_count(
+        self, sample_hierarchy_payload, opa_eval_result_with_violations
+    ):
         """With OPA and --json, output includes violations and count."""
         stdout_io = StringIO()
         violations = opa_eval_result_with_violations["result"][0]["expressions"][0]["value"]
-        with patch.object(cli_module, "run_scan", return_value=_make_context(sample_hierarchy_payload)):
-            with patch("apme_engine.validators.opa.run_opa", return_value=violations):
-                with patch("sys.argv", ["apme-scan", "scan", "--no-native", "--json", "."]):
-                    with patch("sys.stdout", stdout_io):
-                        cli_module.main()
+        with (
+            patch.object(cli_module, "run_scan", return_value=_make_context(sample_hierarchy_payload)),
+            patch("apme_engine.validators.opa.run_opa", return_value=violations),
+            patch("sys.argv", ["apme-scan", "scan", "--no-native", "--json", "."]),
+            patch("sys.stdout", stdout_io),
+        ):
+            cli_module.main()
         out = stdout_io.getvalue()
         data = json.loads(out)
         assert "violations" in data
@@ -103,11 +115,13 @@ class TestMain:
         """With OPA and no --json, print Scan line and violation lines."""
         stdout_io = StringIO()
         violations = [{"rule_id": "r1", "level": "warning", "message": "msg", "file": "f.yml", "line": 1, "path": "p"}]
-        with patch.object(cli_module, "run_scan", return_value=_make_context(sample_hierarchy_payload)):
-            with patch("apme_engine.validators.opa.run_opa", return_value=violations):
-                with patch("sys.argv", ["apme-scan", "scan", "--no-native", "."]):
-                    with patch("sys.stdout", stdout_io):
-                        cli_module.main()
+        with (
+            patch.object(cli_module, "run_scan", return_value=_make_context(sample_hierarchy_payload)),
+            patch("apme_engine.validators.opa.run_opa", return_value=violations),
+            patch("sys.argv", ["apme-scan", "scan", "--no-native", "."]),
+            patch("sys.stdout", stdout_io),
+        ):
+            cli_module.main()
         out = stdout_io.getvalue()
         assert "Violations: 1" in out or "Violations:" in out
         assert "r1" in out
@@ -117,21 +131,25 @@ class TestMain:
     def test_main_with_opa_no_violations_prints_no_violations(self, sample_hierarchy_payload):
         """With OPA and no violations, print 'No violations.'"""
         stdout_io = StringIO()
-        with patch.object(cli_module, "run_scan", return_value=_make_context(sample_hierarchy_payload)):
-            with patch("apme_engine.validators.opa.run_opa", return_value=[]):
-                with patch("sys.argv", ["apme-scan", "scan", "--no-native", "."]):
-                    with patch("sys.stdout", stdout_io):
-                        cli_module.main()
+        with (
+            patch.object(cli_module, "run_scan", return_value=_make_context(sample_hierarchy_payload)),
+            patch("apme_engine.validators.opa.run_opa", return_value=[]),
+            patch("sys.argv", ["apme-scan", "scan", "--no-native", "."]),
+            patch("sys.stdout", stdout_io),
+        ):
+            cli_module.main()
         assert "No violations" in stdout_io.getvalue()
 
     def test_main_uses_custom_opa_bundle_when_provided(self, sample_hierarchy_payload, tmp_path):
         """When --opa-bundle is passed, OpaValidator receives that path."""
         bundle = tmp_path / "custom_bundle"
         bundle.mkdir()
-        with patch.object(cli_module, "run_scan", return_value=_make_context(sample_hierarchy_payload)):
-            with patch("apme_engine.validators.opa.run_opa", return_value=[]) as mock_opa:
-                with patch("sys.argv", ["apme-scan", "scan", "--no-native", "--opa-bundle", str(bundle), "."]):
-                    cli_module.main()
+        with (
+            patch.object(cli_module, "run_scan", return_value=_make_context(sample_hierarchy_payload)),
+            patch("apme_engine.validators.opa.run_opa", return_value=[]) as mock_opa,
+            patch("sys.argv", ["apme-scan", "scan", "--no-native", "--opa-bundle", str(bundle), "."]),
+        ):
+            cli_module.main()
         mock_opa.assert_called_once()
         assert mock_opa.call_args[0][1] == str(bundle)
 
@@ -141,19 +159,25 @@ class TestRunScan:
 
     def test_run_scan_nonexistent_path_raises(self, repo_root):
         """run_scan raises FileNotFoundError when target does not exist."""
-        with patch.object(cli_module, "run_scan", side_effect=FileNotFoundError("Target path does not exist: /nonexistent")):
-            with pytest.raises(SystemExit):
-                with patch("sys.argv", ["apme-scan", "scan", "/nonexistent/path/xyz"]):
-                    cli_module.main()
+        with (
+            patch.object(
+                cli_module, "run_scan", side_effect=FileNotFoundError("Target path does not exist: /nonexistent")
+            ),
+            pytest.raises(SystemExit),
+            patch("sys.argv", ["apme-scan", "scan", "/nonexistent/path/xyz"]),
+        ):
+            cli_module.main()
 
     def test_run_scan_playbook_file_called_with_correct_args(self, repo_root, tmp_path, sample_hierarchy_payload):
         """When target is a file, run_scan is called with playbook path and repo_root (from CLI's __file__)."""
         playbook = tmp_path / "play.yml"
         playbook.write_text("---\n- hosts: localhost\n  tasks: []\n")
-        with patch.object(cli_module, "run_scan", return_value=_make_context(sample_hierarchy_payload)) as mock_run_scan:
-            with patch("apme_engine.validators.opa.run_opa", return_value=[]):
-                with patch("sys.argv", ["apme-scan", "scan", "--no-native", str(playbook)]):
-                    cli_module.main()
+        with (
+            patch.object(cli_module, "run_scan", return_value=_make_context(sample_hierarchy_payload)) as mock_run_scan,
+            patch("apme_engine.validators.opa.run_opa", return_value=[]),
+            patch("sys.argv", ["apme-scan", "scan", "--no-native", str(playbook)]),
+        ):
+            cli_module.main()
         mock_run_scan.assert_called_once()
         call_args = mock_run_scan.call_args
         assert call_args[0][0] == str(playbook)
@@ -165,6 +189,7 @@ class TestRunScan:
     def test_run_scan_returns_context_with_payload(self, repo_root, tmp_path, sample_hierarchy_payload):
         """run_scan returns ScanContext with hierarchy_payload."""
         from apme_engine.runner import run_scan
+
         playbook = tmp_path / "play.yml"
         playbook.write_text("---\n- hosts: localhost\n  tasks: []\n")
         with patch("apme_engine.runner.ARIScanner") as MockScanner:

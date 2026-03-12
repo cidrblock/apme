@@ -1,7 +1,7 @@
 import argparse
 
-from ...scanner import config
 from ...risk_assessment_model import RAMClient
+from ...scanner import config
 
 
 class RAMReleaseCLI:
@@ -22,7 +22,10 @@ class RAMReleaseCLI:
             raise ValueError('RAMReleaseCLI cannot be executed without "release" action')
 
         if not args.outfile:
-            raise ValueError(' "release" action cannot be executed without `--outfile` option. Please set "tar.gz" file name to export KB files.')
+            raise ValueError(
+                '"release" action cannot be executed without `--outfile` option. '
+                'Please set "tar.gz" file name to export KB files.'
+            )
 
         ram_client = RAMClient(root_dir=config.data_dir)
         ram_client.release(args.outfile)

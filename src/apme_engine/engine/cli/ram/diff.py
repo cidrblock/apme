@@ -1,7 +1,7 @@
 import argparse
 
-from ...scanner import config
 from ...risk_assessment_model import RAMClient
+from ...scanner import config
 from ...utils import show_diffs
 
 

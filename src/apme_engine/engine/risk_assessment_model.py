@@ -1,36 +1,36 @@
-import os
 import json
-import jsonpickle
-from dataclasses import dataclass, field
+import os
 import tarfile
+from dataclasses import dataclass, field
 
+import jsonpickle
+
+from .findings import Findings
+from .keyutil import get_obj_info_by_key, make_imported_taskfile_key
+from .model_loader import load_builtin_modules
 from .models import (
-    LoadType,
-    ObjectList,
-    ExecutableType,
+    ActionGroupMetadata,
     Collection,
+    ExecutableType,
+    LoadType,
     Module,
     ModuleMetadata,
+    ObjectList,
     Role,
     RoleMetadata,
     TaskFile,
     TaskFileMetadata,
-    ActionGroupMetadata,
-)
-from .findings import Findings
-from .utils import (
-    escape_url,
-    version_to_num,
-    diff_files_data,
-    is_test_object,
-    lock_file,
-    unlock_file,
-    remove_lock_file,
 )
 from .safe_glob import safe_glob
-from .keyutil import get_obj_info_by_key, make_imported_taskfile_key
-from .model_loader import load_builtin_modules
-
+from .utils import (
+    diff_files_data,
+    escape_url,
+    is_test_object,
+    lock_file,
+    remove_lock_file,
+    unlock_file,
+    version_to_num,
+)
 
 module_index_name = "module_index.json"
 role_index_name = "role_index.json"
@@ -39,7 +39,7 @@ action_group_index_name = "action_group_index.json"
 
 
 @dataclass
-class RAMClient(object):
+class RAMClient:
     root_dir: str = ""
 
     findings_json_list_cache: list = field(default_factory=list)
@@ -66,22 +66,22 @@ class RAMClient(object):
     def __post_init__(self):
         module_index_path = os.path.join(self.root_dir, "indices", module_index_name)
         if os.path.exists(module_index_path):
-            with open(module_index_path, "r") as file:
+            with open(module_index_path) as file:
                 self.module_index = json.load(file)
 
         role_index_path = os.path.join(self.root_dir, "indices", role_index_name)
         if os.path.exists(role_index_path):
-            with open(role_index_path, "r") as file:
+            with open(role_index_path) as file:
                 self.role_index = json.load(file)
 
         taskfile_index_path = os.path.join(self.root_dir, "indices", taskfile_index_name)
         if os.path.exists(taskfile_index_path):
-            with open(taskfile_index_path, "r") as file:
+            with open(taskfile_index_path) as file:
                 self.taskfile_index = json.load(file)
 
         action_group_index_path = os.path.join(self.root_dir, "indices", action_group_index_name)
         if os.path.exists(action_group_index_path):
-            with open(action_group_index_path, "r") as file:
+            with open(action_group_index_path) as file:
                 self.action_group_index = json.load(file)
 
     def clear_old_cache(self):
@@ -386,7 +386,9 @@ class RAMClient(object):
         }
         return m_wrapper
 
-    def search_module(self, name, exact_match=False, max_match=-1, collection_name="", collection_version="", used_in=""):
+    def search_module(
+        self, name, exact_match=False, max_match=-1, collection_name="", collection_version="", used_in=""
+    ):
         if max_match == 0:
             return []
         args_str = json.dumps([name, exact_match, max_match, collection_name, collection_version])
@@ -422,10 +424,7 @@ class RAMClient(object):
             # if any candidates don't match with FQCN, use the first index
             if not found_index:
                 non_deprecated_cands = [idx for idx in self.module_index[short_name] if not idx["deprecated"]]
-                if non_deprecated_cands:
-                    found_index = non_deprecated_cands[0]
-                else:
-                    found_index = self.module_index[short_name][0]
+                found_index = non_deprecated_cands[0] if non_deprecated_cands else self.module_index[short_name][0]
 
         modules_json_list = []
         if from_indices:
@@ -433,7 +432,9 @@ class RAMClient(object):
             _name = found_index.get("name", "")
             _version = found_index.get("version", "")
             _hash = found_index.get("hash", "")
-            findings_path = os.path.join(self.root_dir, _type + "s", "findings", _name, _version, _hash, "findings.json")
+            findings_path = os.path.join(
+                self.root_dir, _type + "s", "findings", _name, _version, _hash, "findings.json"
+            )
             if os.path.exists(findings_path):
                 modules_json_list.append(findings_path)
             search_name = found_index.get("fqcn", "")
@@ -480,10 +481,9 @@ class RAMClient(object):
                             "used_in": used_in,
                         }
                     )
-                if max_match > 0:
-                    if len(matched_modules) >= max_match:
-                        search_end = True
-                        break
+                if max_match > 0 and len(matched_modules) >= max_match:
+                    search_end = True
+                    break
             if search_end:
                 break
         self.module_search_cache[args_str] = matched_modules
@@ -508,7 +508,9 @@ class RAMClient(object):
             _name = found_index.get("name", "")
             _version = found_index.get("version", "")
             _hash = found_index.get("hash", "")
-            findings_path = os.path.join(self.root_dir, _type + "s", "findings", _name, _version, _hash, "findings.json")
+            findings_path = os.path.join(
+                self.root_dir, _type + "s", "findings", _name, _version, _hash, "findings.json"
+            )
             if os.path.exists(findings_path):
                 roles_json_list.append(findings_path)
         else:
@@ -572,10 +574,9 @@ class RAMClient(object):
                             "used_in": used_in,
                         }
                     )
-                if max_match > 0:
-                    if len(matched_roles) >= max_match:
-                        search_end = True
-                        break
+                if max_match > 0 and len(matched_roles) >= max_match:
+                    search_end = True
+                    break
             if search_end:
                 break
         self.role_search_cache[args_str] = matched_roles
@@ -613,10 +614,7 @@ class RAMClient(object):
         found_index = None
         found_key = ""
         taskfile_key_candidates = []
-        if is_key:
-            taskfile_key_candidates = [name]
-        else:
-            taskfile_key_candidates = self.make_taskfile_key_candidates(name, from_path, from_key)
+        taskfile_key_candidates = [name] if is_key else self.make_taskfile_key_candidates(name, from_path, from_key)
         for taskfile_key in taskfile_key_candidates:
             if taskfile_key in self.taskfile_index and self.taskfile_index[taskfile_key]:
                 from_indices = True
@@ -632,7 +630,9 @@ class RAMClient(object):
             _version = found_index.get("version", "")
             _hash = found_index.get("hash", "")
             content_info = found_index
-            findings_path = os.path.join(self.root_dir, _type + "s", "findings", _name, _version, _hash, "findings.json")
+            findings_path = os.path.join(
+                self.root_dir, _type + "s", "findings", _name, _version, _hash, "findings.json"
+            )
             if os.path.exists(findings_path):
                 taskfiles_json_list.append(findings_path)
         else:
@@ -664,7 +664,9 @@ class RAMClient(object):
                     parts = findings_json.split("/")
                     offspring_objects = []
                     for task_key in tf.tasks:
-                        _tmp_offspring_objects = self.search_task(task_key, is_key=True, content_info=content_info, used_in=used_in)
+                        _tmp_offspring_objects = self.search_task(
+                            task_key, is_key=True, content_info=content_info, used_in=used_in
+                        )
                         if len(_tmp_offspring_objects) > 0:
                             t = _tmp_offspring_objects[0]
                             if t:
@@ -695,10 +697,9 @@ class RAMClient(object):
                             "used_in": used_in,
                         }
                     )
-                if max_match > 0:
-                    if len(matched_taskfiles) >= max_match:
-                        search_end = True
-                        break
+                if max_match > 0 and len(matched_taskfiles) >= max_match:
+                    search_end = True
+                    break
             if search_end:
                 break
         return matched_taskfiles
@@ -759,7 +760,9 @@ class RAMClient(object):
                     elif t.executable_type == ExecutableType.ROLE_TYPE:
                         _tmp_offspring_objects = self.search_role(t.executable, used_in=t.defined_in)
                     elif t.executable_type == ExecutableType.TASKFILE_TYPE:
-                        _tmp_offspring_objects = self.search_taskfile(t.executable, from_path=t.defined_in, from_key=t.key, used_in=t.defined_in)
+                        _tmp_offspring_objects = self.search_taskfile(
+                            t.executable, from_path=t.defined_in, from_key=t.key, used_in=t.defined_in
+                        )
                     if len(_tmp_offspring_objects) > 0:
                         child = _tmp_offspring_objects[0]
                         if child:
@@ -790,10 +793,9 @@ class RAMClient(object):
                             "used_in": used_in,
                         }
                     )
-                if max_match > 0:
-                    if len(matched_tasks) >= max_match:
-                        search_end = True
-                        break
+                if max_match > 0 and len(matched_tasks) >= max_match:
+                    search_end = True
+                    break
             if search_end:
                 break
         self.task_search_cache[args_str] = matched_tasks
@@ -817,10 +819,14 @@ class RAMClient(object):
         parent_name = obj_info.get("parent_name", "")
         type_str = obj_type + "s"
 
-        search_patterns = os.path.join(self.root_dir, "collections", "findings", parent_name, "*", "*", "root", f"{type_str}.json")
+        search_patterns = os.path.join(
+            self.root_dir, "collections", "findings", parent_name, "*", "*", "root", f"{type_str}.json"
+        )
         obj_json_list_coll = safe_glob(search_patterns)
         obj_json_list_coll = sort_by_version(obj_json_list_coll)
-        search_patterns = os.path.join(self.root_dir, "roles", "findings", parent_name, "*", "*", "root", f"{type_str}.json")
+        search_patterns = os.path.join(
+            self.root_dir, "roles", "findings", parent_name, "*", "*", "root", f"{type_str}.json"
+        )
         obj_json_list_role = safe_glob(search_patterns)
         obj_json_list_role = sort_by_version(obj_json_list_role)
         obj_json_list = obj_json_list_coll + obj_json_list_role
@@ -891,12 +897,10 @@ class RAMClient(object):
             _version = parts[-3]
             if _name != target_name:
                 continue
-            if target_version and target_version != "*":
-                if _version != target_name:
-                    continue
-            if target_type and target_type != "*":
-                if _type != target_type:
-                    continue
+            if target_version and target_version != "*" and _version != target_name:
+                continue
+            if target_type and target_type != "*" and _type != target_type:
+                continue
             found_path_list.append(findings_path)
 
         latest_findings_path = ""
@@ -953,7 +957,7 @@ class RAMClient(object):
         path = os.path.join(self.root_dir, "indices", filename)
         index_objects = {}
         if os.path.exists(path):
-            with open(path, "r") as file:
+            with open(path) as file:
                 index_objects = json.load(file)
         return index_objects
 

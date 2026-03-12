@@ -1,15 +1,15 @@
-import os
-import yaml
 import json
+import os
 import subprocess
 from pathlib import Path
 
-from . import logger
-from .safe_glob import safe_glob
+import yaml
 
+from . import logger
 from .models import (
     LoadType,
 )
+from .safe_glob import safe_glob
 
 collection_manifest_json = "MANIFEST.json"
 role_meta_main_yml = "meta/main.yml"
@@ -101,7 +101,7 @@ def search_ansible_dir(dependencies: dict, ansible_dir: str):
                 if d_name.startswith(f"{coll_name}-") and d_name.endswith(".info"):
                     galaxy_yml_path = os.path.join(collection_dir, d_name, GALAXY_yml)
                     try:
-                        with open(galaxy_yml_path, "r") as galaxy_yml_file:
+                        with open(galaxy_yml_path) as galaxy_yml_file:
                             galaxy_data = yaml.safe_load(galaxy_yml_file)
                     except Exception:
                         pass
@@ -131,7 +131,7 @@ def search_ansible_dir(dependencies: dict, ansible_dir: str):
 def find_role_dependency(target):
     requirements = {}
     if not os.path.exists(target):
-        raise ValueError("Invalid target dir: {}".format(target))
+        raise ValueError(f"Invalid target dir: {target}")
     role_meta_files = safe_glob(
         [
             os.path.join(target, "**", role_meta_main_yml),
@@ -145,11 +145,11 @@ def find_role_dependency(target):
         for rf in role_meta_files:
             if os.path.exists(rf):
                 main_yaml = rf
-                with open(rf, "r") as file:
+                with open(rf) as file:
                     try:
                         metadata = yaml.safe_load(file)
                     except Exception as e:
-                        logger.debug("failed to load this yaml file to read metadata; {}".format(e.args[0]))
+                        logger.debug(f"failed to load this yaml file to read metadata; {e.args[0]}")
 
                     if metadata is not None and isinstance(metadata, dict):
                         requirements["roles"] = metadata.get("dependencies", [])
@@ -192,14 +192,14 @@ def find_collection_dependency(target):
     # collection dir installed by ansible-galaxy command
     manifest_json_files = safe_glob(os.path.join(target, "**", collection_manifest_json), recursive=True)
     manifest_json_files = [fpath for fpath in manifest_json_files if github_workflows_dir not in fpath]
-    logger.debug("found meta files {}".format(manifest_json_files))
+    logger.debug(f"found meta files {manifest_json_files}")
     manifest_json = ""
     if len(manifest_json_files) > 0:
         for cmf in manifest_json_files:
             if os.path.exists(cmf):
                 manifest_json = cmf
                 metadata = {}
-                with open(cmf, "r") as file:
+                with open(cmf) as file:
                     metadata = json.load(file)
                     dependencies = metadata.get("collection_info", {}).get("dependencies", [])
                     requirements["collections"] = format_dependency_info(dependencies)
@@ -220,10 +220,10 @@ def find_project_dependency(target):
         elif os.path.exists(role_req1) or os.path.exists(role_req2):
             return find_role_dependency(target)
         # local dir
-        logger.debug("load requirements from dir {}".format(target))
+        logger.debug(f"load requirements from dir {target}")
         return load_requirements(target)
     else:
-        raise ValueError("Invalid target dir: {}".format(target))
+        raise ValueError(f"Invalid target dir: {target}")
 
 
 def load_requirements(path):
@@ -233,11 +233,11 @@ def load_requirements(path):
     requirements_yml_path = os.path.join(path, requirements_yml)
     if os.path.exists(requirements_yml_path):
         yaml_path = requirements_yml_path
-        with open(requirements_yml_path, "r") as file:
+        with open(requirements_yml_path) as file:
             try:
                 requirements = yaml.safe_load(file)
             except Exception as e:
-                logger.debug("failed to load requirements.yml; {}".format(e.args[0]))
+                logger.debug(f"failed to load requirements.yml; {e.args[0]}")
     else:
         requirements, yaml_path = load_dependency_from_galaxy(path)
 
@@ -269,7 +269,7 @@ def is_galaxy_yml(path):
 
     metadata = None
     try:
-        with open(path, "r") as file:
+        with open(path) as file:
             metadata = yaml.safe_load(file)
     except Exception:
         pass
@@ -277,10 +277,7 @@ def is_galaxy_yml(path):
     if not isinstance(metadata, dict):
         return False
 
-    if "name" in metadata and "namespace" in metadata:
-        return True
-
-    return False
+    return bool("name" in metadata and "namespace" in metadata)
 
 
 def load_dependency_from_galaxy(path):
@@ -289,13 +286,13 @@ def load_dependency_from_galaxy(path):
     galaxy_yml_files = safe_glob(os.path.join(path, "**", galaxy_yml), recursive=True)
     galaxy_yml_files.extend(safe_glob(os.path.join(path, "**", GALAXY_yml), recursive=True))
     galaxy_yml_files = [fpath for fpath in galaxy_yml_files if github_workflows_dir not in fpath]
-    logger.debug("found meta files {}".format(galaxy_yml_files))
+    logger.debug(f"found meta files {galaxy_yml_files}")
     if len(galaxy_yml_files) > 0:
         for g in galaxy_yml_files:
             if is_galaxy_yml(g):
                 yaml_path = g
                 metadata = {}
-                with open(g, "r") as file:
+                with open(g) as file:
                     metadata = yaml.safe_load(file)
                     dependencies = metadata.get("dependencies", {})
                     if dependencies:
@@ -342,7 +339,7 @@ def load_existing_dependency_dir(dependency_dir):
             if dir_name.startswith(collection_name) and dir_name.endswith(".info"):
                 galaxy_yml_path = os.path.join(collection_base_path, dir_name, galaxy_yml)
                 try:
-                    with open(galaxy_yml_path, "r") as galaxy_yml_file:
+                    with open(galaxy_yml_path) as galaxy_yml_file:
                         galaxy_data = yaml.safe_load(galaxy_yml_file)
                 except Exception:
                     pass
@@ -356,15 +353,14 @@ def load_existing_dependency_dir(dependency_dir):
 
 def install_github_target(target, output_dir):
     proc = subprocess.run(
-        "git clone {} {}".format(target, output_dir),
+        f"git clone {target} {output_dir}",
         shell=True,
         stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
     )
     install_msg = proc.stdout
-    logger.debug("STDOUT: {}".format(install_msg))
+    logger.debug(f"STDOUT: {install_msg}")
     return proc.stdout
 
 

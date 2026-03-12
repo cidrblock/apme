@@ -2,12 +2,16 @@ from dataclasses import dataclass
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
-    RunTargetType,
-    ExecutableType as ActionType,
     Rule,
-    Severity,
-    RuleTag as Tag,
     RuleResult,
+    RunTargetType,
+    Severity,
+)
+from apme_engine.engine.models import (
+    ExecutableType as ActionType,
+)
+from apme_engine.engine.models import (
+    RuleTag as Tag,
 )
 
 
@@ -43,7 +47,10 @@ class UnnecessarySetFactRule(Rule):
                     detail["impure_args"] = current.append(v)
 
         verdict = (
-            task.action_type == ActionType.MODULE_TYPE and task.resolved_action and task.resolved_action == "ansible.builtin.set_fact" and is_impure
+            task.action_type == ActionType.MODULE_TYPE
+            and task.resolved_action
+            and task.resolved_action == "ansible.builtin.set_fact"
+            and is_impure
         )
 
         return RuleResult(verdict=verdict, detail=detail, file=task.file_info(), rule=self.get_metadata())

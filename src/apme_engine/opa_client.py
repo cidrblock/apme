@@ -23,11 +23,24 @@ def _run_opa_podman(
     """
     bundle_abs = bundle_path.resolve()
     cmd = [
-        "podman", "run", "--rm", "-i",
-        "--userns=keep-id", "-u", "root",
-        "-v", f"{bundle_abs}:/bundle:ro,z",
+        "podman",
+        "run",
+        "--rm",
+        "-i",
+        "--userns=keep-id",
+        "-u",
+        "root",
+        "-v",
+        f"{bundle_abs}:/bundle:ro,z",
         OPA_IMAGE,
-        "eval", "-i", "-", "-d", "/bundle", entrypoint, "--format", "json",
+        "eval",
+        "-i",
+        "-",
+        "-d",
+        "/bundle",
+        entrypoint,
+        "--format",
+        "json",
     ]
     return subprocess.run(
         cmd,
@@ -58,11 +71,18 @@ def _run_opa_test_podman(bundle_path: Path, timeout: int = 120) -> subprocess.Co
     """Run `opa test . -v` inside Podman with bundle mounted. Same volume/user flags as eval."""
     bundle_abs = bundle_path.resolve()
     cmd = [
-        "podman", "run", "--rm",
-        "--userns=keep-id", "-u", "root",
-        "-v", f"{bundle_abs}:/bundle:ro,z",
+        "podman",
+        "run",
+        "--rm",
+        "--userns=keep-id",
+        "-u",
+        "root",
+        "-v",
+        f"{bundle_abs}:/bundle:ro,z",
         OPA_IMAGE,
-        "test", "/bundle", "-v",
+        "test",
+        "/bundle",
+        "-v",
     ]
     return subprocess.run(
         cmd,

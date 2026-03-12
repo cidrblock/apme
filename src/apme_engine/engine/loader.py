@@ -1,7 +1,9 @@
+import contextlib
+import json
 import os
 import pathlib
-import json
 from importlib.metadata import version as _pkg_version
+
 from .models import LoadType
 
 collection_manifest_json = "MANIFEST.json"
@@ -20,7 +22,9 @@ def remove_subdirectories(dir_list):
     return new_dir_list
 
 
-def trim_suffix(txt, suffix_patterns=[]):
+def trim_suffix(txt, suffix_patterns=None):
+    if suffix_patterns is None:
+        suffix_patterns = []
     if isinstance(suffix_patterns, str):
         suffix_patterns = [suffix_patterns]
     if not isinstance(suffix_patterns, list):
@@ -33,20 +37,16 @@ def trim_suffix(txt, suffix_patterns=[]):
 
 def get_loader_version():
     version = ""
-    try:
+    with contextlib.suppress(Exception):
         version = _pkg_version("apme-engine")
-    except Exception:
-        pass
     if version != "":
         return version
     # try to get version from commit ID in source code repository
-    try:
+    with contextlib.suppress(Exception):
         # TODO: consider how to get git version if it is needed
         _ = pathlib.Path(__file__).parent.resolve()
         # repo = pygit2.Repository(script_dir)
         # version = repo.head.target
-    except Exception:
-        pass
     return version
 
 
@@ -58,11 +58,11 @@ def get_target_name(target_type, target_path):
     elif target_type == LoadType.COLLECTION:
         meta_file = os.path.join(target_path, collection_manifest_json)
         metadata = {}
-        with open(meta_file, "r") as file:
+        with open(meta_file) as file:
             metadata = json.load(file)
         collection_namespace = metadata.get("collection_info", {}).get("namespace", "")
         collection_name = metadata.get("collection_info", {}).get("name", "")
-        target_name = "{}.{}".format(collection_namespace, collection_name)
+        target_name = f"{collection_namespace}.{collection_name}"
     elif target_type == LoadType.ROLE:
         # any better approach?
         target_name = target_path.split("/")[-1]

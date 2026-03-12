@@ -3,7 +3,7 @@
 import os
 from pathlib import Path
 
-from apme.v1 import primary_pb2, common_pb2
+from apme.v1 import common_pb2, primary_pb2
 
 # Skip these dirs when walking (same kind of ignores as many linters)
 SKIP_DIRS = {".git", "__pycache__", ".venv", "venv", "node_modules", ".tox", "htmlcov"}
@@ -13,8 +13,21 @@ MAX_FILE_SIZE = 2 * 1024 * 1024  # 2 MiB
 
 # Extensions we care about for Ansible (include these; exclude or skip binary)
 TEXT_EXTENSIONS = {
-    ".yml", ".yaml", ".json", ".j2", ".jinja2", ".md", ".py", ".sh", ".cfg", ".ini",
-    ".toml", ".yml.sample", ".yaml.sample", ".tf", ".tfvars",
+    ".yml",
+    ".yaml",
+    ".json",
+    ".j2",
+    ".jinja2",
+    ".md",
+    ".py",
+    ".sh",
+    ".cfg",
+    ".ini",
+    ".toml",
+    ".yml.sample",
+    ".yaml.sample",
+    ".tf",
+    ".tfvars",
 }
 
 
@@ -40,9 +53,7 @@ def _should_include(path: Path, root: Path) -> bool:
     if path.name in ("playbook", "main", "meta", "handlers", "tasks", "vars", "defaults"):
         return True
     # Include small text files under roles/ and playbooks/
-    if "roles" in parts or "playbooks" in parts or suffix in (".yml", ".yaml", ".j2"):
-        return True
-    return False
+    return bool("roles" in parts or "playbooks" in parts or suffix in (".yml", ".yaml", ".j2"))
 
 
 def build_scan_request(
@@ -87,9 +98,7 @@ def build_scan_request(
         # Skip if looks binary
         if b"\x00" in content[:8192]:
             continue
-        files.append(
-            common_pb2.File(path=str(rel), content=content)
-        )
+        files.append(common_pb2.File(path=str(rel), content=content))
 
     options = primary_pb2.ScanOptions()
     if ansible_core_version:

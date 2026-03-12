@@ -1,8 +1,8 @@
 """Run the integrated scan engine and return a ScanContext."""
 
 import os
-import time
 import tempfile
+import time
 from pathlib import Path
 
 from apme_engine.engine.scanner import ARIScanner
@@ -26,7 +26,7 @@ def run_scan_playbook_yaml(
     Returns:
         ScanContext with hierarchy_payload and optionally scandata.
     """
-    root_dir = project_root or os.path.expanduser("~/.apme-data")
+    project_root or os.path.expanduser("~/.apme-data")
     with tempfile.TemporaryDirectory(prefix="apme_rule_doc_") as tmpdir:
         playbook_path = os.path.join(tmpdir, "playbook.yml")
         with open(playbook_path, "w") as f:
@@ -84,7 +84,12 @@ def run_scan(
     diag = _extract_engine_diagnostics(scandata, engine_total_ms)
 
     if not scandata or not getattr(scandata, "hierarchy_payload", None):
-        return ScanContext(hierarchy_payload={}, scandata=scandata if include_scandata else None, root_dir=root_dir, engine_diagnostics=diag)
+        return ScanContext(
+            hierarchy_payload={},
+            scandata=scandata if include_scandata else None,
+            root_dir=root_dir,
+            engine_diagnostics=diag,
+        )
     return ScanContext(
         hierarchy_payload=scandata.hierarchy_payload,
         scandata=scandata if include_scandata else None,

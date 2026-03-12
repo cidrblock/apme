@@ -34,8 +34,7 @@ def _search_node(node: Any, target_line: int) -> CommentedMap | None:
     if hasattr(node, "lc") and node.lc.line == target_line:
         return node
 
-    for task_list_key in ("tasks", "pre_tasks", "post_tasks", "handlers",
-                          "block", "rescue", "always"):
+    for task_list_key in ("tasks", "pre_tasks", "post_tasks", "handlers", "block", "rescue", "always"):
         tasks = node.get(task_list_key)
         if isinstance(tasks, CommentedSeq):
             for task in tasks:
@@ -46,23 +45,56 @@ def _search_node(node: Any, target_line: int) -> CommentedMap | None:
     return None
 
 
-_TASK_META_KEYS = frozenset({
-    "name", "when", "changed_when", "failed_when",
-    "register", "notify", "listen",
-    "become", "become_user", "become_method", "become_flags",
-    "delegate_to", "run_once", "connection",
-    "ignore_errors", "ignore_unreachable",
-    "no_log", "tags", "environment", "vars", "args",
-    "loop", "loop_control",
-    "with_items", "with_dict", "with_fileglob", "with_subelements",
-    "with_sequence", "with_nested", "with_first_found",
-    "block", "rescue", "always",
-    "any_errors_fatal", "max_fail_percentage",
-    "check_mode", "diff", "throttle", "timeout",
-    "retries", "delay", "until",
-    "debugger", "module_defaults", "collections",
-    "local_action",
-})
+_TASK_META_KEYS = frozenset(
+    {
+        "name",
+        "when",
+        "changed_when",
+        "failed_when",
+        "register",
+        "notify",
+        "listen",
+        "become",
+        "become_user",
+        "become_method",
+        "become_flags",
+        "delegate_to",
+        "run_once",
+        "connection",
+        "ignore_errors",
+        "ignore_unreachable",
+        "no_log",
+        "tags",
+        "environment",
+        "vars",
+        "args",
+        "loop",
+        "loop_control",
+        "with_items",
+        "with_dict",
+        "with_fileglob",
+        "with_subelements",
+        "with_sequence",
+        "with_nested",
+        "with_first_found",
+        "block",
+        "rescue",
+        "always",
+        "any_errors_fatal",
+        "max_fail_percentage",
+        "check_mode",
+        "diff",
+        "throttle",
+        "timeout",
+        "retries",
+        "delay",
+        "until",
+        "debugger",
+        "module_defaults",
+        "collections",
+        "local_action",
+    }
+)
 
 
 def get_module_key(task: CommentedMap) -> str | None:

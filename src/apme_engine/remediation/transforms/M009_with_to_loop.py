@@ -6,10 +6,13 @@ from apme_engine.engine.yaml_utils import FormattedYAML
 from apme_engine.remediation.registry import TransformResult
 from apme_engine.remediation.transforms._helpers import find_task_at_line
 
-
-_WITH_SIMPLE = frozenset({
-    "with_items", "with_list", "with_flattened",
-})
+_WITH_SIMPLE = frozenset(
+    {
+        "with_items",
+        "with_list",
+        "with_flattened",
+    }
+)
 
 
 def fix_with_to_loop(content: str, violation: dict) -> TransformResult:

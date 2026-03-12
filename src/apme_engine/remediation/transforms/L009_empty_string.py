@@ -8,7 +8,6 @@ from apme_engine.engine.yaml_utils import FormattedYAML
 from apme_engine.remediation.registry import TransformResult
 from apme_engine.remediation.transforms._helpers import find_task_at_line
 
-
 _PATTERNS = [
     (re.compile(r'\b(\w+)\s*==\s*""'), r"\1 | length == 0"),
     (re.compile(r"\b(\w+)\s*==\s*''"), r"\1 | length == 0"),

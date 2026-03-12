@@ -1,6 +1,7 @@
 from dataclasses import dataclass
-from apme_engine.engine.models import TaskCall
+
 from apme_engine.engine.annotators.annotator_base import Annotator, AnnotatorResult
+from apme_engine.engine.models import TaskCall
 
 
 class ModuleAnnotator(Annotator):

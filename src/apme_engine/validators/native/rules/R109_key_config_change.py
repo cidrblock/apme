@@ -1,13 +1,18 @@
 from dataclasses import dataclass
+
 from apme_engine.engine.models import (
-    AnsibleRunContext,
-    RunTargetType,
-    DefaultRiskType as RiskType,
     AnnotationCondition,
+    AnsibleRunContext,
     Rule,
-    Severity,
-    RuleTag as Tag,
     RuleResult,
+    RunTargetType,
+    Severity,
+)
+from apme_engine.engine.models import (
+    DefaultRiskType as RiskType,
+)
+from apme_engine.engine.models import (
+    RuleTag as Tag,
 )
 
 

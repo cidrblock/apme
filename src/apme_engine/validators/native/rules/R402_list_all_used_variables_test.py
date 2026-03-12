@@ -1,9 +1,9 @@
 # Colocated tests for R402 (ListAllUsedVariablesRule).
 
 from apme_engine.validators.native.rules._test_helpers import (
-    make_task_spec,
-    make_task_call,
     make_context,
+    make_task_call,
+    make_task_spec,
 )
 from apme_engine.validators.native.rules.R402_list_all_used_variables import ListAllUsedVariablesRule
 

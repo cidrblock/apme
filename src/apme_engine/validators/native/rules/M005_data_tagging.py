@@ -10,11 +10,13 @@ from dataclasses import dataclass
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
-    RunTargetType,
     Rule,
-    Severity,
-    RuleTag as Tag,
     RuleResult,
+    RunTargetType,
+    Severity,
+)
+from apme_engine.engine.models import (
+    RuleTag as Tag,
 )
 
 _JINJA_VAR_REF = re.compile(r"\{\{\s*(\w+)")
@@ -66,6 +68,8 @@ class DataTaggingRule(Rule):
         verdict = len(flagged) > 0
         detail = {}
         if flagged:
-            detail["message"] = f"Registered variable(s) {', '.join(set(flagged))} used in Jinja template; may be untrusted in 2.19+"
+            detail["message"] = (
+                f"Registered variable(s) {', '.join(set(flagged))} used in Jinja template; may be untrusted in 2.19+"
+            )
             detail["registered_vars"] = list(set(flagged))
         return RuleResult(verdict=verdict, detail=detail, file=task.file_info(), rule=self.get_metadata())

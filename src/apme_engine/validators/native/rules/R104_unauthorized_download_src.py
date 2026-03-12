@@ -1,16 +1,20 @@
 import re
 from dataclasses import dataclass
-from apme_engine.engine.models import (
-    AnsibleRunContext,
-    RunTargetType,
-    DefaultRiskType as RiskType,
-    AnnotationCondition,
-    Rule,
-    Severity,
-    RuleTag as Tag,
-    RuleResult,
-)
 
+from apme_engine.engine.models import (
+    AnnotationCondition,
+    AnsibleRunContext,
+    Rule,
+    RuleResult,
+    RunTargetType,
+    Severity,
+)
+from apme_engine.engine.models import (
+    DefaultRiskType as RiskType,
+)
+from apme_engine.engine.models import (
+    RuleTag as Tag,
+)
 
 allow_url_list = ["https://*"]
 
@@ -39,10 +43,9 @@ class InvalidDownloadSourceRule(Rule):
         detail = {}
 
         anno = task.get_annotation_by_condition(ac)
-        if anno:
-            if not self.is_allowed_url(anno.src.value, allow_url_list, deny_url_list):
-                verdict = True
-                detail["invalid_src"] = anno.src.value
+        if anno and not self.is_allowed_url(anno.src.value, allow_url_list, deny_url_list):
+            verdict = True
+            detail["invalid_src"] = anno.src.value
 
         return RuleResult(verdict=verdict, detail=detail, file=task.file_info(), rule=self.get_metadata())
 

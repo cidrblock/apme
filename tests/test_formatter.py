@@ -13,10 +13,10 @@ from apme_engine.formatter import (
     format_file,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _fmt(text: str, filename: str = "test.yml") -> FormatResult:
     return format_content(textwrap.dedent(text), filename=filename)
@@ -25,6 +25,7 @@ def _fmt(text: str, filename: str = "test.yml") -> FormatResult:
 # ---------------------------------------------------------------------------
 # Tab removal (L040)
 # ---------------------------------------------------------------------------
+
 
 class TestTabRemoval:
     def test_tabs_replaced_with_spaces(self):
@@ -42,6 +43,7 @@ class TestTabRemoval:
 # Key reorder (L041)
 # ---------------------------------------------------------------------------
 
+
 class TestKeyReorder:
     def test_name_moved_before_module(self):
         text = textwrap.dedent("""\
@@ -51,8 +53,8 @@ class TestKeyReorder:
         """)
         result = format_content(text)
         lines = result.formatted.splitlines()
-        name_line = next(i for i, l in enumerate(lines) if "name:" in l)
-        debug_line = next(i for i, l in enumerate(lines) if "debug" in l)
+        name_line = next(i for i, line in enumerate(lines) if "name:" in line)
+        debug_line = next(i for i, line in enumerate(lines) if "debug" in line)
         assert name_line < debug_line, "name should come before module"
         assert result.changed
 
@@ -65,8 +67,8 @@ class TestKeyReorder:
         result = format_content(text)
         # May still change due to other formatting; key order should be stable
         lines = result.formatted.splitlines()
-        name_line = next(i for i, l in enumerate(lines) if "name:" in l)
-        debug_line = next(i for i, l in enumerate(lines) if "debug" in l)
+        name_line = next(i for i, line in enumerate(lines) if "name:" in line)
+        debug_line = next(i for i, line in enumerate(lines) if "debug" in line)
         assert name_line < debug_line
 
     def test_play_level_key_order(self):
@@ -81,7 +83,7 @@ class TestKeyReorder:
         result = format_content(text)
         assert "name:" in result.formatted
         lines = result.formatted.splitlines()
-        name_lines = [i for i, l in enumerate(lines) if "name:" in l]
+        name_lines = [i for i, line in enumerate(lines) if "name:" in line]
         assert len(name_lines) >= 1
 
 
@@ -89,25 +91,26 @@ class TestKeyReorder:
 # Jinja spacing (L051)
 # ---------------------------------------------------------------------------
 
+
 class TestJinjaSpacing:
     def test_no_space_gets_space(self):
-        text = "- name: Test\n  ansible.builtin.debug:\n    msg: \"{{foo}}\"\n"
+        text = '- name: Test\n  ansible.builtin.debug:\n    msg: "{{foo}}"\n'
         result = format_content(text)
         assert "{{ foo }}" in result.formatted
         assert result.changed
 
     def test_extra_spaces_normalized(self):
-        text = "- name: Test\n  ansible.builtin.debug:\n    msg: \"{{  foo  }}\"\n"
+        text = '- name: Test\n  ansible.builtin.debug:\n    msg: "{{  foo  }}"\n'
         result = format_content(text)
         assert "{{ foo }}" in result.formatted
 
     def test_already_correct_unchanged(self):
-        text = "- name: Test\n  ansible.builtin.debug:\n    msg: \"{{ foo }}\"\n"
+        text = '- name: Test\n  ansible.builtin.debug:\n    msg: "{{ foo }}"\n'
         result = format_content(text)
         assert "{{ foo }}" in result.formatted
 
     def test_complex_expression(self):
-        text = '- name: Test\n  ansible.builtin.debug:\n    msg: "{{item.name | default(\'none\')}}"\n'
+        text = "- name: Test\n  ansible.builtin.debug:\n    msg: \"{{item.name | default('none')}}\"\n"
         result = format_content(text)
         assert "{{ item.name | default('none') }}" in result.formatted
 
@@ -115,6 +118,7 @@ class TestJinjaSpacing:
 # ---------------------------------------------------------------------------
 # Indentation normalization
 # ---------------------------------------------------------------------------
+
 
 class TestIndentation:
     def test_mixed_indent_normalized(self):
@@ -131,6 +135,7 @@ class TestIndentation:
 # ---------------------------------------------------------------------------
 # Comment preservation
 # ---------------------------------------------------------------------------
+
 
 class TestComments:
     def test_inline_comment_preserved(self):
@@ -153,6 +158,7 @@ class TestComments:
 # Octal preservation
 # ---------------------------------------------------------------------------
 
+
 class TestOctal:
     def test_octal_mode_preserved(self):
         text = textwrap.dedent("""\
@@ -168,6 +174,7 @@ class TestOctal:
 # ---------------------------------------------------------------------------
 # Edge cases
 # ---------------------------------------------------------------------------
+
 
 class TestEdgeCases:
     def test_empty_file(self):
@@ -203,14 +210,18 @@ class TestEdgeCases:
 # Idempotency
 # ---------------------------------------------------------------------------
 
+
 class TestIdempotency:
-    @pytest.mark.parametrize("text,desc", [
-        ("- name: Test\n\tansible.builtin.debug:\n\t\tmsg: hello\n", "tabs"),
-        ("- ansible.builtin.debug:\n    msg: hello\n  name: Reorder\n", "key order"),
-        ('- name: T\n  ansible.builtin.debug:\n    msg: "{{foo}}"\n', "jinja spacing"),
-        ("- name: Test\n    ansible.builtin.debug:\n        msg: deep\n", "mixed indent"),
-        ("# comment\n- name: Test\n  ansible.builtin.debug:\n    msg: hi\n", "with comment"),
-    ])
+    @pytest.mark.parametrize(
+        "text,desc",
+        [
+            ("- name: Test\n\tansible.builtin.debug:\n\t\tmsg: hello\n", "tabs"),
+            ("- ansible.builtin.debug:\n    msg: hello\n  name: Reorder\n", "key order"),
+            ('- name: T\n  ansible.builtin.debug:\n    msg: "{{foo}}"\n', "jinja spacing"),
+            ("- name: Test\n    ansible.builtin.debug:\n        msg: deep\n", "mixed indent"),
+            ("# comment\n- name: Test\n  ansible.builtin.debug:\n    msg: hi\n", "with comment"),
+        ],
+    )
     def test_format_twice_no_diff(self, text, desc):
         first = format_content(text, filename=f"test_{desc}.yml")
         assert check_idempotent(first), f"Formatter is not idempotent for: {desc}"
@@ -250,6 +261,7 @@ class TestIdempotency:
 # format_file (filesystem)
 # ---------------------------------------------------------------------------
 
+
 class TestFormatFile:
     def test_format_file_reads_and_formats(self, tmp_path):
         p = tmp_path / "test.yml"
@@ -258,14 +270,15 @@ class TestFormatFile:
         assert result.path == p
         assert result.changed
         lines = result.formatted.splitlines()
-        name_line = next(i for i, l in enumerate(lines) if "name:" in l)
-        debug_line = next(i for i, l in enumerate(lines) if "debug" in l)
+        name_line = next(i for i, line in enumerate(lines) if "name:" in line)
+        debug_line = next(i for i, line in enumerate(lines) if "debug" in line)
         assert name_line < debug_line
 
 
 # ---------------------------------------------------------------------------
 # format_directory
 # ---------------------------------------------------------------------------
+
 
 class TestFormatDirectory:
     def test_discovers_yaml_files(self, tmp_path):
@@ -296,7 +309,7 @@ class TestFormatDirectory:
         (roles / "main.yml").write_text("- ansible.builtin.shell: echo\n  name: Deep task\n")
         group_vars = tmp_path / "inventory" / "group_vars"
         group_vars.mkdir(parents=True)
-        (group_vars / "all.yml").write_text("my_var: \"{{foo}}\"\n")
+        (group_vars / "all.yml").write_text('my_var: "{{foo}}"\n')
 
         results = format_directory(tmp_path)
         result_paths = {str(r.path.relative_to(tmp_path)) for r in results}
@@ -326,6 +339,7 @@ class TestFormatDirectory:
 # ---------------------------------------------------------------------------
 # FormatResult.diff content
 # ---------------------------------------------------------------------------
+
 
 class TestDiffOutput:
     def test_diff_contains_file_paths(self):

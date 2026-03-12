@@ -4,7 +4,6 @@ import os
 import shutil
 from pathlib import Path
 
-
 SUPPORTED_VERSIONS = ["2.18", "2.19", "2.20"]
 DEFAULT_VERSION = "2.20"
 
@@ -60,6 +59,7 @@ def setup_collections_env(collection_specs: list[str], cache_root: Path) -> dict
     if not collection_specs:
         return None
     from apme_engine.collection_cache.config import galaxy_cache_dir, github_cache_dir
+
     paths = []
     galaxy = galaxy_cache_dir(cache_root)
     if galaxy.is_dir():

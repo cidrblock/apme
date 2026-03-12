@@ -1,8 +1,8 @@
 import io
 from contextvars import ContextVar
+
 from ruamel.yaml import YAML
 from ruamel.yaml.emitter import EmitterError
-
 
 _yaml: ContextVar[YAML] = ContextVar("yaml")
 

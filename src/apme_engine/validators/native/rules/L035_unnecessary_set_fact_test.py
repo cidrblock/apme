@@ -1,12 +1,12 @@
 # Colocated tests for L035 (UnnecessarySetFactRule / R204).
 
+from apme_engine.engine.models import ExecutableType
 from apme_engine.validators.native.rules._test_helpers import (
-    make_task_spec,
-    make_task_call,
     make_context,
+    make_task_call,
+    make_task_spec,
 )
 from apme_engine.validators.native.rules.L035_unnecessary_set_fact import UnnecessarySetFactRule
-from apme_engine.engine.models import ExecutableType
 
 
 def test_L035_fires_when_set_fact_with_random_in_args():

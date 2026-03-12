@@ -1,20 +1,20 @@
 from dataclasses import dataclass
-from typing import List
+
+from apme_engine.engine.annotators.annotator_base import Annotator, AnnotatorResult
+from apme_engine.engine.context import Context, resolve_module_options
 from apme_engine.engine.keyutil import detect_type
 from apme_engine.engine.models import (
-    ObjectList,
-    Repository,
-    Playbook,
-    Role,
-    TaskCall,
-    VariableAnnotation,
     Arguments,
     ArgumentsType,
+    ObjectList,
+    Playbook,
+    Repository,
+    Role,
+    TaskCall,
     Variable,
+    VariableAnnotation,
     VariableType,
 )
-from apme_engine.engine.context import Context, resolve_module_options
-from apme_engine.engine.annotators.annotator_base import Annotator, AnnotatorResult
 
 
 class VariableAnnotator(Annotator):
@@ -112,9 +112,7 @@ def tree_to_task_list(tree, node_objects):
         node_type = detect_type(node.key)
 
         children_tasks = []
-        if node_type == "module":
-            resolved_name = no.fqcn
-        elif node_type == "role":
+        if node_type == "module" or node_type == "role":
             resolved_name = no.fqcn
         elif node_type == "taskfile":
             resolved_name = no.key
@@ -130,34 +128,33 @@ def tree_to_task_list(tree, node_objects):
         # obj["children_types"] = list(children_per_type.keys())
         if "playbook" in children_per_type:
             tasks_per_children = [getSubTree(c) for c in children_per_type["playbook"]]
-            for (_tasks, _) in tasks_per_children:
+            for _tasks, _ in tasks_per_children:
                 children_tasks.extend(_tasks)
         if "play" in children_per_type:
             tasks_per_children = [getSubTree(c) for c in children_per_type["play"]]
-            for (_tasks, _) in tasks_per_children:
+            for _tasks, _ in tasks_per_children:
                 children_tasks.extend(_tasks)
         if "role" in children_per_type:
             tasks_per_children = [getSubTree(c) for c in children_per_type["role"]]
-            for (_tasks, _) in tasks_per_children:
+            for _tasks, _ in tasks_per_children:
                 children_tasks.extend(_tasks)
             if node_type == "task":
                 fqcns = [fqcn for (_, fqcn) in tasks_per_children]
                 resolved_name = fqcns[0] if len(fqcns) > 0 else ""
         if "taskfile" in children_per_type:
             tasks_per_children = [getSubTree(c) for c in children_per_type["taskfile"]]
-            for (_tasks, _) in tasks_per_children:
+            for _tasks, _ in tasks_per_children:
                 children_tasks.extend(_tasks)
             if node_type == "task":
                 _tf_path_list = [_tf_path for (_, _tf_path) in tasks_per_children]
                 resolved_name = _tf_path_list[0] if len(_tf_path_list) > 0 else ""
         if "task" in children_per_type:
             tasks_per_children = [getSubTree(c) for c in children_per_type["task"]]
-            for (_tasks, _) in tasks_per_children:
+            for _tasks, _ in tasks_per_children:
                 children_tasks.extend(_tasks)
-        if "module" in children_per_type:
-            if node_type == "task":
-                fqcns = [getSubTree(c)[1] for c in children_per_type["module"]]
-                resolved_name = fqcns[0] if len(fqcns) > 0 else ""
+        if "module" in children_per_type and node_type == "task":
+            fqcns = [getSubTree(c)[1] for c in children_per_type["module"]]
+            resolved_name = fqcns[0] if len(fqcns) > 0 else ""
 
         if node_type == "task":
             no.resolved_name = resolved_name
@@ -169,7 +166,7 @@ def tree_to_task_list(tree, node_objects):
     return tasks
 
 
-def resolve_variables(tree: ObjectList, additional: ObjectList) -> List[TaskCall]:
+def resolve_variables(tree: ObjectList, additional: ObjectList) -> list[TaskCall]:
     tree_root_key = tree.items[0].spec.key if len(tree.items) > 0 else ""
     inventories = get_inventories(tree_root_key, additional)
     context = Context(inventories=inventories)
@@ -209,10 +206,9 @@ def get_inventories(tree_root_key, additional):
                     if playbook == tree_root_key:
                         inventories = p.inventories
                         found = True
-                elif isinstance(playbook, Playbook):
-                    if playbook.key == tree_root_key:
-                        inventories = p.inventories
-                        found = True
+                elif isinstance(playbook, Playbook) and playbook.key == tree_root_key:
+                    inventories = p.inventories
+                    found = True
                 if found:
                     break
         elif tree_root_type == "role":
@@ -221,10 +217,9 @@ def get_inventories(tree_root_key, additional):
                     if role == tree_root_key:
                         inventories = p.inventories
                         found = True
-                elif isinstance(role, Role):
-                    if role.key == tree_root_key:
-                        inventories = p.inventories
-                        found = True
+                elif isinstance(role, Role) and role.key == tree_root_key:
+                    inventories = p.inventories
+                    found = True
                 if found:
                     break
         if found:

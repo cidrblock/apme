@@ -3,7 +3,7 @@
 import os
 
 from apme_engine.opa_client import run_opa
-from apme_engine.validators.base import ScanContext, Validator
+from apme_engine.validators.base import ScanContext
 
 
 def _default_bundle_path() -> str:

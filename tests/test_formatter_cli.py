@@ -29,6 +29,7 @@ def _cli(*args: str, cwd: str | None = None) -> subprocess.CompletedProcess:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def messy_dir(tmp_path: Path) -> Path:
     """Copy the messy fixture into a temp directory so tests can mutate it."""
@@ -46,6 +47,7 @@ def messy_file(messy_dir: Path) -> Path:
 # ---------------------------------------------------------------------------
 # format subcommand
 # ---------------------------------------------------------------------------
+
 
 class TestFormatDiff:
     """format (no flags) — show diff on stdout, exit 0."""
@@ -141,9 +143,7 @@ class TestFormatDirectory:
     """format on a directory discovers all YAML files."""
 
     def test_formats_all_yaml_in_dir(self, messy_dir: Path):
-        (messy_dir / "extra.yml").write_text(
-            "- ansible.builtin.debug:\n    msg: hi\n  name: Reorder me\n"
-        )
+        (messy_dir / "extra.yml").write_text("- ansible.builtin.debug:\n    msg: hi\n  name: Reorder me\n")
         r = _cli("format", "--check", str(messy_dir))
         assert r.returncode == 1
         assert "2 file(s)" in r.stderr or "file(s) would be" in r.stderr
@@ -171,6 +171,7 @@ class TestFormatExclude:
 # ---------------------------------------------------------------------------
 # fix subcommand
 # ---------------------------------------------------------------------------
+
 
 class TestFixApply:
     """fix --apply — format → idempotency check → (modernize stub)."""

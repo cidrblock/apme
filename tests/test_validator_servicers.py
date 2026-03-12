@@ -4,17 +4,23 @@ All servicers are now async (grpc.aio), so tests use pytest-asyncio.
 """
 
 import json
-from unittest.mock import MagicMock, patch, AsyncMock
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 import jsonpickle
-from apme.v1 import validate_pb2, common_pb2
+import pytest
+
+from apme.v1 import common_pb2, validate_pb2
 
 
 class FakeGrpcContext:
     """Minimal stub for grpc.ServicerContext."""
-    def set_code(self, code): pass
-    def set_details(self, details): pass
+
+    def set_code(self, code):
+        pass
+
+    def set_details(self, details):
+        pass
 
 
 class TestOpaValidatorServicer:
@@ -142,7 +148,7 @@ class TestOpaValidatorServicer:
 class TestNativeValidatorServicer:
     async def test_validate_deserializes_scandata_and_runs(self):
         from apme_engine.daemon.native_validator_server import NativeValidatorServicer
-        from apme_engine.validators.native import NativeRunResult, NativeRuleTiming
+        from apme_engine.validators.native import NativeRuleTiming, NativeRunResult
 
         mock_scandata = type("Scandata", (), {"contexts": []})()
         hierarchy = {"hierarchy": []}
@@ -154,7 +160,14 @@ class TestNativeValidatorServicer:
 
         mock_result = NativeRunResult(
             violations=[
-                {"rule_id": "native:L028", "level": "warning", "message": "no name", "file": "f.yml", "line": 5, "path": "p"},
+                {
+                    "rule_id": "native:L028",
+                    "level": "warning",
+                    "message": "no name",
+                    "file": "f.yml",
+                    "line": 5,
+                    "path": "p",
+                },
             ],
             rule_timings=[
                 NativeRuleTiming(rule_id="L028", elapsed_ms=3.5, violations=1),
@@ -171,7 +184,7 @@ class TestNativeValidatorServicer:
 
     async def test_validate_returns_diagnostics(self):
         from apme_engine.daemon.native_validator_server import NativeValidatorServicer
-        from apme_engine.validators.native import NativeRunResult, NativeRuleTiming
+        from apme_engine.validators.native import NativeRuleTiming, NativeRunResult
 
         mock_scandata = type("Scandata", (), {"contexts": []})()
         request = validate_pb2.ValidateRequest(
@@ -285,16 +298,19 @@ class TestAnsibleValidatorServicerMigration:
 
     def test_servicer_extends_validator_servicer(self):
         from apme_engine.daemon.ansible_validator_server import AnsibleValidatorServicer
+
         assert hasattr(AnsibleValidatorServicer, "Validate")
 
     def test_serve_is_async(self):
         import inspect
+
         from apme_engine.daemon.ansible_validator_server import serve
+
         assert inspect.iscoroutinefunction(serve)
 
     async def test_validate_returns_diagnostics(self):
         from apme_engine.daemon.ansible_validator_server import AnsibleValidatorServicer, _AnsibleResult
-        from apme_engine.validators.ansible import AnsibleRunResult, AnsibleRuleTiming
+        from apme_engine.validators.ansible import AnsibleRuleTiming, AnsibleRunResult
 
         request = validate_pb2.ValidateRequest(
             request_id="diag-ans-1",
@@ -305,7 +321,14 @@ class TestAnsibleValidatorServicerMigration:
         mock_result = _AnsibleResult(
             run_result=AnsibleRunResult(
                 violations=[
-                    {"rule_id": "L057", "level": "error", "message": "syntax", "file": "playbook.yml", "line": 1, "path": ""},
+                    {
+                        "rule_id": "L057",
+                        "level": "error",
+                        "message": "syntax",
+                        "file": "playbook.yml",
+                        "line": 1,
+                        "path": "",
+                    },
                 ],
                 rule_timings=[
                     AnsibleRuleTiming(rule_id="L057", elapsed_ms=120.0, violations=1),
@@ -387,32 +410,38 @@ class TestPrimaryFanOut:
     def test_primary_no_longer_imports_native_validator(self):
         """Primary should not import NativeValidator directly (it's in its own container)."""
         import apme_engine.daemon.primary_server as ps
-        source = open(ps.__file__).read()
+
+        source = Path(ps.__file__).read_text()
         assert "from apme_engine.validators.native" not in source
         assert "NativeValidator()" not in source
 
     def test_primary_no_longer_imports_opa_client(self):
         """Primary should not import opa_client (OPA is behind gRPC now)."""
         import apme_engine.daemon.primary_server as ps
-        source = open(ps.__file__).read()
+
+        source = Path(ps.__file__).read_text()
         assert "from apme_engine.opa_client" not in source
         assert "_call_opa" not in source
 
     def test_primary_propagates_request_id(self):
         """Primary should set request_id on ValidateRequest."""
         import apme_engine.daemon.primary_server as ps
-        source = open(ps.__file__).read()
+
+        source = Path(ps.__file__).read_text()
         assert "request_id=scan_id" in source
 
     def test_primary_serve_is_async(self):
         import inspect
+
         from apme_engine.daemon.primary_server import serve
+
         assert inspect.iscoroutinefunction(serve)
 
     def test_primary_aggregates_diagnostics(self):
         """Primary should collect validator diagnostics into ScanDiagnostics."""
         import apme_engine.daemon.primary_server as ps
-        source = open(ps.__file__).read()
+
+        source = Path(ps.__file__).read_text()
         assert "ScanDiagnostics" in source
         assert "validator_diagnostics" in source
         assert "engine_diagnostics" in source
@@ -421,55 +450,71 @@ class TestPrimaryFanOut:
 class TestGrpcAioConsistency:
     """Verify all servers use grpc.aio."""
 
-    @pytest.mark.parametrize("module_path", [
-        "apme_engine.daemon.primary_server",
-        "apme_engine.daemon.native_validator_server",
-        "apme_engine.daemon.opa_validator_server",
-        "apme_engine.daemon.ansible_validator_server",
-        "apme_engine.daemon.gitleaks_validator_server",
-    ])
+    @pytest.mark.parametrize(
+        "module_path",
+        [
+            "apme_engine.daemon.primary_server",
+            "apme_engine.daemon.native_validator_server",
+            "apme_engine.daemon.opa_validator_server",
+            "apme_engine.daemon.ansible_validator_server",
+            "apme_engine.daemon.gitleaks_validator_server",
+        ],
+    )
     def test_serve_is_async_coroutine(self, module_path):
-        import inspect
         import importlib
+        import inspect
+
         mod = importlib.import_module(module_path)
         assert inspect.iscoroutinefunction(mod.serve), f"{module_path}.serve should be async"
 
-    @pytest.mark.parametrize("module_path", [
-        "apme_engine.daemon.primary_server",
-        "apme_engine.daemon.native_validator_server",
-        "apme_engine.daemon.opa_validator_server",
-        "apme_engine.daemon.ansible_validator_server",
-        "apme_engine.daemon.gitleaks_validator_server",
-    ])
+    @pytest.mark.parametrize(
+        "module_path",
+        [
+            "apme_engine.daemon.primary_server",
+            "apme_engine.daemon.native_validator_server",
+            "apme_engine.daemon.opa_validator_server",
+            "apme_engine.daemon.ansible_validator_server",
+            "apme_engine.daemon.gitleaks_validator_server",
+        ],
+    )
     def test_server_uses_grpc_aio(self, module_path):
         import importlib
+
         mod = importlib.import_module(module_path)
-        source = open(mod.__file__).read()
+        source = Path(mod.__file__).read_text()
         assert "grpc.aio" in source, f"{module_path} should use grpc.aio"
 
-    @pytest.mark.parametrize("module_path", [
-        "apme_engine.daemon.native_validator_server",
-        "apme_engine.daemon.opa_validator_server",
-        "apme_engine.daemon.ansible_validator_server",
-        "apme_engine.daemon.gitleaks_validator_server",
-    ])
+    @pytest.mark.parametrize(
+        "module_path",
+        [
+            "apme_engine.daemon.native_validator_server",
+            "apme_engine.daemon.opa_validator_server",
+            "apme_engine.daemon.ansible_validator_server",
+            "apme_engine.daemon.gitleaks_validator_server",
+        ],
+    )
     def test_validator_echoes_request_id(self, module_path):
         import importlib
+
         mod = importlib.import_module(module_path)
-        source = open(mod.__file__).read()
+        source = Path(mod.__file__).read_text()
         assert "request_id" in source, f"{module_path} should handle request_id"
 
-    @pytest.mark.parametrize("module_path", [
-        "apme_engine.daemon.native_validator_server",
-        "apme_engine.daemon.opa_validator_server",
-        "apme_engine.daemon.ansible_validator_server",
-        "apme_engine.daemon.gitleaks_validator_server",
-    ])
+    @pytest.mark.parametrize(
+        "module_path",
+        [
+            "apme_engine.daemon.native_validator_server",
+            "apme_engine.daemon.opa_validator_server",
+            "apme_engine.daemon.ansible_validator_server",
+            "apme_engine.daemon.gitleaks_validator_server",
+        ],
+    )
     def test_validator_returns_diagnostics(self, module_path):
         """All validator servicers should populate diagnostics in ValidateResponse."""
         import importlib
+
         mod = importlib.import_module(module_path)
-        source = open(mod.__file__).read()
+        source = Path(mod.__file__).read_text()
         assert "ValidatorDiagnostics" in source, f"{module_path} should build ValidatorDiagnostics"
         assert "diagnostics=" in source, f"{module_path} should set diagnostics= in response"
 
@@ -552,19 +597,22 @@ class TestCliDiagnosticsDisplay:
 
     def test_fmt_ms_sub_1(self):
         from apme_engine.cli import _fmt_ms
+
         assert _fmt_ms(0.5) == "<1ms"
 
     def test_fmt_ms_normal(self):
         from apme_engine.cli import _fmt_ms
+
         assert _fmt_ms(42.3) == "42ms"
 
     def test_fmt_ms_seconds(self):
         from apme_engine.cli import _fmt_ms
+
         assert _fmt_ms(1500.0) == "1.5s"
 
     def test_diag_to_dict(self):
-        from apme_engine.cli import _diag_to_dict
         from apme.v1 import primary_pb2
+        from apme_engine.cli import _diag_to_dict
 
         vd = common_pb2.ValidatorDiagnostics(
             validator_name="native",
@@ -597,8 +645,8 @@ class TestCliDiagnosticsDisplay:
         assert v["metadata"] == {"foo": "bar"}
 
     def test_print_diagnostics_v_no_crash(self, capsys):
-        from apme_engine.cli import _print_diagnostics_v
         from apme.v1 import primary_pb2
+        from apme_engine.cli import _print_diagnostics_v
 
         vd = common_pb2.ValidatorDiagnostics(
             validator_name="native",
@@ -620,8 +668,8 @@ class TestCliDiagnosticsDisplay:
         assert "L028" in captured.err
 
     def test_print_diagnostics_vv_no_crash(self, capsys):
-        from apme_engine.cli import _print_diagnostics_vv
         from apme.v1 import primary_pb2
+        from apme_engine.cli import _print_diagnostics_vv
 
         vd = common_pb2.ValidatorDiagnostics(
             validator_name="opa",

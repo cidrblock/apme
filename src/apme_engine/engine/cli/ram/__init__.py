@@ -1,12 +1,11 @@
 import sys
 
-from .search import RAMSearchCLI
-from .list import RAMListCLI
 from .diff import RAMDiffCLI
 from .generate import RAMGenerateCLI
-from .update import RAMUpdateCLI
+from .list import RAMListCLI
 from .release import RAMReleaseCLI
-
+from .search import RAMSearchCLI
+from .update import RAMUpdateCLI
 
 ram_actions = ["search", "list", "diff", "generate", "update", "release"]
 

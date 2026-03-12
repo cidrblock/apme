@@ -1,5 +1,5 @@
-from apme_engine.engine.models import TaskCall
 from apme_engine.engine.annotators.risk_annotator_base import RiskAnnotator
+from apme_engine.engine.models import TaskCall
 
 
 class AnsibleBuiltinRiskAnnotator(RiskAnnotator):

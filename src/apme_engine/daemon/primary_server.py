@@ -1,10 +1,11 @@
 """Primary daemon: async gRPC server that runs engine then fans out to all validators."""
 
 import asyncio
+import contextlib
 import json
 import os
-import sys
 import shutil
+import sys
 import tempfile
 import time
 import uuid
@@ -14,10 +15,10 @@ from pathlib import Path
 import grpc
 import grpc.aio
 import jsonpickle
-from apme.v1 import primary_pb2, primary_pb2_grpc, validate_pb2, validate_pb2_grpc, common_pb2
 
-from apme_engine.runner import run_scan
+from apme.v1 import common_pb2, primary_pb2, primary_pb2_grpc, validate_pb2, validate_pb2_grpc
 from apme_engine.daemon.violation_convert import violation_proto_to_dict
+from apme_engine.runner import run_scan
 
 _MAX_CONCURRENT_RPCS = int(os.environ.get("APME_PRIMARY_MAX_RPCS", "16"))
 
@@ -37,6 +38,7 @@ def _sort_violations(violations: list[dict]) -> list[dict]:
         if not isinstance(line, (int, float)):
             line = 0
         return (f, line)
+
     return sorted(violations, key=key)
 
 
@@ -111,16 +113,23 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                 return primary_pb2.ScanResponse(scan_id=scan_id, violations=[])
 
             temp_dir = await asyncio.get_event_loop().run_in_executor(
-                None, _write_chunked_fs, request.project_root or "project", list(request.files),
+                None,
+                _write_chunked_fs,
+                request.project_root or "project",
+                list(request.files),
             )
             target = str(temp_dir)
             project_root = target
 
             engine_t0 = time.monotonic()
             context_obj = await asyncio.get_event_loop().run_in_executor(
-                None, run_scan, target, project_root, True,
+                None,
+                run_scan,
+                target,
+                project_root,
+                True,
             )
-            engine_wall_ms = (time.monotonic() - engine_t0) * 1000
+            (time.monotonic() - engine_t0) * 1000
 
             if not context_obj.hierarchy_payload:
                 sys.stderr.write(f"[req={scan_id}] Scan: no hierarchy payload produced\n")
@@ -154,7 +163,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                 fan_out_ms = (time.monotonic() - fan_t0) * 1000
 
                 counts: dict[str, int] = {}
-                for name, result in zip(tasks.keys(), results):
+                for name, result in zip(tasks.keys(), results, strict=False):
                     if isinstance(result, Exception):
                         sys.stderr.write(f"[req={scan_id}] {name} raised: {result}\n")
                         sys.stderr.flush()
@@ -171,6 +180,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
 
             violations = _deduplicate_violations(_sort_violations(violations))
             from apme_engine.daemon.violation_convert import violation_dict_to_proto
+
             proto_violations = [violation_dict_to_proto(v) for v in violations]
 
             total_ms = (time.monotonic() - scan_t0) * 1000
@@ -194,16 +204,15 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
             )
         except Exception as e:
             import traceback
+
             sys.stderr.write(f"[req={scan_id}] Scan failed: {e}\n")
             traceback.print_exc(file=sys.stderr)
             sys.stderr.flush()
             raise
         finally:
             if temp_dir is not None and temp_dir.is_dir():
-                try:
+                with contextlib.suppress(OSError):
                     shutil.rmtree(temp_dir)
-                except OSError:
-                    pass
 
     async def Format(self, request, context):
         from apme_engine.formatter import format_content
@@ -222,16 +231,20 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                     continue
                 result = format_content(text, filename=f.path)
                 if result.changed:
-                    diffs.append(primary_pb2.FileDiff(
-                        path=f.path,
-                        original=f.content,
-                        formatted=result.formatted.encode("utf-8"),
-                        diff=result.diff,
-                    ))
+                    diffs.append(
+                        primary_pb2.FileDiff(
+                            path=f.path,
+                            original=f.content,
+                            formatted=result.formatted.encode("utf-8"),
+                            diff=result.diff,
+                        )
+                    )
             return diffs
 
         diffs = await asyncio.get_event_loop().run_in_executor(
-            None, _do_format, list(request.files),
+            None,
+            _do_format,
+            list(request.files),
         )
 
         sys.stderr.write(f"Format: {len(diffs)} file(s) changed\n")

@@ -9,11 +9,11 @@ import time
 import grpc
 import grpc.aio
 import jsonpickle
-from apme.v1 import validate_pb2, validate_pb2_grpc, common_pb2
 
+from apme.v1 import common_pb2, validate_pb2, validate_pb2_grpc
 from apme_engine.daemon.violation_convert import violation_dict_to_proto
 from apme_engine.validators.base import ScanContext
-from apme_engine.validators.native import NativeValidator, NativeRunResult
+from apme_engine.validators.native import NativeRunResult, NativeValidator
 
 _MAX_CONCURRENT_RPCS = int(os.environ.get("APME_NATIVE_MAX_RPCS", "32"))
 
@@ -51,17 +51,20 @@ class NativeValidatorServicer(validate_pb2_grpc.ValidatorServicer):
                     return validate_pb2.ValidateResponse(violations=[], request_id=req_id)
 
             result = await asyncio.get_event_loop().run_in_executor(
-                None, _run_native, hierarchy_payload, scandata,
+                None,
+                _run_native,
+                hierarchy_payload,
+                scandata,
             )
             total_ms = (time.monotonic() - t0) * 1000
-            sys.stderr.write(
-                f"[req={req_id}] Native: {len(result.violations)} violation(s) in {total_ms:.1f}ms\n"
-            )
+            sys.stderr.write(f"[req={req_id}] Native: {len(result.violations)} violation(s) in {total_ms:.1f}ms\n")
             sys.stderr.flush()
 
             rule_timings = [
                 common_pb2.RuleTiming(
-                    rule_id=rt.rule_id, elapsed_ms=rt.elapsed_ms, violations=rt.violations,
+                    rule_id=rt.rule_id,
+                    elapsed_ms=rt.elapsed_ms,
+                    violations=rt.violations,
                 )
                 for rt in result.rule_timings
             ]
@@ -81,6 +84,7 @@ class NativeValidatorServicer(validate_pb2_grpc.ValidatorServicer):
             )
         except Exception as e:
             import traceback
+
             sys.stderr.write(f"[req={req_id}] Native error: {e}\n")
             traceback.print_exc(file=sys.stderr)
             sys.stderr.flush()

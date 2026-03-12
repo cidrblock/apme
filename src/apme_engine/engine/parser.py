@@ -1,6 +1,17 @@
-import os
 import copy
+import os
+from pathlib import Path
+
 from . import logger
+from .model_loader import (
+    load_collection,
+    load_file,
+    load_module,
+    load_playbook,
+    load_repository,
+    load_role,
+    load_taskfile,
+)
 from .models import (
     Collection,
     Load,
@@ -8,31 +19,24 @@ from .models import (
     Module,
     Play,
     Playbook,
+    PlaybookFormatError,
     Repository,
     Role,
     Task,
     TaskFile,
-    PlaybookFormatError,
     TaskFormatError,
 )
-from .model_loader import (
-    load_collection,
-    load_module,
-    load_playbook,
-    load_repository,
-    load_role,
-    load_taskfile,
-    load_file,
-)
 from .utils import (
+    get_module_specs_by_ansible_doc,
     split_target_playbook_fullpath,
     split_target_taskfile_fullpath,
-    get_module_specs_by_ansible_doc,
 )
 
 
 class Parser:
-    def __init__(self, do_save=False, use_ansible_doc=True, skip_playbook_format_error=True, skip_task_format_error=True):
+    def __init__(
+        self, do_save=False, use_ansible_doc=True, skip_playbook_format_error=True, skip_task_format_error=True
+    ):
         self.do_save = do_save
         self.use_ansible_doc = use_ansible_doc
         self.skip_playbook_format_error = skip_playbook_format_error
@@ -44,8 +48,8 @@ class Parser:
             ld = load_data
         elif load_json_path != "":
             if not os.path.exists(load_json_path):
-                raise ValueError("file not found: {}".format(load_json_path))
-            ld = Load.from_json(open(load_json_path, "r").read())
+                raise ValueError(f"file not found: {load_json_path}")
+            ld = Load.from_json(Path(load_json_path).read_text())
 
         collection_name = ""
         role_name = ""
@@ -69,7 +73,7 @@ class Parser:
                 if not self.skip_task_format_error:
                     raise
             except Exception:
-                logger.exception("failed to load the collection {}".format(collection_name))
+                logger.exception(f"failed to load the collection {collection_name}")
                 return
         elif ld.target_type == LoadType.ROLE:
             role_name = ld.target_name
@@ -93,7 +97,7 @@ class Parser:
                 if not self.skip_task_format_error:
                     raise
             except Exception:
-                logger.exception("failed to load the role {}".format(role_name))
+                logger.exception(f"failed to load the role {role_name}")
                 return
         elif ld.target_type == LoadType.PROJECT:
             repo_name = ld.target_name
@@ -114,7 +118,7 @@ class Parser:
                 if not self.skip_task_format_error:
                     raise
             except Exception:
-                logger.exception("failed to load the project {}".format(repo_name))
+                logger.exception(f"failed to load the project {repo_name}")
                 return
             if obj.my_collection_name:
                 collection_name = obj.my_collection_name
@@ -160,7 +164,7 @@ class Parser:
                 if not self.skip_task_format_error:
                     raise
             except Exception:
-                logger.exception("failed to load the playbook {}".format(playbook_name))
+                logger.exception(f"failed to load the playbook {playbook_name}")
                 return
         elif ld.target_type == LoadType.TASKFILE:
             basedir = ""
@@ -198,10 +202,10 @@ class Parser:
                 if not self.skip_task_format_error:
                     raise
             except Exception:
-                logger.exception("failed to load the taskfile {}".format(taskfile_name))
+                logger.exception(f"failed to load the taskfile {taskfile_name}")
                 return
         else:
-            raise ValueError("unsupported type: {}".format(ld.target_type))
+            raise ValueError(f"unsupported type: {ld.target_type}")
 
         mappings = {
             "roles": [],
@@ -360,23 +364,23 @@ class Parser:
             files.append(f)
             mappings["files"].append([file_path, f.key])
 
-        logger.debug("roles: {}".format(len(roles)))
-        logger.debug("taskfiles: {}".format(len(taskfiles)))
-        logger.debug("modules: {}".format(len(modules)))
-        logger.debug("playbooks: {}".format(len(playbooks)))
-        logger.debug("plays: {}".format(len(plays)))
-        logger.debug("tasks: {}".format(len(tasks)))
-        logger.debug("files: {}".format(len(files)))
+        logger.debug(f"roles: {len(roles)}")
+        logger.debug(f"taskfiles: {len(taskfiles)}")
+        logger.debug(f"modules: {len(modules)}")
+        logger.debug(f"playbooks: {len(playbooks)}")
+        logger.debug(f"plays: {len(plays)}")
+        logger.debug(f"tasks: {len(tasks)}")
+        logger.debug(f"files: {len(files)}")
 
         collections = []
         projects = []
         if ld.target_type == LoadType.COLLECTION:
             collections = [obj]
-        elif ld.target_type == LoadType.ROLE:
-            pass
-        elif ld.target_type == LoadType.PLAYBOOK:
-            pass
-        elif ld.target_type == LoadType.TASKFILE:
+        elif (
+            ld.target_type == LoadType.ROLE
+            or ld.target_type == LoadType.PLAYBOOK
+            or ld.target_type == LoadType.TASKFILE
+        ):
             pass
         elif ld.target_type == LoadType.PROJECT:
             projects = [obj]
@@ -455,8 +459,8 @@ class Parser:
         ld = Load()
         mapping_path = os.path.join(input_dir, "mappings.json")
         if not os.path.exists(mapping_path):
-            raise ValueError("file not found: {}".format(mapping_path))
-        ld = Load.from_json(open(mapping_path, "r").read())
+            raise ValueError(f"file not found: {mapping_path}")
+        ld = Load.from_json(Path(mapping_path).read_text())
         return definitions, ld
 
     @classmethod
@@ -494,7 +498,7 @@ class Parser:
             _dump_object_list(tasks, os.path.join(output_dir, "tasks.json"))
 
         mapping_path = os.path.join(output_dir, "mappings.json")
-        open(mapping_path, "w").write(ld.dump())
+        Path(mapping_path).write_text(ld.dump())
 
 
 def _dump_object_list(obj_list, output_path):
@@ -502,14 +506,14 @@ def _dump_object_list(obj_list, output_path):
     lines = []
     for i in range(len(tmp_obj_list)):
         lines.append(tmp_obj_list[i].dump())
-    open(output_path, "w").write("\n".join(lines))
+    Path(output_path).write_text("\n".join(lines))
     return
 
 
 def _load_object_list(cls, input_path):
     obj_list = []
     if os.path.exists(input_path):
-        with open(input_path, "r") as f:
+        with open(input_path) as f:
             for line in f:
                 obj = cls.from_json(line)
                 obj_list.append(obj)

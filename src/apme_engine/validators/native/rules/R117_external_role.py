@@ -1,11 +1,14 @@
 from dataclasses import dataclass
+
 from apme_engine.engine.models import (
     AnsibleRunContext,
-    RunTargetType,
     Rule,
-    Severity,
-    RuleTag as Tag,
     RuleResult,
+    RunTargetType,
+    Severity,
+)
+from apme_engine.engine.models import (
+    RuleTag as Tag,
 )
 
 
@@ -32,7 +35,10 @@ class ExternalRoleRule(Rule):
         role = ctx.current
 
         verdict = (
-            not ctx.is_begin(role) and role.spec.metadata and isinstance(role.spec.metadata, dict) and role.spec.metadata.get("galaxy_info", None)
+            not ctx.is_begin(role)
+            and role.spec.metadata
+            and isinstance(role.spec.metadata, dict)
+            and role.spec.metadata.get("galaxy_info", None)
         )
 
         return RuleResult(verdict=verdict, file=role.file_info(), rule=self.get_metadata())

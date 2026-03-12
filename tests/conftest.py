@@ -65,7 +65,14 @@ def opa_eval_result_with_violations():
                 "expressions": [
                     {
                         "value": [
-                            {"rule_id": "task-name", "level": "warning", "message": "Task using shell module should have a name", "file": "/examples/pb.yml", "line": 5, "path": "taskcall#y"},
+                            {
+                                "rule_id": "task-name",
+                                "level": "warning",
+                                "message": "Task using shell module should have a name",
+                                "file": "/examples/pb.yml",
+                                "line": 5,
+                                "path": "taskcall#y",
+                            },
                         ]
                     }
                 ]

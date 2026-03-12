@@ -1,9 +1,9 @@
 # Colocated tests for R401 (ListAllInboundSrcRule).
 
 from apme_engine.validators.native.rules._test_helpers import (
-    make_task_spec,
-    make_task_call,
     make_context,
+    make_task_call,
+    make_task_spec,
 )
 from apme_engine.validators.native.rules.R401_list_all_inbound_src import ListAllInboundSrcRule
 

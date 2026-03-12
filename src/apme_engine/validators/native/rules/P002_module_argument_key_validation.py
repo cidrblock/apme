@@ -1,13 +1,15 @@
 from dataclasses import dataclass
 
 from apme_engine.engine.models import (
-    AnsibleRunContext,
-    RunTargetType,
-    Rule,
-    Severity,
-    RuleTag as Tag,
-    ExecutableType,
     ActionGroupMetadata,
+    AnsibleRunContext,
+    ExecutableType,
+    Rule,
+    RunTargetType,
+    Severity,
+)
+from apme_engine.engine.models import (
+    RuleTag as Tag,
 )
 
 
@@ -37,7 +39,6 @@ class ModuleArgumentKeyValidationRule(Rule):
         task = ctx.current
 
         if task.spec.executable_type == ExecutableType.MODULE_TYPE and task.module and task.module.arguments:
-
             mo = task.spec.module_options
             module_fqcn = task.get_annotation(key="module.correct_fqcn")
             module_short = ""
@@ -67,11 +68,12 @@ class ModuleArgumentKeyValidationRule(Rule):
                         if not isinstance(group_dict, dict):
                             continue
                         group = ActionGroupMetadata.from_dict(group_dict)
-                        if module_short and module_short in group.group_modules:
-                            found = True
-                            default_args = tmp_args
-                            break
-                        elif module_fqcn and module_fqcn in group.group_modules:
+                        if (
+                            module_short
+                            and module_short in group.group_modules
+                            or module_fqcn
+                            and module_fqcn in group.group_modules
+                        ):
                             found = True
                             default_args = tmp_args
                             break

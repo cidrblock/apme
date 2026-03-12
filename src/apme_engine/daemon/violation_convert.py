@@ -14,9 +14,7 @@ def violation_dict_to_proto(v: dict) -> common_pb2.Violation:
     )
     line = v.get("line")
     if isinstance(line, (list, tuple)) and len(line) >= 2:
-        out.line_range.CopyFrom(
-            common_pb2.LineRange(start=int(line[0]), end=int(line[1]))
-        )
+        out.line_range.CopyFrom(common_pb2.LineRange(start=int(line[0]), end=int(line[1])))
     elif isinstance(line, int):
         out.line = line
     return out

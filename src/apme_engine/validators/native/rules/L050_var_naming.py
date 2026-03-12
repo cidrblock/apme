@@ -1,13 +1,15 @@
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
-    RunTargetType,
     Rule,
-    Severity,
-    RuleTag as Tag,
     RuleResult,
+    RunTargetType,
+    Severity,
+)
+from apme_engine.engine.models import (
+    RuleTag as Tag,
 )
 
 VAR_NAMING_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")

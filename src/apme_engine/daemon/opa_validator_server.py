@@ -8,8 +8,8 @@ import time
 import grpc
 import grpc.aio
 import httpx
-from apme.v1 import validate_pb2, validate_pb2_grpc, common_pb2
 
+from apme.v1 import common_pb2, validate_pb2, validate_pb2_grpc
 from apme_engine.daemon.violation_convert import violation_dict_to_proto
 
 OPA_REST_URL = os.environ.get("APME_OPA_REST_URL", "http://localhost:8181")
@@ -54,9 +54,7 @@ class OpaValidatorServicer(validate_pb2_grpc.ValidatorServicer):
             result = data.get("result", [])
             violations = result if isinstance(result, list) else []
             total_ms = (time.monotonic() - t0) * 1000
-            sys.stderr.write(
-                f"[req={req_id}] OPA: {len(violations)} violation(s) in {total_ms:.1f}ms\n"
-            )
+            sys.stderr.write(f"[req={req_id}] OPA: {len(violations)} violation(s) in {total_ms:.1f}ms\n")
             sys.stderr.flush()
         except Exception as e:
             sys.stderr.write(f"[req={req_id}] OPA error: {e}\n")
@@ -66,6 +64,7 @@ class OpaValidatorServicer(validate_pb2_grpc.ValidatorServicer):
         total_ms = (time.monotonic() - t0) * 1000
 
         from collections import Counter
+
         rule_counts = Counter(v.get("rule_id", "unknown") for v in violations)
         rule_timings = [
             common_pb2.RuleTiming(rule_id="opa_query", elapsed_ms=opa_query_ms, violations=len(violations)),

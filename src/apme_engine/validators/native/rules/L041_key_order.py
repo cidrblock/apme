@@ -1,13 +1,15 @@
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
-    RunTargetType,
     Rule,
-    Severity,
-    RuleTag as Tag,
     RuleResult,
+    RunTargetType,
+    Severity,
+)
+from apme_engine.engine.models import (
+    RuleTag as Tag,
 )
 
 # Canonical order: name first, then block keys, then module/action, then task options (tags, when, etc.), then args.

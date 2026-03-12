@@ -23,9 +23,9 @@ class Key:
 def make_global_key_prefix(collection, role):
     key_prefix = ""
     if collection != "":
-        key_prefix = "collection{}{}{}".format(key_delimiter, collection, object_delimiter)
+        key_prefix = f"collection{key_delimiter}{collection}{object_delimiter}"
     elif role != "":
-        key_prefix = "role{}{}{}".format(key_delimiter, role, object_delimiter)
+        key_prefix = f"role{key_delimiter}{role}{object_delimiter}"
     return key_prefix
 
 
@@ -35,47 +35,33 @@ def detect_type(key=""):
 
 def set_play_key(obj, parent_key="", parent_local_key=""):
     type_str = obj.type
-    index_info = "[{}]".format(obj.index)
+    index_info = f"[{obj.index}]"
     _parent_key = parent_key.split(" ")[-1]
     _parent_local_key = parent_local_key.split(" ")[-1]
-    global_key = "{} {}{}{}{}{}".format(
-        type_str,
-        _parent_key,
-        object_delimiter,
-        type_str,
-        key_delimiter,
-        index_info,
-    )
-    local_key = "{} {}{}{}{}{}".format(
-        type_str,
-        _parent_local_key,
-        object_delimiter,
-        type_str,
-        key_delimiter,
-        index_info,
-    )
+    global_key = f"{type_str} {_parent_key}{object_delimiter}{type_str}{key_delimiter}{index_info}"
+    local_key = f"{type_str} {_parent_local_key}{object_delimiter}{type_str}{key_delimiter}{index_info}"
     obj.key = global_key
     obj.local_key = local_key
 
 
 def set_role_key(obj):
     global_key_prefix = make_global_key_prefix(obj.collection, "")
-    global_key = "{} {}{}{}{}".format(obj.type, global_key_prefix, obj.type, key_delimiter, obj.fqcn)
-    local_key = "{} {}{}{}".format(obj.type, obj.type, key_delimiter, obj.defined_in)
+    global_key = f"{obj.type} {global_key_prefix}{obj.type}{key_delimiter}{obj.fqcn}"
+    local_key = f"{obj.type} {obj.type}{key_delimiter}{obj.defined_in}"
     obj.key = global_key
     obj.local_key = local_key
 
 
 def set_module_key(obj):
     global_key_prefix = make_global_key_prefix(obj.collection, obj.role)
-    global_key = "{} {}{}{}{}".format(obj.type, global_key_prefix, obj.type, key_delimiter, obj.fqcn)
-    local_key = "{} {}{}{}".format(obj.type, obj.type, key_delimiter, obj.defined_in)
+    global_key = f"{obj.type} {global_key_prefix}{obj.type}{key_delimiter}{obj.fqcn}"
+    local_key = f"{obj.type} {obj.type}{key_delimiter}{obj.defined_in}"
     obj.key = global_key
     obj.local_key = local_key
 
 
 def set_collection_key(obj):
-    global_key = "{} {}{}{}".format(obj.type, obj.type, key_delimiter, obj.name)
+    global_key = f"{obj.type} {obj.type}{key_delimiter}{obj.name}"
     local_key = global_key
     obj.key = global_key
     obj.local_key = local_key
@@ -178,59 +164,33 @@ def get_obj_info_by_key(key):
 
 
 def set_task_key(obj, parent_key="", parent_local_key=""):
-    index_info = "[{}]".format(obj.index)
+    index_info = f"[{obj.index}]"
     _parent_key = parent_key.split(" ")[-1]
     _parent_local_key = parent_local_key.split(" ")[-1]
-    global_key = "{} {}{}{}{}{}".format(
-        obj.type,
-        _parent_key,
-        object_delimiter,
-        obj.type,
-        key_delimiter,
-        index_info,
-    )
-    local_key = "{} {}{}{}{}{}".format(
-        obj.type,
-        _parent_local_key,
-        object_delimiter,
-        obj.type,
-        key_delimiter,
-        index_info,
-    )
+    global_key = f"{obj.type} {_parent_key}{object_delimiter}{obj.type}{key_delimiter}{index_info}"
+    local_key = f"{obj.type} {_parent_local_key}{object_delimiter}{obj.type}{key_delimiter}{index_info}"
     obj.key = global_key
     obj.local_key = local_key
 
 
 def set_taskfile_key(obj):
     global_key_prefix = make_global_key_prefix(obj.collection, obj.role)
-    global_key = "{} {}{}{}{}".format(
-        obj.type,
-        global_key_prefix,
-        obj.type,
-        key_delimiter,
-        obj.defined_in,
-    )
-    local_key = "{} {}{}{}".format(obj.type, obj.type, key_delimiter, obj.defined_in)
+    global_key = f"{obj.type} {global_key_prefix}{obj.type}{key_delimiter}{obj.defined_in}"
+    local_key = f"{obj.type} {obj.type}{key_delimiter}{obj.defined_in}"
     obj.key = global_key
     obj.local_key = local_key
 
 
 def set_playbook_key(obj):
     global_key_prefix = make_global_key_prefix(obj.collection, obj.role)
-    global_key = "{} {}{}{}{}".format(
-        obj.type,
-        global_key_prefix,
-        obj.type,
-        key_delimiter,
-        obj.defined_in,
-    )
-    local_key = "{} {}{}{}".format(obj.type, obj.type, key_delimiter, obj.defined_in)
+    global_key = f"{obj.type} {global_key_prefix}{obj.type}{key_delimiter}{obj.defined_in}"
+    local_key = f"{obj.type} {obj.type}{key_delimiter}{obj.defined_in}"
     obj.key = global_key
     obj.local_key = local_key
 
 
 def set_repository_key(obj):
-    global_key = "{} {}{}{}".format(obj.type, obj.type, key_delimiter, obj.name)
+    global_key = f"{obj.type} {obj.type}{key_delimiter}{obj.name}"
     local_key = global_key
     obj.key = global_key
     obj.local_key = local_key
@@ -239,7 +199,7 @@ def set_repository_key(obj):
 def set_call_object_key(cls_name: str, spec_key: str, caller_key: str):
     parts = spec_key.split(" ", 1)
     caller_only = caller_key.split(" FROM ")[0]
-    return "{} {} FROM {}".format(cls_name, parts[1], caller_only)
+    return f"{cls_name} {parts[1]} FROM {caller_only}"
 
 
 def make_imported_taskfile_key(caller_key, path):
@@ -255,7 +215,7 @@ def make_imported_taskfile_key(caller_key, path):
 
 def set_file_key(obj):
     global_key_prefix = make_global_key_prefix(obj.collection, obj.role)
-    global_key = "{} {}{}{}{}".format(obj.type, global_key_prefix, obj.type, key_delimiter, obj.defined_in)
-    local_key = "{} {}{}{}".format(obj.type, obj.type, key_delimiter, obj.defined_in)
+    global_key = f"{obj.type} {global_key_prefix}{obj.type}{key_delimiter}{obj.defined_in}"
+    local_key = f"{obj.type} {obj.type}{key_delimiter}{obj.defined_in}"
     obj.key = global_key
     obj.local_key = local_key

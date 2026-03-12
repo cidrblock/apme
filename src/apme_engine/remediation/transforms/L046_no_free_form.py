@@ -8,13 +8,21 @@ from apme_engine.engine.yaml_utils import FormattedYAML
 from apme_engine.remediation.registry import TransformResult
 from apme_engine.remediation.transforms._helpers import find_task_at_line, get_module_key
 
-
-_FREE_FORM_MODULES = frozenset({
-    "ansible.builtin.command", "ansible.builtin.shell", "ansible.builtin.raw",
-    "ansible.builtin.script",
-    "ansible.legacy.command", "ansible.legacy.shell", "ansible.legacy.raw",
-    "command", "shell", "raw", "script",
-})
+_FREE_FORM_MODULES = frozenset(
+    {
+        "ansible.builtin.command",
+        "ansible.builtin.shell",
+        "ansible.builtin.raw",
+        "ansible.builtin.script",
+        "ansible.legacy.command",
+        "ansible.legacy.shell",
+        "ansible.legacy.raw",
+        "command",
+        "shell",
+        "raw",
+        "script",
+    }
+)
 
 
 def fix_free_form(content: str, violation: dict) -> TransformResult:

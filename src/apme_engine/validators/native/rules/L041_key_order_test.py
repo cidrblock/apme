@@ -1,11 +1,10 @@
 # Colocated tests for L041 (KeyOrderRule). Uses Python-object context from _test_helpers.
 
-import pytest
 
 from apme_engine.validators.native.rules._test_helpers import (
-    make_task_spec,
-    make_task_call,
     make_context,
+    make_task_call,
+    make_task_spec,
 )
 from apme_engine.validators.native.rules.L041_key_order import KeyOrderRule
 
@@ -37,7 +36,8 @@ def test_L041_does_not_fire_when_name_before_action():
 
 
 def test_L041_does_not_fire_for_role():
-    from apme_engine.validators.native.rules._test_helpers import make_role_spec, make_role_call
+    from apme_engine.validators.native.rules._test_helpers import make_role_call, make_role_spec
+
     role = make_role_call(make_role_spec(name="foo"))
     ctx = make_context(role)
     rule = KeyOrderRule()

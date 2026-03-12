@@ -1,11 +1,13 @@
 import os
 from copy import deepcopy
 from dataclasses import dataclass, field
+
 import jsonpickle
+
 from .utils import (
     lock_file,
-    unlock_file,
     remove_lock_file,
+    unlock_file,
 )
 
 
@@ -61,7 +63,7 @@ class Findings:
     @staticmethod
     def load(fpath="", json_str=""):
         if fpath:
-            with open(fpath, "r") as file:
+            with open(fpath) as file:
                 json_str = file.read()
         findings = jsonpickle.decode(json_str)
         return findings

@@ -1,15 +1,17 @@
-# -*- mode:python; coding:utf-8 -*-
 # L052: Galaxy version in meta should follow semantic version format
 
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
+
 from apme_engine.engine.models import (
     AnsibleRunContext,
-    RunTargetType,
     Rule,
-    Severity,
-    RuleTag as Tag,
     RuleResult,
+    RunTargetType,
+    Severity,
+)
+from apme_engine.engine.models import (
+    RuleTag as Tag,
 )
 
 GALAXY_VERSION_PATTERN = re.compile(r"^\d+\.\d+(\.\d+)?$")

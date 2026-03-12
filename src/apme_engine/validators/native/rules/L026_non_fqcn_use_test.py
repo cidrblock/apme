@@ -1,14 +1,13 @@
 # Colocated tests for L026 (NonFQCNUseRule). Uses Python-object context from _test_helpers.
 
-import pytest
 
+from apme_engine.engine.models import ExecutableType
 from apme_engine.validators.native.rules._test_helpers import (
-    make_task_spec,
-    make_task_call,
     make_context,
+    make_task_call,
+    make_task_spec,
 )
 from apme_engine.validators.native.rules.L026_non_fqcn_use import NonFQCNUseRule
-from apme_engine.engine.models import ExecutableType
 
 
 def test_L026_fires_when_short_module_not_builtin():
@@ -43,7 +42,8 @@ def test_L026_does_not_fire_when_fqcn_builtin():
 
 
 def test_L026_does_not_fire_for_non_task():
-    from apme_engine.validators.native.rules._test_helpers import make_role_spec, make_role_call
+    from apme_engine.validators.native.rules._test_helpers import make_role_call, make_role_spec
+
     role_spec = make_role_spec(name="foo")
     role = make_role_call(role_spec)
     ctx = make_context(role)

@@ -2,11 +2,13 @@ from dataclasses import dataclass
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
-    RunTargetType,
     Rule,
-    Severity,
-    RuleTag as Tag,
     RuleResult,
+    RunTargetType,
+    Severity,
+)
+from apme_engine.engine.models import (
+    RuleTag as Tag,
 )
 
 # Default threshold: play/block with more than this many tasks may be considered complex

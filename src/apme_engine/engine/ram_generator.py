@@ -1,15 +1,16 @@
-import traceback
-import joblib
-import os
-import json
-import time
 import datetime
+import json
+import os
 import threading
+import time
+import traceback
+
+import joblib
 
 from .scanner import ARIScanner, config
 
 
-class RiskAssessmentModelGenerator(object):
+class RiskAssessmentModelGenerator:
     _queue: list = []
     _resume: int = -1
     _update: bool = False
@@ -18,7 +19,7 @@ class RiskAssessmentModelGenerator(object):
 
     def __init__(
         self,
-        target_list=[],
+        target_list=None,
         resume=-1,
         update=False,
         parallel=True,
@@ -28,6 +29,8 @@ class RiskAssessmentModelGenerator(object):
         no_module_spec=False,
         no_retry=False,
     ):
+        if target_list is None:
+            target_list = []
         self._queue = target_list
         self._resume = resume
         self._update = update
@@ -67,9 +70,13 @@ class RiskAssessmentModelGenerator(object):
             if i + 1 < self._resume:
                 continue
             if not isinstance(target_info, tuple):
-                raise ValueError(f"target list must be a list of tuple(target_type, target_name), but got a {type(target_info)}")
+                raise ValueError(
+                    f"target list must be a list of tuple(target_type, target_name), but got a {type(target_info)}"
+                )
             if len(target_info) != 2:
-                raise ValueError(f"target list must be a list of tuple(target_type, target_name), but got this; {target_info}")
+                raise ValueError(
+                    f"target list must be a list of tuple(target_type, target_name), but got this; {target_info}"
+                )
 
             _type, _name = target_info
             input_list.append((i, num, _type, _name))
@@ -77,7 +84,9 @@ class RiskAssessmentModelGenerator(object):
         self.start = time.time()
 
         if self._parallel:
-            joblib.Parallel(n_jobs=-1)(joblib.delayed(self.scan)(i, num, _type, _name) for (i, num, _type, _name) in input_list)
+            joblib.Parallel(n_jobs=-1)(
+                joblib.delayed(self.scan)(i, num, _type, _name) for (i, num, _type, _name) in input_list
+            )
         else:
             for i, num, _type, _name in input_list:
                 self.scan(i, num, _type, _name)
@@ -86,7 +95,7 @@ class RiskAssessmentModelGenerator(object):
         elapsed = round(time.time() - self.start, 2)
         start_of_this_scan = time.time()
         thread_id = threading.get_native_id()
-        print(f"[{i+1}/{num}] start {type} {name} ({elapsed} sec. elapsed) (thread: {thread_id})")
+        print(f"[{i + 1}/{num}] start {type} {name} ({elapsed} sec. elapsed) (thread: {thread_id})")
         use_src_cache = True
 
         if self.skip_scan(type, name):
@@ -117,18 +126,18 @@ class RiskAssessmentModelGenerator(object):
 
         elapsed_for_this_scan = round(time.time() - start_of_this_scan, 2)
         if elapsed_for_this_scan > 60:
-            print(f"WARNING: It took {elapsed_for_this_scan} sec. to process [{i+1}/{num}] {type} {name}")
+            print(f"WARNING: It took {elapsed_for_this_scan} sec. to process [{i + 1}/{num}] {type} {name}")
 
     def save_ram_log(self, type, name, fail):
         out_dir = os.path.join(self._scanner.root_dir, "log", type, name)
         path = os.path.join(out_dir, "ram_log.json")
 
-        scan_time = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')
+        scan_time = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")
         new_record = {"type": type, "name": name, "succeed": not fail, "time": scan_time}
 
         logs = []
         if os.path.exists(path):
-            with open(path, "r") as file:
+            with open(path) as file:
                 data = file.read()
                 d = json.loads(data)
                 logs.extend(d)
@@ -146,16 +155,13 @@ class RiskAssessmentModelGenerator(object):
         if not os.path.exists(path):
             return skip
         logs = []
-        with open(path, "r") as file:
+        with open(path) as file:
             data = file.read()
             d = json.loads(data)
             logs.extend(d)
         if logs:
             latest = logs[-1]
-            if latest.get("succeed", False):
-                skip = True
-                return skip
-            elif self._no_retry:
+            if latest.get("succeed", False) or self._no_retry:
                 skip = True
                 return skip
         return skip

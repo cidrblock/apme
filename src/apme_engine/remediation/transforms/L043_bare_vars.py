@@ -10,8 +10,15 @@ from apme_engine.remediation.transforms._helpers import find_task_at_line
 
 _BARE_VAR = re.compile(r"^([a-zA-Z_]\w*)$")
 
-_LOOP_KEYS = ("with_items", "with_dict", "with_fileglob", "with_subelements",
-              "with_sequence", "with_nested", "with_first_found")
+_LOOP_KEYS = (
+    "with_items",
+    "with_dict",
+    "with_fileglob",
+    "with_subelements",
+    "with_sequence",
+    "with_nested",
+    "with_first_found",
+)
 
 
 def fix_bare_vars(content: str, violation: dict) -> TransformResult:

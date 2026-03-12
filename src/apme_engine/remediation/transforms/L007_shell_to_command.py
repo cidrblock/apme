@@ -6,7 +6,6 @@ from apme_engine.engine.yaml_utils import FormattedYAML
 from apme_engine.remediation.registry import TransformResult
 from apme_engine.remediation.transforms._helpers import find_task_at_line, get_module_key, rename_key
 
-
 _SHELL_CHARS = ("|", "&&", "||", ";", ">", ">>", "<", "$(", "`", "*", "?")
 
 _SHELL_TO_COMMAND = {

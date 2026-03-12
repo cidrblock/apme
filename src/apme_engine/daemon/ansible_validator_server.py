@@ -1,6 +1,7 @@
 """Ansible validator daemon: async gRPC adapter with ephemeral per-request venvs."""
 
 import asyncio
+import contextlib
 import json
 import os
 import shutil
@@ -13,12 +14,12 @@ from pathlib import Path
 
 import grpc
 import grpc.aio
-from apme.v1 import validate_pb2, validate_pb2_grpc, common_pb2
 
+from apme.v1 import common_pb2, validate_pb2, validate_pb2_grpc
 from apme_engine.collection_cache.config import get_cache_root
-from apme_engine.collection_cache.venv_builder import build_venv, get_venv_python
+from apme_engine.collection_cache.venv_builder import build_venv
 from apme_engine.daemon.violation_convert import violation_dict_to_proto
-from apme_engine.validators.ansible import AnsibleValidator, AnsibleRunResult
+from apme_engine.validators.ansible import AnsibleRunResult, AnsibleValidator
 from apme_engine.validators.ansible._venv import (
     DEFAULT_VERSION,
     setup_collections_env,
@@ -107,10 +108,8 @@ def _run_ansible_validate(
 
         env_extra = None
         if collection_specs:
-            try:
+            with contextlib.suppress(Exception):
                 env_extra = setup_collections_env(collection_specs, cache)
-            except Exception:
-                pass
 
         scan_context = ScanContext(
             hierarchy_payload=hierarchy_payload,
@@ -125,6 +124,7 @@ def _run_ansible_validate(
         )
     except Exception as e:
         import traceback
+
         sys.stderr.write(f"[req={req_id}] Ansible error: {e}\n")
         traceback.print_exc(file=sys.stderr)
         sys.stderr.flush()
@@ -143,15 +143,11 @@ def _run_ansible_validate(
         )
     finally:
         if temp_dir is not None and temp_dir.is_dir():
-            try:
+            with contextlib.suppress(OSError):
                 shutil.rmtree(temp_dir)
-            except OSError:
-                pass
         if venv_root is not None and venv_root.is_dir():
-            try:
+            with contextlib.suppress(OSError):
                 shutil.rmtree(venv_root.parent)
-            except OSError:
-                pass
 
 
 class AnsibleValidatorServicer(validate_pb2_grpc.ValidatorServicer):
@@ -198,7 +194,9 @@ class AnsibleValidatorServicer(validate_pb2_grpc.ValidatorServicer):
 
             rule_timings = [
                 common_pb2.RuleTiming(
-                    rule_id=rt.rule_id, elapsed_ms=rt.elapsed_ms, violations=rt.violations,
+                    rule_id=rt.rule_id,
+                    elapsed_ms=rt.elapsed_ms,
+                    violations=rt.violations,
                 )
                 for rt in result.run_result.rule_timings
             ]
@@ -222,6 +220,7 @@ class AnsibleValidatorServicer(validate_pb2_grpc.ValidatorServicer):
             )
         except Exception as e:
             import traceback
+
             sys.stderr.write(f"[req={req_id}] Ansible error: {e}\n")
             traceback.print_exc(file=sys.stderr)
             sys.stderr.flush()

@@ -2,6 +2,7 @@
 runs gitleaks detect, and returns violations."""
 
 import asyncio
+import contextlib
 import os
 import shutil
 import sys
@@ -11,15 +12,23 @@ from pathlib import Path
 
 import grpc
 import grpc.aio
-from apme.v1 import validate_pb2, validate_pb2_grpc, common_pb2
 
+from apme.v1 import common_pb2, validate_pb2, validate_pb2_grpc
 from apme_engine.daemon.violation_convert import violation_dict_to_proto
-from apme_engine.validators.gitleaks.scanner import run_gitleaks, GITLEAKS_BIN
+from apme_engine.validators.gitleaks.scanner import GITLEAKS_BIN, run_gitleaks
 
 _MAX_CONCURRENT_RPCS = int(os.environ.get("APME_GITLEAKS_MAX_RPCS", "16"))
 
 _SCANNABLE_EXTENSIONS = (
-    ".yml", ".yaml", ".cfg", ".ini", ".conf", ".env", ".py", ".sh", ".json",
+    ".yml",
+    ".yaml",
+    ".cfg",
+    ".ini",
+    ".conf",
+    ".env",
+    ".py",
+    ".sh",
+    ".json",
 )
 
 
@@ -38,15 +47,14 @@ def _run_scan(files: list) -> tuple[list[dict], int]:
 
         return run_gitleaks(temp_dir), file_count
     finally:
-        try:
+        with contextlib.suppress(OSError):
             shutil.rmtree(temp_dir)
-        except OSError:
-            pass
 
 
 def _get_gitleaks_version() -> str:
     """Attempt to get gitleaks version string (best-effort)."""
     import subprocess as _sp
+
     try:
         r = _sp.run([GITLEAKS_BIN, "version"], capture_output=True, text=True, timeout=5)
         return r.stdout.strip() if r.returncode == 0 else "unknown"
@@ -68,13 +76,13 @@ class GitleaksValidatorServicer(validate_pb2_grpc.ValidatorServicer):
             sys.stderr.flush()
 
             violations, files_written = await asyncio.get_event_loop().run_in_executor(
-                None, _run_scan, list(request.files),
+                None,
+                _run_scan,
+                list(request.files),
             )
 
             total_ms = (time.monotonic() - t0) * 1000
-            sys.stderr.write(
-                f"[req={req_id}] Gitleaks: {len(violations)} finding(s) in {total_ms:.1f}ms\n"
-            )
+            sys.stderr.write(f"[req={req_id}] Gitleaks: {len(violations)} finding(s) in {total_ms:.1f}ms\n")
             sys.stderr.flush()
 
             diag = common_pb2.ValidatorDiagnostics(
@@ -103,16 +111,17 @@ class GitleaksValidatorServicer(validate_pb2_grpc.ValidatorServicer):
             )
         except Exception as e:
             import traceback
+
             sys.stderr.write(f"[req={req_id}] Gitleaks error: {e}\n")
             traceback.print_exc(file=sys.stderr)
             sys.stderr.flush()
             return validate_pb2.ValidateResponse(violations=[], request_id=req_id)
 
     async def Health(self, request, context):
-        import subprocess
         try:
             proc = await asyncio.create_subprocess_exec(
-                GITLEAKS_BIN, "version",
+                GITLEAKS_BIN,
+                "version",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )

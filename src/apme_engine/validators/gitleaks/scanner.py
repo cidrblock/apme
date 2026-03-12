@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import subprocess
@@ -44,10 +45,14 @@ def run_gitleaks(scan_dir: str | Path, *, timeout: int = 120) -> list[dict]:
         GITLEAKS_BIN,
         "detect",
         "--no-git",
-        "--source", str(scan_dir),
-        "--report-format", "json",
-        "--report-path", report_path,
-        "--exit-code", "0",
+        "--source",
+        str(scan_dir),
+        "--report-format",
+        "json",
+        "--report-path",
+        report_path,
+        "--exit-code",
+        "0",
     ]
 
     try:
@@ -75,10 +80,8 @@ def run_gitleaks(scan_dir: str | Path, *, timeout: int = 120) -> list[dict]:
         sys.stderr.flush()
         return []
     finally:
-        try:
+        with contextlib.suppress(OSError):
             Path(report_path).unlink()
-        except OSError:
-            pass
 
     return _convert_findings(findings, scan_dir)
 
@@ -109,13 +112,15 @@ def _convert_findings(findings: list[dict], scan_dir: Path) -> list[dict]:
         end_line = f.get("EndLine", line)
         gitleaks_rule = f.get("RuleID", "unknown")
 
-        violations.append({
-            "rule_id": _build_rule_id(gitleaks_rule),
-            "level": "error",
-            "message": f.get("Description", f"Secret detected: {gitleaks_rule}"),
-            "file": rel,
-            "line": line if line == end_line else [line, end_line],
-            "path": "",
-        })
+        violations.append(
+            {
+                "rule_id": _build_rule_id(gitleaks_rule),
+                "level": "error",
+                "message": f.get("Description", f"Secret detected: {gitleaks_rule}"),
+                "file": rel,
+                "line": line if line == end_line else [line, end_line],
+                "path": "",
+            }
+        )
 
     return violations

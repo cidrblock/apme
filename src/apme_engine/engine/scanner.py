@@ -1,55 +1,53 @@
+import contextlib
+import datetime
+import json
 import os
 import sys
-import json
-import yaml
 import tempfile
-import jsonpickle
-import datetime
 from dataclasses import dataclass, field
+from pathlib import Path
 
-from .models import (
-    Object,
-    Load,
-    LoadType,
-    ObjectList,
-    TaskCall,
-    TaskCallsInTree,
-    AnsibleRunContext,
-    ARIResult,
-)
-from .loader import (
-    get_loader_version,
-)
-from .parser import Parser
-from .model_loader import load_object
-from .tree import TreeLoader
-from .annotators.variable_resolver import resolve_variables
+import jsonpickle
+import yaml
+
+from . import logger
 from .analyzer import analyze
-from .risk_detector import detect
+from .annotators.variable_resolver import resolve_variables
 from .dependency_dir_preparator import (
     DependencyDirPreparator,
 )
 from .findings import Findings
-from .risk_assessment_model import RAMClient
 from .keyutil import detect_type as key_detect_type
-from . import logger
+from .loader import (
+    get_loader_version,
+)
+from .model_loader import load_object
+from .models import (
+    AnsibleRunContext,
+    ARIResult,
+    Load,
+    LoadType,
+    Object,
+    ObjectList,
+    TaskCall,
+    TaskCallsInTree,
+)
+from .parser import Parser
+from .risk_assessment_model import RAMClient
+from .tree import TreeLoader
 from .utils import (
-    is_url,
-    is_local_path,
-    escape_url,
+    equal,
     escape_local_path,
-    summarize_findings,
-    summarize_findings_data,
+    escape_url,
+    is_local_path,
+    is_url,
     split_target_playbook_fullpath,
     split_target_taskfile_fullpath,
-    equal,
+    summarize_findings,
 )
 
 ARI_CONFIG_PATH = os.getenv("ARI_CONFIG_PATH")
-if ARI_CONFIG_PATH:
-    default_config_path = ARI_CONFIG_PATH
-else:
-    default_config_path = os.path.expanduser("~/.ari/config")
+default_config_path = ARI_CONFIG_PATH or os.path.expanduser("~/.ari/config")
 default_data_dir = os.path.join("/tmp", "ari-data")
 default_rules_dir = os.path.join(os.path.dirname(__file__), "rules")
 default_log_level = "info"
@@ -76,18 +74,20 @@ class Config:
             self.path = default_config_path
         config_data = {}
         if os.path.exists(self.path):
-            with open(self.path, "r") as file:
+            with open(self.path) as file:
                 try:
                     config_data = yaml.safe_load(file)
                 except Exception as e:
-                    raise ValueError(f"failed to load the config file: {e}")
+                    raise ValueError(f"failed to load the config file: {e}") from e
         if config_data:
             self._data = config_data
 
         if not self.data_dir:
             self.data_dir = self._get_single_config("ARI_DATA_DIR", "data_dir", default_data_dir)
         if not self.disable_default_rules:
-            self.disable_default_rules = self._get_single_config("ARI_DISABLE_DEFAULT_RULES", "disable_default_rules", default_disable_default_rules)
+            self.disable_default_rules = self._get_single_config(
+                "ARI_DISABLE_DEFAULT_RULES", "disable_default_rules", default_disable_default_rules
+            )
         if not self.rules_dir:
             if self.disable_default_rules:
                 self.rules_dir = self._get_single_config("ARI_RULES_DIR", "rules_dir", "")
@@ -103,12 +103,13 @@ class Config:
         if not self.rules:
             self.rules = self._get_single_config("ARI_RULES", "rules", default_rules, "list", ",")
 
-    def _get_single_config(self, env_key: str = "", yaml_key: str = "", __default: any = None, __type=None, separator=""):
+    def _get_single_config(
+        self, env_key: str = "", yaml_key: str = "", __default: any = None, __type=None, separator=""
+    ):
         if env_key in os.environ:
             _from_env = os.environ.get(env_key, None)
-            if _from_env and __type:
-                if __type == "list":
-                    _from_env = _from_env.split(separator)
+            if _from_env and __type and __type == "list":
+                _from_env = _from_env.split(separator)
             return _from_env
         elif yaml_key in self._data:
             _from_file = self._data.get(yaml_key, None)
@@ -136,7 +137,7 @@ logger.set_log_level(config.log_level)
 
 
 @dataclass
-class SingleScan(object):
+class SingleScan:
     type: str = ""
     name: str = ""
     collection_name: str = ""
@@ -241,12 +242,12 @@ class SingleScan(object):
                 "index": os.path.join(
                     self.root_dir,
                     type_root,
-                    "{}-{}-index-ext.json".format(self.type, target_name),
+                    f"{self.type}-{target_name}-index-ext.json",
                 ),
                 "install_log": os.path.join(
                     self.root_dir,
                     type_root,
-                    "{}-{}-install.log".format(self.type, target_name),
+                    f"{self.type}-{target_name}-install.log",
                 ),
             }
 
@@ -299,13 +300,13 @@ class SingleScan(object):
                     self.root_dir,
                     type_root,
                     proj_name,
-                    "{}-{}-install.log".format(self.type, proj_name),
+                    f"{self.type}-{proj_name}-install.log",
                 ),
                 "dependencies": os.path.join(self.root_dir, type_root, proj_name, "dependencies"),
             }
 
         else:
-            raise ValueError("Unsupported type: {}".format(self.type))
+            raise ValueError(f"Unsupported type: {self.type}")
 
         if self.playbook_yaml:
             self.playbook_only = True
@@ -349,17 +350,7 @@ class SingleScan(object):
                 target_path = target_name
             else:
                 target_path = os.path.join(self.root_dir, typ + "s", "src", target_name)
-        elif typ == LoadType.PROJECT:
-            if is_url(target_name):
-                target_path = os.path.join(self.get_src_root(), escape_url(target_name))
-            else:
-                target_path = target_name
-        elif typ == LoadType.PLAYBOOK:
-            if is_url(target_name):
-                target_path = os.path.join(self.get_src_root(), escape_url(target_name))
-            else:
-                target_path = target_name
-        elif typ == LoadType.TASKFILE:
+        elif typ == LoadType.PROJECT or typ == LoadType.PLAYBOOK or typ == LoadType.TASKFILE:
             if is_url(target_name):
                 target_path = os.path.join(self.get_src_root(), escape_url(target_name))
             else:
@@ -413,7 +404,7 @@ class SingleScan(object):
         loader_version = get_loader_version()
 
         if not os.path.exists(target_path) and not self.playbook_yaml and not self.taskfile_yaml:
-            raise ValueError("No such file or directory: {}".format(target_path))
+            raise ValueError(f"No such file or directory: {target_path}")
         if not self.silent:
             logger.debug(f"target_name: {target_name}")
             logger.debug(f"target_type: {target_type}")
@@ -457,7 +448,7 @@ class SingleScan(object):
         output_dir = self.get_definition_path(ld.target_type, ld.target_name)
         if use_cache and os.path.exists(os.path.join(output_dir, "mappings.json")):
             if not self.silent:
-                logger.debug("use cache from {}".format(output_dir))
+                logger.debug(f"use cache from {output_dir}")
             definitions, mappings = Parser.restore_definition_objects(output_dir)
         else:
             definitions, mappings = self._parser.run(load_data=ld)
@@ -468,7 +459,7 @@ class SingleScan(object):
                     os.makedirs(output_dir, exist_ok=True)
                 Parser.dump_definition_objects(output_dir, definitions, mappings)
 
-        key = "{}-{}".format(target_type, target_name)
+        key = f"{target_type}-{target_name}"
         self.ext_definitions[key] = {
             "definitions": definitions,
             "mappings": mappings,
@@ -556,7 +547,7 @@ class SingleScan(object):
         else:
             # only for playbook / taskfile not in `--xxxx-only` mode
             for obj in obj_list:
-                obj_path = getattr(obj, "defined_in")
+                obj_path = obj.defined_in
                 if self.name in obj_path:
                     self.target_object = obj
                     break
@@ -601,7 +592,7 @@ class SingleScan(object):
                 lines = []
                 for t_obj_list in self.trees:
                     lines.append(t_obj_list.to_one_line_json())
-                open(tree_rel_file, "w").write("\n".join(lines))
+                Path(tree_rel_file).write_text("\n".join(lines))
                 if not self.silent:
                     logger.info("  tree file saved")
         return
@@ -617,7 +608,11 @@ class SingleScan(object):
                 "name": self.name,
             }
             ctx = AnsibleRunContext.from_tree(
-                tree=tree, parent=self.target_object, last_item=last_item, ram_client=ram_client, scan_metadata=scan_metadata
+                tree=tree,
+                parent=self.target_object,
+                last_item=last_item,
+                ram_client=ram_client,
+                scan_metadata=scan_metadata,
             )
             self.contexts.append(ctx)
 
@@ -629,7 +624,7 @@ class SingleScan(object):
                 line = jsonpickle.encode(d, make_refs=False)
                 tasks_in_t_lines.append(line)
 
-            open(tasks_in_t_path, "w").write("\n".join(tasks_in_t_lines))
+            Path(tasks_in_t_path).write_text("\n".join(tasks_in_t_lines))
         return
 
     def annotate(self):
@@ -644,13 +639,12 @@ class SingleScan(object):
                 line = jsonpickle.encode(d, make_refs=False)
                 conetxts_a_lines.append(line)
 
-            open(contexts_a_path, "w").write("\n".join(conetxts_a_lines))
+            Path(contexts_a_path).write_text("\n".join(conetxts_a_lines))
 
         return
 
     def _node_to_dict(self, node):
         """Serialize a RunTarget (playcall, rolecall, taskcall, etc.) to a JSON-serializable dict for OPA input."""
-        from .models import RunTargetType
         d = {"type": getattr(node, "type", ""), "key": getattr(node, "key", "")}
         spec = getattr(node, "spec", None)
         if spec:
@@ -689,7 +683,17 @@ class SingleScan(object):
                 if isinstance(opts, dict):
                     d["options"] = self._opts_for_opa(
                         opts,
-                        ["when", "tags", "ignore_errors", "register", "changed_when", "become", "become_user", "run_once", "local_action"],
+                        [
+                            "when",
+                            "tags",
+                            "ignore_errors",
+                            "register",
+                            "changed_when",
+                            "become",
+                            "become_user",
+                            "run_once",
+                            "local_action",
+                        ],
                     )
                 mo = getattr(spec, "module_options", None)
                 if isinstance(mo, dict):
@@ -703,10 +707,8 @@ class SingleScan(object):
             if k not in opts:
                 continue
             v = opts[k]
-            try:
+            with contextlib.suppress(Exception):
                 out[k] = self._json_safe(v)
-            except Exception:
-                pass
         return out
 
     def _json_safe(self, v):
@@ -733,7 +735,8 @@ class SingleScan(object):
 
     def _annotation_to_dict(self, an) -> dict:
         """Serialize a full Annotation (including RiskAnnotation detail) for OPA input."""
-        from .models import RiskAnnotation, Location
+        from .models import Location, RiskAnnotation
+
         d = {
             "type": getattr(an, "type", ""),
             "key": getattr(an, "key", ""),
@@ -804,7 +807,8 @@ class SingleScan(object):
                 continue
             root_key = getattr(ctx, "root_key", "")
             root_type = key_detect_type(root_key) if root_key else ""
-            # Expose root file path for playbook-extension and similar (e.g. "playbook :/path/to/pb.yml" -> "/path/to/pb.yml")
+            # Expose root file path for playbook-extension and similar
+            # (e.g. "playbook :/path/to/pb.yml" -> "/path/to/pb.yml")
             root_path = ""
             if root_key and " " in root_key:
                 root_path = root_key.split(" ", 1)[-1].lstrip(":")
@@ -851,7 +855,7 @@ class SingleScan(object):
             prm=self.prm,
             report={"hierarchy_payload": self.hierarchy_payload},
             summary_txt="",
-            scan_time=datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f'),
+            scan_time=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f"),
         )
         self.result = None
         return
@@ -905,12 +909,12 @@ class SingleScan(object):
 
     def load_index(self):
         index_location = self.__path_mappings["index"]
-        with open(index_location, "r") as f:
+        with open(index_location) as f:
             self.index = json.load(f)
 
 
 @dataclass
-class ARIScanner(object):
+class ARIScanner:
     config: Config = None
 
     root_dir: str = ""
@@ -1051,7 +1055,9 @@ class ARIScanner(object):
         self.record_begin(time_records, "metadata_load")
         metdata_loaded = False
         read_root_from_ram = (
-            self.read_ram and scandata.type not in [LoadType.PLAYBOOK, LoadType.TASKFILE, LoadType.PROJECT] and not is_local_path(scandata.name)
+            self.read_ram
+            and scandata.type not in [LoadType.PLAYBOOK, LoadType.TASKFILE, LoadType.PROJECT]
+            and not is_local_path(scandata.name)
         )
         if read_root_from_ram:
             loaded, metadata, dependencies = self.load_metadata_from_ram(scandata.type, scandata.name, scandata.version)
@@ -1093,8 +1099,8 @@ class ARIScanner(object):
             for i, (ext_type, ext_name, ext_ver, ext_hash, ext_path, is_local_dir) in enumerate(ext_list):
                 if not self.silent:
                     if i == 0:
-                        logger.info("start loading {} {}(s)".format(ext_count, ext_type))
-                    logger.info("[{}/{}] {} {}".format(i + 1, ext_count, ext_type, ext_name))
+                        logger.info(f"start loading {ext_count} {ext_type}(s)")
+                    logger.info(f"[{i + 1}/{ext_count}] {ext_type} {ext_name}")
 
                 # avoid infinite loop
                 is_root = False
@@ -1104,19 +1110,24 @@ class ARIScanner(object):
                 ext_target_path = os.path.join(self.root_dir, ext_path)
                 role_name_for_local_dep = ""
                 # if a dependency is a local role, set the local path
-                if scandata.type == LoadType.ROLE and ext_type == LoadType.ROLE:
-                    if is_local_dir and is_local_path(scandata.name) and scandata.name != ext_name:
-                        root_role_path = scandata.name[:-1] if scandata.name[-1] == "/" else scandata.name
-                        role_base_dir = os.path.dirname(root_role_path)
-                        dep_role_path = os.path.join(role_base_dir, ext_name)
-                        role_name_for_local_dep = ext_name
-                        ext_name = dep_role_path
-                        ext_target_path = dep_role_path
+                if (
+                    scandata.type == LoadType.ROLE
+                    and ext_type == LoadType.ROLE
+                    and is_local_dir
+                    and is_local_path(scandata.name)
+                    and scandata.name != ext_name
+                ):
+                    root_role_path = scandata.name[:-1] if scandata.name[-1] == "/" else scandata.name
+                    role_base_dir = os.path.dirname(root_role_path)
+                    dep_role_path = os.path.join(role_base_dir, ext_name)
+                    role_name_for_local_dep = ext_name
+                    ext_name = dep_role_path
+                    ext_target_path = dep_role_path
 
                 if not is_root:
-                    key = "{}-{}".format(ext_type, ext_name)
+                    key = f"{ext_type}-{ext_name}"
                     if role_name_for_local_dep:
-                        key = "{}-{}".format(ext_type, role_name_for_local_dep)
+                        key = f"{ext_type}-{role_name_for_local_dep}"
                     read_ram_for_dependency = self.read_ram or self.read_ram_for_dependency
 
                     dep_loaded = False
@@ -1183,7 +1194,9 @@ class ARIScanner(object):
         loaded = False
         self.record_begin(time_records, "target_load")
         if read_root_from_ram:
-            loaded, root_defs = self.load_definitions_from_ram(scandata.type, scandata.name, scandata.version, scandata.hash, allow_unresolved=True)
+            loaded, root_defs = self.load_definitions_from_ram(
+                scandata.type, scandata.name, scandata.version, scandata.hash, allow_unresolved=True
+            )
             logger.debug(f"spec data loaded: {loaded}")
             if loaded:
                 scandata.root_definitions = root_defs
@@ -1203,7 +1216,10 @@ class ARIScanner(object):
             taskfiles_num = len(scandata.root_definitions["definitions"]["taskfiles"])
             tasks_num = len(scandata.root_definitions["definitions"]["tasks"])
             modules_num = len(scandata.root_definitions["definitions"]["modules"])
-            logger.debug(f"playbooks: {playbooks_num}, roles: {roles_num}, taskfiles: {taskfiles_num}, tasks: {tasks_num}, modules: {modules_num}")
+            logger.debug(
+                f"playbooks: {playbooks_num}, roles: {roles_num}, taskfiles: {taskfiles_num}, "
+                f"tasks: {tasks_num}, modules: {modules_num}"
+            )
 
         self.record_begin(time_records, "apply_spec_rules")
         scandata.apply_spec_mutations()
@@ -1263,12 +1279,12 @@ class ARIScanner(object):
         if scandata.out_dir is not None and scandata.out_dir != "":
             self.save_rule_result(scandata.findings, scandata.out_dir)
             if not self.silent:
-                print("The rule result is saved at {}".format(scandata.out_dir))
+                print(f"The rule result is saved at {scandata.out_dir}")
 
             if objects:
                 self.save_definitions(scandata.root_definitions, scandata.out_dir)
                 if not self.silent:
-                    print("The objects is saved at {}".format(scandata.out_dir))
+                    print(f"The objects is saved at {scandata.out_dir}")
 
         if not self.silent:
             summary = summarize_findings(scandata.findings, self.show_all)
@@ -1288,7 +1304,9 @@ class ARIScanner(object):
             _previous = spec_mutations_from_previous_scan
             if _previous and equal(scandata.spec_mutations, _previous):
                 if not self.silent:
-                    logger.warning("Spec mutation loop has been detected! " "Exitting the scan here but the result may be incomplete.")
+                    logger.warning(
+                        "Spec mutation loop has been detected! Exitting the scan here but the result may be incomplete."
+                    )
             else:
                 trigger_rescan = True
 
@@ -1331,7 +1349,9 @@ class ARIScanner(object):
         return loaded, metadata, dependencies
 
     def load_definitions_from_ram(self, type, name, version, hash, allow_unresolved=False):
-        loaded, definitions, mappings = self.ram_client.load_definitions_from_findings(type, name, version, hash, allow_unresolved)
+        loaded, definitions, mappings = self.ram_client.load_definitions_from_findings(
+            type, name, version, hash, allow_unresolved
+        )
         definitions_dict = {}
         if loaded:
             definitions_dict = {
@@ -1384,19 +1404,30 @@ class ARIScanner(object):
 
     def record_begin(self, time_records: dict, record_name: str):
         time_records[record_name] = {}
-        time_records[record_name]["begin"] = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')
+        time_records[record_name]["begin"] = datetime.datetime.now(datetime.timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%S.%f"
+        )
 
     def record_end(self, time_records: dict, record_name: str):
         end = datetime.datetime.now(datetime.timezone.utc)
         end = end.replace(tzinfo=None)
-        time_records[record_name]["end"] = end.strftime('%Y-%m-%dT%H:%M:%S.%f')
+        time_records[record_name]["end"] = end.strftime("%Y-%m-%dT%H:%M:%S.%f")
         begin = datetime.datetime.fromisoformat(time_records[record_name]["begin"])
         elapsed = (end - begin).total_seconds()
         time_records[record_name]["elapsed"] = elapsed
 
 
-def tree(root_definitions, ext_definitions, ram_client=None, target_playbook_path=None, target_taskfile_path=None, load_all_taskfiles=False):
-    tl = TreeLoader(root_definitions, ext_definitions, ram_client, target_playbook_path, target_taskfile_path, load_all_taskfiles)
+def tree(
+    root_definitions,
+    ext_definitions,
+    ram_client=None,
+    target_playbook_path=None,
+    target_taskfile_path=None,
+    load_all_taskfiles=False,
+):
+    tl = TreeLoader(
+        root_definitions, ext_definitions, ram_client, target_playbook_path, target_taskfile_path, load_all_taskfiles
+    )
     trees, additional = tl.run()
     if trees is None:
         raise ValueError("failed to get trees")
@@ -1418,7 +1449,7 @@ def resolve(trees, additional):
         if len(tree.items) == 0:
             continue
         root_key = tree.items[0].spec.key
-        logger.debug("[{}/{}] {}".format(i + 1, len(trees), root_key))
+        logger.debug(f"[{i + 1}/{len(trees)}] {root_key}")
         taskcalls = resolve_variables(tree, additional)
         d = TaskCallsInTree(
             root_key=root_key,

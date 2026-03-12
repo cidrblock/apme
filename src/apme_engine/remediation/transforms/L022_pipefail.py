@@ -6,10 +6,13 @@ from apme_engine.engine.yaml_utils import FormattedYAML
 from apme_engine.remediation.registry import TransformResult
 from apme_engine.remediation.transforms._helpers import find_task_at_line, get_module_key
 
-
-_SHELL_MODULES = frozenset({
-    "ansible.builtin.shell", "ansible.legacy.shell", "shell",
-})
+_SHELL_MODULES = frozenset(
+    {
+        "ansible.builtin.shell",
+        "ansible.legacy.shell",
+        "shell",
+    }
+)
 
 
 def fix_pipefail(content: str, violation: dict) -> TransformResult:

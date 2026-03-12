@@ -1,11 +1,10 @@
 # Colocated tests for L027 (RoleWithoutMetadataRule). Uses Python-object context from _test_helpers.
 
-import pytest
 
 from apme_engine.validators.native.rules._test_helpers import (
-    make_role_spec,
-    make_role_call,
     make_context,
+    make_role_call,
+    make_role_spec,
 )
 from apme_engine.validators.native.rules.L027_role_without_metadata import RoleWithoutMetadataRule
 
@@ -42,7 +41,8 @@ def test_L027_does_not_fire_when_role_has_metadata():
 
 
 def test_L027_does_not_fire_for_task():
-    from apme_engine.validators.native.rules._test_helpers import make_task_spec, make_task_call
+    from apme_engine.validators.native.rules._test_helpers import make_task_call, make_task_spec
+
     spec = make_task_spec(module="copy")
     task = make_task_call(spec)
     ctx = make_context(task)

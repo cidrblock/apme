@@ -2,9 +2,9 @@
 
 from apme_engine.engine.models import MutableContent
 from apme_engine.validators.native.rules._test_helpers import (
-    make_task_spec,
-    make_task_call,
     make_context,
+    make_task_call,
+    make_task_spec,
 )
 from apme_engine.validators.native.rules.sample_rule import SampleRule
 

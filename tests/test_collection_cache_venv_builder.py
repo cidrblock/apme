@@ -2,14 +2,14 @@
 
 import os
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from apme_engine.collection_cache.venv_builder import (
+    _resolve_collection_path,
     _venv_key,
     _venv_site_packages,
-    _resolve_collection_path,
     build_venv,
     get_venv_python,
 )
@@ -17,9 +17,7 @@ from apme_engine.collection_cache.venv_builder import (
 
 class TestVenvKey:
     def test_stable_for_same_inputs(self):
-        assert _venv_key("2.15.0", ["ansible.builtin.debug"]) == _venv_key(
-            "2.15.0", ["ansible.builtin.debug"]
-        )
+        assert _venv_key("2.15.0", ["ansible.builtin.debug"]) == _venv_key("2.15.0", ["ansible.builtin.debug"])
 
     def test_different_version_different_key(self):
         k1 = _venv_key("2.14.0", [])
@@ -97,14 +95,16 @@ class TestBuildVenv:
                 (venv_path / "pyvenv.cfg").write_text("[venv]")
             return MagicMock(returncode=0)
 
-        with patch("subprocess.run", side_effect=run_side_effect):
-            with pytest.raises(FileNotFoundError, match="Collection not in cache"):
-                build_venv(
-                    "2.15.0",
-                    ["ns.missing"],
-                    cache_root=tmp_path,
-                    venvs_root=base,
-                )
+        with (
+            patch("subprocess.run", side_effect=run_side_effect),
+            pytest.raises(FileNotFoundError, match="Collection not in cache"),
+        ):
+            build_venv(
+                "2.15.0",
+                ["ns.missing"],
+                cache_root=tmp_path,
+                venvs_root=base,
+            )
 
     @pytest.mark.integration
     def test_build_venv_empty_collections(self, tmp_path):

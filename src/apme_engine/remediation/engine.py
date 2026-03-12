@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import difflib
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
 
 from apme_engine.remediation.partition import partition_violations
 from apme_engine.remediation.registry import TransformRegistry
@@ -146,19 +146,23 @@ class RemediationEngine:
         patches: list[FilePatch] = []
         for fp in file_paths:
             if file_contents[fp] != originals[fp]:
-                diff = "".join(difflib.unified_diff(
-                    originals[fp].splitlines(keepends=True),
-                    file_contents[fp].splitlines(keepends=True),
-                    fromfile=f"a/{fp}",
-                    tofile=f"b/{fp}",
-                ))
-                patches.append(FilePatch(
-                    path=fp,
-                    original=originals[fp],
-                    patched=file_contents[fp],
-                    diff=diff,
-                    rule_ids=all_applied_rules.get(fp, []),
-                ))
+                diff = "".join(
+                    difflib.unified_diff(
+                        originals[fp].splitlines(keepends=True),
+                        file_contents[fp].splitlines(keepends=True),
+                        fromfile=f"a/{fp}",
+                        tofile=f"b/{fp}",
+                    )
+                )
+                patches.append(
+                    FilePatch(
+                        path=fp,
+                        original=originals[fp],
+                        patched=file_contents[fp],
+                        diff=diff,
+                        rule_ids=all_applied_rules.get(fp, []),
+                    )
+                )
 
         # If not applying, restore originals
         if not apply:

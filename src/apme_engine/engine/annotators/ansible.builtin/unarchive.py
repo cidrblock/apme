@@ -1,31 +1,27 @@
-from typing import List
-from apme_engine.engine.models import Annotation, RiskAnnotation, TaskCall, DefaultRiskType, InboundTransferDetail
-from apme_engine.engine.utils import parse_bool
+import contextlib
+
 from apme_engine.engine.annotators.module_annotator_base import ModuleAnnotator, ModuleAnnotatorResult
+from apme_engine.engine.models import Annotation, DefaultRiskType, InboundTransferDetail, RiskAnnotation, TaskCall
+from apme_engine.engine.utils import parse_bool
 
 
 class UnarchiveAnnotator(ModuleAnnotator):
     fqcn: str = "ansible.builtin.unarchive"
     enabled: bool = True
 
-    def run(self, task: TaskCall) -> List[Annotation]:
+    def run(self, task: TaskCall) -> list[Annotation]:
         src = task.args.get("src")  # required
         dest = task.args.get("dest")  # required
         remote_src = task.args.get("remote_src")
 
         is_remote_src = False
         if remote_src:
-
-            if isinstance(remote_src.raw, str) or isinstance(remote_src.raw, bool):
-                try:
+            if isinstance(remote_src.raw, (str, bool)):
+                with contextlib.suppress(Exception):
                     is_remote_src = parse_bool(remote_src.raw)
-                except Exception:
-                    pass
-            if not is_remote_src and (isinstance(remote_src.templated, str) or isinstance(remote_src.templated, bool)):
-                try:
+            if not is_remote_src and (isinstance(remote_src.templated, (str, bool))):
+                with contextlib.suppress(Exception):
                     is_remote_src = parse_bool(remote_src.templated)
-                except Exception:
-                    pass
 
         url_sep = "://"
         is_download = False
@@ -35,5 +31,7 @@ class UnarchiveAnnotator(ModuleAnnotator):
         if not is_download:
             return None
 
-        annotation = RiskAnnotation.init(risk_type=DefaultRiskType.INBOUND, detail=InboundTransferDetail(_src_arg=src, _dest_arg=dest))
+        annotation = RiskAnnotation.init(
+            risk_type=DefaultRiskType.INBOUND, detail=InboundTransferDetail(_src_arg=src, _dest_arg=dest)
+        )
         return ModuleAnnotatorResult(annotations=[annotation])

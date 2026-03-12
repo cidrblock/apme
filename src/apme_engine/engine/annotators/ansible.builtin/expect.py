@@ -1,5 +1,5 @@
-from apme_engine.engine.models import RiskAnnotation, TaskCall, DefaultRiskType, CommandExecDetail
 from apme_engine.engine.annotators.module_annotator_base import ModuleAnnotator, ModuleAnnotatorResult
+from apme_engine.engine.models import CommandExecDetail, DefaultRiskType, RiskAnnotation, TaskCall
 
 
 class RawAnnotator(ModuleAnnotator):

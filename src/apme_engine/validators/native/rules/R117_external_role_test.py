@@ -1,11 +1,10 @@
 # Colocated tests for R117 (ExternalRoleRule).
 
-import pytest
 
 from apme_engine.validators.native.rules._test_helpers import (
-    make_role_spec,
-    make_role_call,
     make_context,
+    make_role_call,
+    make_role_spec,
 )
 from apme_engine.validators.native.rules.R117_external_role import ExternalRoleRule
 

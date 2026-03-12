@@ -2,10 +2,9 @@
 
 import textwrap
 
-import pytest
-
-from apme_engine.remediation.registry import TransformRegistry, TransformResult
+from apme_engine.remediation.engine import RemediationEngine
 from apme_engine.remediation.partition import is_finding_resolvable, partition_violations
+from apme_engine.remediation.registry import TransformRegistry, TransformResult
 from apme_engine.remediation.transforms import build_default_registry
 from apme_engine.remediation.transforms.L007_shell_to_command import fix_shell_to_command
 from apme_engine.remediation.transforms.L008_local_action import fix_local_action
@@ -25,12 +24,11 @@ from apme_engine.remediation.transforms.M001_fqcn import fix_fqcn
 from apme_engine.remediation.transforms.M006_become_unreachable import fix_become_unreachable
 from apme_engine.remediation.transforms.M008_bare_include import fix_bare_include
 from apme_engine.remediation.transforms.M009_with_to_loop import fix_with_to_loop
-from apme_engine.remediation.engine import RemediationEngine, FixReport
-
 
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
+
 
 class TestTransformRegistry:
     def test_register_and_contains(self):
@@ -70,6 +68,7 @@ class TestTransformRegistry:
 # Partition
 # ---------------------------------------------------------------------------
 
+
 class TestPartition:
     def test_is_finding_resolvable(self):
         reg = TransformRegistry()
@@ -99,13 +98,32 @@ class TestPartition:
 # Default registry
 # ---------------------------------------------------------------------------
 
+
 class TestDefaultRegistry:
     def test_build_default_registry(self):
         reg = build_default_registry()
-        for rule_id in ("L002", "L007", "L008", "L009", "L011", "L012", "L013",
-                        "L015", "L018", "L020", "L021", "L022", "L025",
-                        "L043", "L046", "M001", "M003",
-                        "M006", "M008", "M009"):
+        for rule_id in (
+            "L002",
+            "L007",
+            "L008",
+            "L009",
+            "L011",
+            "L012",
+            "L013",
+            "L015",
+            "L018",
+            "L020",
+            "L021",
+            "L022",
+            "L025",
+            "L043",
+            "L046",
+            "M001",
+            "M003",
+            "M006",
+            "M008",
+            "M009",
+        ):
             assert rule_id in reg, f"{rule_id} missing from default registry"
         assert len(reg) == 20
 
@@ -113,6 +131,7 @@ class TestDefaultRegistry:
 # ---------------------------------------------------------------------------
 # L021 transform: missing mode
 # ---------------------------------------------------------------------------
+
 
 class TestL021MissingMode:
     def test_adds_mode_to_file_module(self):
@@ -166,6 +185,7 @@ class TestL021MissingMode:
 # ---------------------------------------------------------------------------
 # L007 transform: shell to command
 # ---------------------------------------------------------------------------
+
 
 class TestL007ShellToCommand:
     def test_replaces_shell_with_command(self):
@@ -235,6 +255,7 @@ class TestL007ShellToCommand:
 # ---------------------------------------------------------------------------
 # M001/L002 transform: FQCN
 # ---------------------------------------------------------------------------
+
 
 class TestFQCNTransform:
     def test_rewrites_short_name_with_resolved_fqcn(self):
@@ -320,15 +341,18 @@ class TestFQCNTransform:
 # RemediationEngine convergence loop
 # ---------------------------------------------------------------------------
 
+
 class TestRemediationEngine:
     def test_converges_in_one_pass(self, tmp_path):
         playbook = tmp_path / "play.yml"
-        playbook.write_text(textwrap.dedent("""\
+        playbook.write_text(
+            textwrap.dedent("""\
         - name: Copy file
           ansible.builtin.copy:
             src: /a
             dest: /b
-        """))
+        """)
+        )
 
         def scan_fn(paths):
             content = playbook.read_text()
@@ -431,6 +455,7 @@ class TestRemediationEngine:
 # L008 transform: local_action
 # ---------------------------------------------------------------------------
 
+
 class TestL008LocalAction:
     def test_string_form(self):
         content = textwrap.dedent("""\
@@ -480,6 +505,7 @@ class TestL008LocalAction:
 # L009 transform: empty string comparison
 # ---------------------------------------------------------------------------
 
+
 class TestL009EmptyString:
     def test_double_quote_equality(self):
         content = textwrap.dedent("""\
@@ -528,6 +554,7 @@ class TestL009EmptyString:
 # ---------------------------------------------------------------------------
 # L011 transform: literal bool comparison
 # ---------------------------------------------------------------------------
+
 
 class TestL011LiteralBool:
     def test_eq_true(self):
@@ -589,6 +616,7 @@ class TestL011LiteralBool:
 # L015 transform: Jinja in when
 # ---------------------------------------------------------------------------
 
+
 class TestL015JinjaWhen:
     def test_strips_jinja_delimiters(self):
         content = textwrap.dedent("""\
@@ -628,6 +656,7 @@ class TestL015JinjaWhen:
 # ---------------------------------------------------------------------------
 # L020 transform: octal mode
 # ---------------------------------------------------------------------------
+
 
 class TestL020OctalMode:
     def test_octal_literal_to_string(self):
@@ -680,6 +709,7 @@ class TestL020OctalMode:
 # L025 transform: name casing
 # ---------------------------------------------------------------------------
 
+
 class TestL025NameCasing:
     def test_capitalizes_task_name(self):
         content = textwrap.dedent("""\
@@ -714,6 +744,7 @@ class TestL025NameCasing:
 # ---------------------------------------------------------------------------
 # L046 transform: free-form to dict
 # ---------------------------------------------------------------------------
+
 
 class TestL046FreeForm:
     def test_converts_string_to_dict(self):
@@ -758,6 +789,7 @@ class TestL046FreeForm:
 # L043 transform: bare vars
 # ---------------------------------------------------------------------------
 
+
 class TestL043BareVars:
     def test_wraps_bare_var_in_with_items(self):
         content = textwrap.dedent("""\
@@ -793,6 +825,7 @@ class TestL043BareVars:
 # ---------------------------------------------------------------------------
 # L013 transform: changed_when
 # ---------------------------------------------------------------------------
+
 
 class TestL013ChangedWhen:
     def test_adds_changed_when(self):
@@ -837,6 +870,7 @@ class TestL013ChangedWhen:
 # L018 transform: become
 # ---------------------------------------------------------------------------
 
+
 class TestL018Become:
     def test_adds_become(self):
         content = textwrap.dedent("""\
@@ -876,14 +910,15 @@ class TestL018Become:
         result = fix_become(content, {"rule_id": "L018", "line": 1})
         assert result.applied is True
         lines = result.content.splitlines()
-        bu_line = next(i for i, l in enumerate(lines) if "become_user" in l)
-        b_line = next(i for i, l in enumerate(lines) if l.strip().startswith("become:"))
+        bu_line = next(i for i, line in enumerate(lines) if "become_user" in line)
+        b_line = next(i for i, line in enumerate(lines) if line.strip().startswith("become:"))
         assert b_line == bu_line + 1
 
 
 # ---------------------------------------------------------------------------
 # L022 transform: pipefail
 # ---------------------------------------------------------------------------
+
 
 class TestL022Pipefail:
     def test_prepends_pipefail_string_form(self):
@@ -935,6 +970,7 @@ class TestL022Pipefail:
 # L012 transform: latest → present
 # ---------------------------------------------------------------------------
 
+
 class TestL012Latest:
     def test_replaces_latest_with_present(self):
         content = textwrap.dedent("""\
@@ -984,6 +1020,7 @@ class TestL012Latest:
 # M006 transform: become + ignore_errors -> add ignore_unreachable
 # ---------------------------------------------------------------------------
 
+
 class TestM006BecomeUnreachable:
     def test_adds_ignore_unreachable(self):
         content = textwrap.dedent("""\
@@ -1025,14 +1062,15 @@ class TestM006BecomeUnreachable:
         """)
         result = fix_become_unreachable(content, {"rule_id": "M006", "line": 1})
         lines = result.content.splitlines()
-        ie_line = next(i for i, l in enumerate(lines) if "ignore_errors" in l)
-        iu_line = next(i for i, l in enumerate(lines) if "ignore_unreachable" in l)
+        ie_line = next(i for i, line in enumerate(lines) if "ignore_errors" in line)
+        iu_line = next(i for i, line in enumerate(lines) if "ignore_unreachable" in line)
         assert iu_line == ie_line + 1
 
 
 # ---------------------------------------------------------------------------
 # M008 transform: bare include -> include_tasks
 # ---------------------------------------------------------------------------
+
 
 class TestM008BareInclude:
     def test_replaces_include(self):
@@ -1063,6 +1101,7 @@ class TestM008BareInclude:
 # ---------------------------------------------------------------------------
 # M009 transform: with_items -> loop
 # ---------------------------------------------------------------------------
+
 
 class TestM009WithToLoop:
     def test_with_items_to_loop(self):

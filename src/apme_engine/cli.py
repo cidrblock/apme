@@ -7,12 +7,8 @@ import sys
 from pathlib import Path
 
 import grpc
+
 from apme.v1 import primary_pb2, primary_pb2_grpc
-from apme_engine.daemon.chunked_fs import build_scan_request
-from apme_engine.daemon.violation_convert import violation_proto_to_dict
-from apme_engine.runner import run_scan
-from apme_engine.validators.opa import OpaValidator
-from apme_engine.validators.native import NativeValidator
 from apme_engine.collection_cache import (
     get_cache_root,
     pull_galaxy_collection,
@@ -20,20 +16,27 @@ from apme_engine.collection_cache import (
     pull_github_org,
     pull_github_repos,
 )
+from apme_engine.daemon.chunked_fs import build_scan_request
 from apme_engine.daemon.health_check import run_health_checks
-from apme_engine.formatter import format_file, format_directory, check_idempotent
+from apme_engine.daemon.violation_convert import violation_proto_to_dict
+from apme_engine.formatter import format_directory, format_file
 from apme_engine.remediation.engine import RemediationEngine
 from apme_engine.remediation.transforms import build_default_registry
+from apme_engine.runner import run_scan
+from apme_engine.validators.native import NativeValidator
+from apme_engine.validators.opa import OpaValidator
 
 
 def _sort_violations(violations: list[dict]) -> list[dict]:
     """Sort by file, then line for stable output."""
+
     def key(v):
         f = v.get("file") or ""
         line = v.get("line")
         if isinstance(line, (list, tuple)) and line:
             line = line[0] if line else 0
         return (f, line if isinstance(line, int) else (line or 0))
+
     return sorted(violations, key=key)
 
 
@@ -87,7 +90,10 @@ def _print_diagnostics_v(diag: "primary_pb2.ScanDiagnostics"):
             if k not in ("opa_response_size", "files_written"):
                 meta_parts.append(f"{k}={v}")
         meta_str = f" | {', '.join(meta_parts)}" if meta_parts else ""
-        w(f"  {connector} {vd.validator_name.title():10s} {_fmt_ms(vd.total_ms):>8s} | {vd.violations_found:3d} violation(s){meta_str}\n")
+        w(
+            f"  {connector} {vd.validator_name.title():10s} {_fmt_ms(vd.total_ms):>8s} | "
+            f"{vd.violations_found:3d} violation(s){meta_str}\n"
+        )
 
     w(f"  Total:        {_fmt_ms(diag.total_ms)}\n")
 
@@ -144,17 +150,19 @@ def _diag_to_dict(diag: "primary_pb2.ScanDiagnostics") -> dict:
     """Convert ScanDiagnostics proto to a JSON-serializable dict."""
     validators = []
     for vd in diag.validators:
-        validators.append({
-            "validator_name": vd.validator_name,
-            "total_ms": round(vd.total_ms, 1),
-            "files_received": vd.files_received,
-            "violations_found": vd.violations_found,
-            "rule_timings": [
-                {"rule_id": rt.rule_id, "elapsed_ms": round(rt.elapsed_ms, 1), "violations": rt.violations}
-                for rt in vd.rule_timings
-            ],
-            "metadata": dict(vd.metadata),
-        })
+        validators.append(
+            {
+                "validator_name": vd.validator_name,
+                "total_ms": round(vd.total_ms, 1),
+                "files_received": vd.files_received,
+                "violations_found": vd.violations_found,
+                "rule_timings": [
+                    {"rule_id": rt.rule_id, "elapsed_ms": round(rt.elapsed_ms, 1), "violations": rt.violations}
+                    for rt in vd.rule_timings
+                ],
+                "metadata": dict(vd.metadata),
+            }
+        )
     return {
         "engine_parse_ms": round(diag.engine_parse_ms, 1),
         "engine_annotate_ms": round(diag.engine_annotate_ms, 1),
@@ -398,10 +406,7 @@ def _run_fix(args):
 
     # Phase 1: Format
     sys.stderr.write("Phase 1: Formatting...\n")
-    if target.is_file():
-        results = [format_file(target)]
-    else:
-        results = format_directory(target, exclude_patterns=exclude)
+    results = [format_file(target)] if target.is_file() else format_directory(target, exclude_patterns=exclude)
 
     changed = [r for r in results if r.changed]
 
@@ -426,10 +431,7 @@ def _run_fix(args):
 
     # Phase 2: Idempotency gate
     sys.stderr.write("Phase 2: Idempotency check...\n")
-    if target.is_file():
-        recheck = [format_file(target)]
-    else:
-        recheck = format_directory(target, exclude_patterns=exclude)
+    recheck = [format_file(target)] if target.is_file() else format_directory(target, exclude_patterns=exclude)
 
     still_changed = [r for r in recheck if r.changed]
     if still_changed:
@@ -447,7 +449,8 @@ def _run_fix(args):
         yaml_files = [str(target)]
     else:
         yaml_files = [
-            str(p) for p in target.rglob("*")
+            str(p)
+            for p in target.rglob("*")
             if p.suffix in (".yml", ".yaml") and not any(part.startswith(".") for part in p.parts)
         ]
 
@@ -537,7 +540,10 @@ def main():
     scan_parser.add_argument(
         "--primary-addr",
         default=None,
-        help="Primary daemon gRPC address (e.g. localhost:50051). If set, scan runs on daemon; else in-process. Env: APME_PRIMARY_ADDRESS",
+        help=(
+            "Primary daemon gRPC address (e.g. localhost:50051). If set, scan runs on daemon; "
+            "else in-process. Env: APME_PRIMARY_ADDRESS"
+        ),
     )
     scan_parser.add_argument(
         "--opa-bundle",
@@ -559,7 +565,8 @@ def main():
         help="Collection specs to make available (e.g. community.general:9.0.0 amazon.aws)",
     )
     scan_parser.add_argument(
-        "-v", "--verbose",
+        "-v",
+        "--verbose",
         action="count",
         default=0,
         help="Diagnostics verbosity: -v for summary + top 10, -vv for full per-rule breakdown",
@@ -573,7 +580,9 @@ def main():
     )
     cache_sub = cache_parser.add_subparsers(dest="cache_command", required=True)
 
-    pull_galaxy = cache_sub.add_parser("pull-galaxy", help="Install a Galaxy collection (e.g. namespace.collection or ns.coll:1.2.3)")
+    pull_galaxy = cache_sub.add_parser(
+        "pull-galaxy", help="Install a Galaxy collection (e.g. namespace.collection or ns.coll:1.2.3)"
+    )
     pull_galaxy.add_argument("spec", help="Collection spec: namespace.collection or namespace.collection:version")
     pull_galaxy.add_argument("--galaxy-server", default=None, help="Galaxy server URL")
 
@@ -583,7 +592,9 @@ def main():
 
     clone_org = cache_sub.add_parser("clone-org", help="Clone GitHub org repos that are Ansible collections")
     clone_org.add_argument("org", help="GitHub organization name")
-    clone_org.add_argument("--repos", nargs="*", default=None, help="Optional list of repo names to clone (default: all from org)")
+    clone_org.add_argument(
+        "--repos", nargs="*", default=None, help="Optional list of repo names to clone (default: all from org)"
+    )
     clone_org.add_argument("--depth", type=int, default=1, help="Git clone depth (default: 1)")
     clone_org.add_argument("--token", default=None, help="GitHub token for API (for listing org repos)")
 
@@ -611,16 +622,26 @@ def main():
     fix_parser.add_argument("--opa-bundle", default=None, help="Path to OPA bundle directory")
 
     # ── health-check ──
-    health_parser = subparsers.add_parser("health-check", help="Check health of all services (Primary, Native, OPA, Ansible, Cache maintainer) via gRPC")
+    health_parser = subparsers.add_parser(
+        "health-check", help="Check health of all services (Primary, Native, OPA, Ansible, Cache maintainer) via gRPC"
+    )
     health_parser.add_argument(
         "--primary-addr",
         default=None,
         help="Primary daemon gRPC address (e.g. localhost:50051). Env: APME_PRIMARY_ADDRESS",
     )
-    health_parser.add_argument("--native-addr", default=None, help="Native validator gRPC address (default: derived or NATIVE_GRPC_ADDRESS)")
-    health_parser.add_argument("--opa-addr", default=None, help="OPA validator gRPC address (default: derived or OPA_GRPC_ADDRESS)")
-    health_parser.add_argument("--ansible-addr", default=None, help="Ansible validator gRPC address (default: derived or ANSIBLE_GRPC_ADDRESS)")
-    health_parser.add_argument("--cache-addr", default=None, help="Cache maintainer gRPC address (default: derived or APME_CACHE_GRPC_ADDRESS)")
+    health_parser.add_argument(
+        "--native-addr", default=None, help="Native validator gRPC address (default: derived or NATIVE_GRPC_ADDRESS)"
+    )
+    health_parser.add_argument(
+        "--opa-addr", default=None, help="OPA validator gRPC address (default: derived or OPA_GRPC_ADDRESS)"
+    )
+    health_parser.add_argument(
+        "--ansible-addr", default=None, help="Ansible validator gRPC address (default: derived or ANSIBLE_GRPC_ADDRESS)"
+    )
+    health_parser.add_argument(
+        "--cache-addr", default=None, help="Cache maintainer gRPC address (default: derived or APME_CACHE_GRPC_ADDRESS)"
+    )
     health_parser.add_argument("--timeout", type=float, default=5.0, help="Timeout per check in seconds (default: 5)")
     health_parser.add_argument("--json", action="store_true", help="Output results as JSON")
 

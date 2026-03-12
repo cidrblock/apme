@@ -84,15 +84,27 @@ def pod():
 def scan_result(pod) -> dict:
     """Run a scan of the test playbook via the CLI container and return parsed JSON."""
     test_dir = str(REPO_ROOT / "tests" / "integration")
-    r = _run([
-        "podman", "run", "--rm", "--pod", POD_NAME,
-        "-v", f"{test_dir}:/workspace:ro,Z",
-        "-w", "/workspace",
-        "-e", f"APME_PRIMARY_ADDRESS={PRIMARY_ADDR}",
-        "--entrypoint", "apme-scan",
-        CLI_IMAGE,
-        "scan", "--json", ".",
-    ])
+    r = _run(
+        [
+            "podman",
+            "run",
+            "--rm",
+            "--pod",
+            POD_NAME,
+            "-v",
+            f"{test_dir}:/workspace:ro,Z",
+            "-w",
+            "/workspace",
+            "-e",
+            f"APME_PRIMARY_ADDRESS={PRIMARY_ADDR}",
+            "--entrypoint",
+            "apme-scan",
+            CLI_IMAGE,
+            "scan",
+            "--json",
+            ".",
+        ]
+    )
     assert r.returncode == 0, f"Scan failed (rc={r.returncode}):\n{r.stdout}\n{r.stderr}"
     try:
         return json.loads(r.stdout)
@@ -112,13 +124,23 @@ def _violation_rule_ids(scan_result: dict) -> set[str]:
 @pytest.mark.integration
 class TestHealthCheck:
     def test_overall_ok(self, pod):
-        r = _run([
-            "podman", "run", "--rm", "--pod", POD_NAME,
-            "-e", f"APME_PRIMARY_ADDRESS={PRIMARY_ADDR}",
-            "--entrypoint", "apme-scan",
-            CLI_IMAGE,
-            "health-check", "--primary-addr", PRIMARY_ADDR,
-        ])
+        r = _run(
+            [
+                "podman",
+                "run",
+                "--rm",
+                "--pod",
+                POD_NAME,
+                "-e",
+                f"APME_PRIMARY_ADDRESS={PRIMARY_ADDR}",
+                "--entrypoint",
+                "apme-scan",
+                CLI_IMAGE,
+                "health-check",
+                "--primary-addr",
+                PRIMARY_ADDR,
+            ]
+        )
         combined = r.stdout + r.stderr
         assert "overall: ok" in combined, f"Health check did not report ok:\n{combined}"
 
@@ -135,22 +157,28 @@ class TestScanViolations:
         assert count > 0, f"Expected >0 violations, got {count}"
 
     # OPA rules
-    @pytest.mark.parametrize("rule_id,desc", [
-        ("L007", "shell when command suffices"),
-        ("L010", "ignore_errors without register"),
-        ("L021", "missing explicit mode on file/copy"),
-        ("L025", "name not starting uppercase"),
-        ("R118", "inbound transfer (annotation-based)"),
-    ])
+    @pytest.mark.parametrize(
+        "rule_id,desc",
+        [
+            ("L007", "shell when command suffices"),
+            ("L010", "ignore_errors without register"),
+            ("L021", "missing explicit mode on file/copy"),
+            ("L025", "name not starting uppercase"),
+            ("R118", "inbound transfer (annotation-based)"),
+        ],
+    )
     def test_opa_rule(self, scan_result, rule_id, desc):
         assert rule_id in _violation_rule_ids(scan_result), f"{rule_id} ({desc}) not found"
 
     # Native rules
-    @pytest.mark.parametrize("rule_id,desc", [
-        ("native:L028", "task without name"),
-        ("native:L029", "command instead of shell"),
-        ("native:L046", "free-form args"),
-    ])
+    @pytest.mark.parametrize(
+        "rule_id,desc",
+        [
+            ("native:L028", "task without name"),
+            ("native:L029", "command instead of shell"),
+            ("native:L046", "free-form args"),
+        ],
+    )
     def test_native_rule(self, scan_result, rule_id, desc):
         assert rule_id in _violation_rule_ids(scan_result), f"{rule_id} ({desc}) not found"
 
@@ -159,10 +187,13 @@ class TestScanViolations:
         assert "M001" in _violation_rule_ids(scan_result), "M001 (FQCN resolution) not found"
 
     # Ansible validator rules
-    @pytest.mark.parametrize("rule_id,desc", [
-        ("L058", "argspec validation - docstring"),
-        ("L059", "argspec validation - mock/patch"),
-    ])
+    @pytest.mark.parametrize(
+        "rule_id,desc",
+        [
+            ("L058", "argspec validation - docstring"),
+            ("L059", "argspec validation - mock/patch"),
+        ],
+    )
     def test_ansible_rule(self, scan_result, rule_id, desc):
         assert rule_id in _violation_rule_ids(scan_result), f"{rule_id} ({desc}) not found"
 
@@ -230,16 +261,27 @@ SECRETS_FIXTURE = REPO_ROOT / "tests" / "integration" / "test_secrets_playbook.y
 @pytest.mark.integration
 class TestGitleaks:
     def test_gitleaks_container_healthy(self, pod):
-        r = _run([
-            "podman", "run", "--rm", "--pod", POD_NAME,
-            "-e", f"APME_PRIMARY_ADDRESS={PRIMARY_ADDR}",
-            "--entrypoint", "apme-scan",
-            CLI_IMAGE,
-            "health-check", "--primary-addr", PRIMARY_ADDR,
-        ])
+        r = _run(
+            [
+                "podman",
+                "run",
+                "--rm",
+                "--pod",
+                POD_NAME,
+                "-e",
+                f"APME_PRIMARY_ADDRESS={PRIMARY_ADDR}",
+                "--entrypoint",
+                "apme-scan",
+                CLI_IMAGE,
+                "health-check",
+                "--primary-addr",
+                PRIMARY_ADDR,
+            ]
+        )
         combined = r.stdout + r.stderr
-        assert "gitleaks" in combined.lower() or "overall: ok" in combined, \
+        assert "gitleaks" in combined.lower() or "overall: ok" in combined, (
             f"Gitleaks not reported in health check:\n{combined}"
+        )
 
     def test_gitleaks_logged(self, scan_result):
         logs = _container_logs("gitleaks")
@@ -262,53 +304,96 @@ class TestFormat:
     def test_format_check_detects_issues(self, pod):
         """format --check on messy fixture exits 1."""
         test_dir = str(FORMAT_FIXTURE.parent)
-        r = _run([
-            "podman", "run", "--rm", "--pod", POD_NAME,
-            "-v", f"{test_dir}:/workspace:ro,Z",
-            "-w", "/workspace",
-            "--entrypoint", "apme-scan",
-            CLI_IMAGE,
-            "format", "--check", "test_format_playbook.yml",
-        ])
+        r = _run(
+            [
+                "podman",
+                "run",
+                "--rm",
+                "--pod",
+                POD_NAME,
+                "-v",
+                f"{test_dir}:/workspace:ro,Z",
+                "-w",
+                "/workspace",
+                "--entrypoint",
+                "apme-scan",
+                CLI_IMAGE,
+                "format",
+                "--check",
+                "test_format_playbook.yml",
+            ]
+        )
         assert r.returncode == 1, f"Expected exit 1 for messy file:\n{r.stdout}\n{r.stderr}"
 
     def test_format_diff_shows_transforms(self, pod):
         """format (no --apply) shows unified diff with expected transforms."""
         test_dir = str(FORMAT_FIXTURE.parent)
-        r = _run([
-            "podman", "run", "--rm", "--pod", POD_NAME,
-            "-v", f"{test_dir}:/workspace:ro,Z",
-            "-w", "/workspace",
-            "--entrypoint", "apme-scan",
-            CLI_IMAGE,
-            "format", "test_format_playbook.yml",
-        ])
+        r = _run(
+            [
+                "podman",
+                "run",
+                "--rm",
+                "--pod",
+                POD_NAME,
+                "-v",
+                f"{test_dir}:/workspace:ro,Z",
+                "-w",
+                "/workspace",
+                "--entrypoint",
+                "apme-scan",
+                CLI_IMAGE,
+                "format",
+                "test_format_playbook.yml",
+            ]
+        )
         assert r.returncode == 0
-        assert "@@" in r.stdout or "---" in r.stdout, \
-            f"Expected unified diff output:\n{r.stdout[:500]}"
+        assert "@@" in r.stdout or "---" in r.stdout, f"Expected unified diff output:\n{r.stdout[:500]}"
 
     def test_format_apply_then_check_passes(self, pod, tmp_path):
         """format --apply writes file; subsequent --check exits 0."""
         import shutil
+
         work = tmp_path / "fmt_test"
         work.mkdir()
         shutil.copy2(FORMAT_FIXTURE, work / "play.yml")
-        r = _run([
-            "podman", "run", "--rm", "--pod", POD_NAME,
-            "-v", f"{work}:/workspace:Z",
-            "-w", "/workspace",
-            "--entrypoint", "apme-scan",
-            CLI_IMAGE,
-            "format", "--apply", "play.yml",
-        ])
+        r = _run(
+            [
+                "podman",
+                "run",
+                "--rm",
+                "--pod",
+                POD_NAME,
+                "-v",
+                f"{work}:/workspace:Z",
+                "-w",
+                "/workspace",
+                "--entrypoint",
+                "apme-scan",
+                CLI_IMAGE,
+                "format",
+                "--apply",
+                "play.yml",
+            ]
+        )
         assert r.returncode == 0, f"format --apply failed:\n{r.stderr}"
 
-        r2 = _run([
-            "podman", "run", "--rm", "--pod", POD_NAME,
-            "-v", f"{work}:/workspace:ro,Z",
-            "-w", "/workspace",
-            "--entrypoint", "apme-scan",
-            CLI_IMAGE,
-            "format", "--check", "play.yml",
-        ])
+        r2 = _run(
+            [
+                "podman",
+                "run",
+                "--rm",
+                "--pod",
+                POD_NAME,
+                "-v",
+                f"{work}:/workspace:ro,Z",
+                "-w",
+                "/workspace",
+                "--entrypoint",
+                "apme-scan",
+                CLI_IMAGE,
+                "format",
+                "--check",
+                "play.yml",
+            ]
+        )
         assert r2.returncode == 0, f"format --check failed after --apply:\n{r2.stderr}"

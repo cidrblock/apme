@@ -1,14 +1,16 @@
-# -*- mode:python; coding:utf-8 -*-
 # L054: Role meta galaxy_info should include galaxy_tags
 
 from dataclasses import dataclass
+
 from apme_engine.engine.models import (
     AnsibleRunContext,
-    RunTargetType,
     Rule,
-    Severity,
-    RuleTag as Tag,
     RuleResult,
+    RunTargetType,
+    Severity,
+)
+from apme_engine.engine.models import (
+    RuleTag as Tag,
 )
 
 

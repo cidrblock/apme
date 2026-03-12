@@ -2,11 +2,13 @@ from dataclasses import dataclass
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
-    RunTargetType,
-    Rule,
-    Severity,
-    RuleTag as Tag,
     ExecutableType,
+    Rule,
+    RunTargetType,
+    Severity,
+)
+from apme_engine.engine.models import (
+    RuleTag as Tag,
 )
 
 
@@ -37,7 +39,6 @@ class ModuleNameValidationRule(Rule):
 
         # normal task
         if task.spec.executable_type == ExecutableType.MODULE_TYPE:
-
             resolved_fqcn = task.spec.resolved_name
             suggested_fqcns = [cand[0] for cand in task.spec.possible_candidates]
             suggested_dependency = [cand[1] for cand in task.spec.possible_candidates]
@@ -60,17 +61,10 @@ class ModuleNameValidationRule(Rule):
                 need_correction = True
 
         # include_role, import_role
-        elif task.spec.executable_type == ExecutableType.ROLE_TYPE:
-            if "ansible.builtin." in task.spec.module:
-                resolved_fqcn = task.spec.module
-                correct_fqcn = resolved_fqcn
-            else:
-                resolved_fqcn = "ansible.builtin." + task.spec.module
-                correct_fqcn = resolved_fqcn
-                need_correction = True
-
-        # include_tasks, import_tasks
-        elif task.spec.executable_type == ExecutableType.TASKFILE_TYPE:
+        elif (
+            task.spec.executable_type == ExecutableType.ROLE_TYPE
+            or task.spec.executable_type == ExecutableType.TASKFILE_TYPE
+        ):
             if "ansible.builtin." in task.spec.module:
                 resolved_fqcn = task.spec.module
                 correct_fqcn = resolved_fqcn

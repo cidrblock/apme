@@ -3,10 +3,11 @@
 # pylint: disable=too-many-lines
 from __future__ import annotations
 
+import re
 from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-import re
+
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from ruamel.yaml.composer import ComposerError
 from ruamel.yaml.constructor import RoundTripConstructor
@@ -17,8 +18,8 @@ from ruamel.yaml.emitter import Emitter
 from ruamel.yaml.main import YAML
 from ruamel.yaml.parser import ParserError
 from ruamel.yaml.scalarint import HexInt, ScalarInt
-from . import logger
 
+from . import logger
 
 if TYPE_CHECKING:
     # noinspection PyProtectedMember
@@ -331,7 +332,7 @@ class FormattedYAML(YAML):
     def _prevent_wrapping_flow_style(data: Any) -> None:
         """Walk data and set flow style width hints so short mappings stay on one line."""
         if isinstance(data, (CommentedMap, CommentedSeq)):
-            for item in (data.values() if isinstance(data, CommentedMap) else data):
+            for item in data.values() if isinstance(data, CommentedMap) else data:
                 FormattedYAML._prevent_wrapping_flow_style(item)
 
     def dumps(self, data: Any) -> str:

@@ -1,12 +1,12 @@
 """Cache maintainer daemon: gRPC server that populates the collection cache (Galaxy + GitHub)."""
 
 import os
+from concurrent import futures
 from pathlib import Path
 
 import grpc
-from apme.v1 import cache_pb2, cache_pb2_grpc, common_pb2
-from concurrent import futures
 
+from apme.v1 import cache_pb2, cache_pb2_grpc, common_pb2
 from apme_engine.collection_cache.config import get_cache_root
 from apme_engine.collection_cache.manager import (
     pull_galaxy_collection,
@@ -42,29 +42,21 @@ class CacheMaintainerServicer(cache_pb2_grpc.CacheMaintainerServicer):
         try:
             req_path = (request.requirements_path or "").strip()
             if not req_path:
-                return cache_pb2.PullRequirementsResponse(
-                    success=False, error_message="requirements_path is required"
-                )
+                return cache_pb2.PullRequirementsResponse(success=False, error_message="requirements_path is required")
             paths = pull_galaxy_requirements(
                 requirements_path=req_path,
                 cache_root=_cache_root(),
                 galaxy_server=request.galaxy_server or None,
             )
-            return cache_pb2.PullRequirementsResponse(
-                success=True, paths=[str(p) for p in paths]
-            )
+            return cache_pb2.PullRequirementsResponse(success=True, paths=[str(p) for p in paths])
         except Exception as e:
-            return cache_pb2.PullRequirementsResponse(
-                success=False, error_message=str(e)
-            )
+            return cache_pb2.PullRequirementsResponse(success=False, error_message=str(e))
 
     def CloneOrg(self, request, context):
         try:
             org = (request.org or "").strip()
             if not org:
-                return cache_pb2.CloneOrgResponse(
-                    success=False, error_message="org is required"
-                )
+                return cache_pb2.CloneOrgResponse(success=False, error_message="org is required")
             depth = request.depth if request.depth > 0 else 1
             token = (request.token or "").strip() or None
             cache = _cache_root()
@@ -89,9 +81,7 @@ class CacheMaintainerServicer(cache_pb2_grpc.CacheMaintainerServicer):
                 finally:
                     if token and "GITHUB_TOKEN" in os.environ:
                         del os.environ["GITHUB_TOKEN"]
-            return cache_pb2.CloneOrgResponse(
-                success=True, paths=[str(p) for p in paths]
-            )
+            return cache_pb2.CloneOrgResponse(success=True, paths=[str(p) for p in paths])
         except Exception as e:
             return cache_pb2.CloneOrgResponse(success=False, error_message=str(e))
 
@@ -102,9 +92,7 @@ class CacheMaintainerServicer(cache_pb2_grpc.CacheMaintainerServicer):
 def serve(listen: str = "0.0.0.0:50052"):
     """Create and return a gRPC server with CacheMaintainer servicer (caller must start it)."""
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
-    cache_pb2_grpc.add_CacheMaintainerServicer_to_server(
-        CacheMaintainerServicer(), server
-    )
+    cache_pb2_grpc.add_CacheMaintainerServicer_to_server(CacheMaintainerServicer(), server)
     if ":" in listen:
         _, _, port = listen.rpartition(":")
         server.add_insecure_port(f"[::]:{port}")

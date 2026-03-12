@@ -1,47 +1,50 @@
+import copy
 import os
 import re
-import copy
 from dataclasses import dataclass, field
 from pathlib import Path
+
 from .models import (
-    Playbook,
-    Play,
-    Role,
+    BecomeInfo,
+    CallObject,
     Collection,
-    TaskFile,
-    Task,
-    TaskCall,
     InventoryType,
     Object,
-    CallObject,
+    Play,
+    Playbook,
+    Role,
+    Task,
+    TaskCall,
+    TaskFile,
     Variable,
     VariableType,
-    BecomeInfo,
     immutable_var_types,
 )
 
 p = Path(__file__).resolve().parent
-ansible_special_variables = [line.replace("\n", "") for line in open(p / "ansible_variables.txt", "r").read().splitlines()]
+ansible_special_variables = [line.replace("\n", "") for line in (p / "ansible_variables.txt").read_text().splitlines()]
 _special_var_value = "__ansible_special_variable__"
 variable_block_re = re.compile(r"{{[^}]+}}")
 
 
-def get_object(json_path, type, name, cache={}):
+def get_object(json_path, type, name, cache=None):
+    if cache is None:
+        cache = {}
     json_type = ""
     json_str = ""
-    cached = cache.get(json_path, None)
+    cached = cache.get(json_path)
     if cached is None:
         if not os.path.exists(json_path):
-            raise ValueError('the json path "{}" not found'.format(json_path))
+            raise ValueError(f'the json path "{json_path}" not found')
         basename = os.path.basename(json_path)
 
         if basename.startswith("role-"):
             json_type = "role"
-            with open(json_path, "r") as file:
+            with open(json_path) as file:
                 json_str = file.read()
         elif basename.startswith("collection-"):
             json_type = "collection"
-            with open(json_path, "r") as file:
+            with open(json_path) as file:
                 json_str = file.read()
         if json_str == "":
             raise ValueError("json data is empty")
@@ -113,7 +116,10 @@ def get_object(json_path, type, name, cache={}):
     return None
 
 
-def recursive_find_variable(var_name, var_dict={}):
+def recursive_find_variable(var_name, var_dict=None):
+    if var_dict is None:
+        var_dict = {}
+
     def _visitor(vname, nname, node):
         if nname == vname:
             return node
@@ -121,8 +127,8 @@ def recursive_find_variable(var_name, var_dict={}):
             if nname in node:
                 return node[nname]
             for k, v in node.items():
-                nname2 = "{}.{}".format(nname, k) if nname != "" else k
-                if vname.startswith("{}.".format(nname2)):
+                nname2 = f"{nname}.{k}" if nname != "" else k
+                if vname.startswith(f"{nname2}."):
                     vname2 = vname[len(nname) + 1 :]
                     return _visitor(vname2, nname2, v)
             return None
@@ -132,7 +138,9 @@ def recursive_find_variable(var_name, var_dict={}):
     return _visitor(var_name, "", var_dict)
 
 
-def flatten(var_dict: dict = {}, _prefix: str = ""):
+def flatten(var_dict: dict = None, _prefix: str = ""):
+    if var_dict is None:
+        var_dict = {}
     flat_vars = {}
     for k, v in var_dict.items():
         if isinstance(v, dict):
@@ -211,10 +219,7 @@ class Context:
                 current = self.var_set_history.get(key, [])
                 current.append(Variable(name=key, value=val, type=VariableType.RoleVars, setter=_spec.key))
                 self.var_set_history[key] = current
-        elif isinstance(_spec, Collection):
-            self.variables.update(_spec.variables)
-            self.update_flat_vars(_spec.variables)
-        elif isinstance(_spec, TaskFile):
+        elif isinstance(_spec, (Collection, TaskFile)):
             self.variables.update(_spec.variables)
             self.update_flat_vars(_spec.variables)
         elif isinstance(_spec, Task):
@@ -253,7 +258,9 @@ class Context:
             chain_node["obj"] = _obj
         self.chain.append(chain_node)
 
-    def resolve_variable(self, var_name, resolve_history={}):
+    def resolve_variable(self, var_name, resolve_history=None):
+        if resolve_history is None:
+            resolve_history = {}
         if var_name in resolve_history:
             val = resolve_history[var_name].get("value", None)
             v_type = resolve_history[var_name].get("type", VariableType.Unknown)
@@ -310,7 +317,9 @@ class Context:
                 return val, v_type, _resolve_history
 
         # TODO: consider group
-        inventory_for_all = [iv for iv in self.inventories if iv.inventory_type == InventoryType.GROUP_VARS_TYPE and iv.name == "all"]
+        inventory_for_all = [
+            iv for iv in self.inventories if iv.inventory_type == InventoryType.GROUP_VARS_TYPE and iv.name == "all"
+        ]
         for iv in inventory_for_all:
             iv_var_dict = flatten(iv.variables)
             val = iv_var_dict.get(var_name, None)
@@ -334,7 +343,9 @@ class Context:
 
         return None, VariableType.Unknown, _resolve_history
 
-    def resolve_single_variable(self, txt, resolve_history=[]):
+    def resolve_single_variable(self, txt, resolve_history=None):
+        if resolve_history is None:
+            resolve_history = []
         new_history = resolve_history.copy()
         if not isinstance(txt, str):
             return txt, new_history
@@ -379,10 +390,10 @@ class Context:
             indent = "  " * depth
             obj_type = type(obj).__name__
             obj_name = obj.name
-            line = "{}{}: {}\n".format(indent, obj_type, obj_name)
+            line = f"{indent}{obj_type}: {obj_name}\n"
             if obj_type == "Task":
                 module_name = obj.module
-                line = "{}{}: {} (module: {})\n".format(indent, obj_type, obj_name, module_name)
+                line = f"{indent}{obj_type}: {obj_name} (module: {module_name})\n"
             lines.append(line)
         return "".join(lines)
 
@@ -514,7 +525,7 @@ def resolve_module_options(context: Context, taskcall: TaskCall):
                     if isinstance(v, dict):
                         tmp_variables = {}
                         for k2, v2 in v.items():
-                            key = "{}.{}".format(loop_key, k2)
+                            key = f"{loop_key}.{k2}"
                             tmp_variables.update({key: v2})
                         variables_in_loop.append(tmp_variables)
                     else:
@@ -522,12 +533,12 @@ def resolve_module_options(context: Context, taskcall: TaskCall):
         elif isinstance(loop_values, dict):
             tmp_variables = {}
             for k, v in loop_values.items():
-                key = "{}.{}".format(loop_key, k)
+                key = f"{loop_key}.{k}"
                 tmp_variables.update({key: v})
             variables_in_loop.append(tmp_variables)
         else:
             if loop_values:
-                raise ValueError("loop_values of type {} is not supported yet".format(type(loop_values).__name__))
+                raise ValueError(f"loop_values of type {type(loop_values).__name__} is not supported yet")
 
     resolved_opts_in_loop = []
     mutable_vars_per_mo = {}
@@ -691,7 +702,11 @@ def extract_variable_names(txt):
             else:
                 if "default(" in p and ")" in p:
                     default_var = p.replace("}}", "").replace("default(", "").replace(")", "").replace(" ", "")
-                    if not default_var.startswith('"') and not default_var.startswith("'") and not re.compile(r"[0-9].*").match(default_var):
+                    if (
+                        not default_var.startswith('"')
+                        and not default_var.startswith("'")
+                        and not re.compile(r"[0-9].*").match(default_var)
+                    ):
                         default_var_name = default_var
         tmp_b = {
             "original": b,

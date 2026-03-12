@@ -2,11 +2,13 @@ from dataclasses import dataclass
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
-    RunTargetType,
     Rule,
-    Severity,
-    RuleTag as Tag,
     RuleResult,
+    RunTargetType,
+    Severity,
+)
+from apme_engine.engine.models import (
+    RuleTag as Tag,
 )
 
 
@@ -28,18 +30,17 @@ class UnconditionalOverrideRule(Rule):
 
         verdict = False
         detail = {"variables": []}
-        if not task.spec.tags and not task.spec.when:
-            if task.spec.defined_vars:
-                for v in task.spec.defined_vars:
-                    all_definitions = task.variable_set.get(v, [])
-                    if len(all_definitions) > 1:
-                        detail["variables"].append(
-                            {
-                                "name": v,
-                                "defined_by": [d.setter for d in all_definitions],
-                                "type": [d.type for d in all_definitions],
-                            }
-                        )
-                        verdict = True
+        if not task.spec.tags and not task.spec.when and task.spec.defined_vars:
+            for v in task.spec.defined_vars:
+                all_definitions = task.variable_set.get(v, [])
+                if len(all_definitions) > 1:
+                    detail["variables"].append(
+                        {
+                            "name": v,
+                            "defined_by": [d.setter for d in all_definitions],
+                            "type": [d.type for d in all_definitions],
+                        }
+                    )
+                    verdict = True
 
         return RuleResult(verdict=verdict, detail=detail, file=task.file_info(), rule=self.get_metadata())

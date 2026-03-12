@@ -1,19 +1,19 @@
-import os
-import traceback
-import subprocess
-import requests
-import hashlib
-import yaml
-import json
 import codecs
-from filelock import FileLock
+import hashlib
+import json
+import os
+import subprocess
+import traceback
 from copy import deepcopy
-from tabulate import tabulate
+from importlib.util import module_from_spec, spec_from_file_location
 from inspect import isclass
-from importlib.util import spec_from_file_location, module_from_spec
+
+import requests
+import yaml
+from filelock import FileLock
+from tabulate import tabulate
 
 from . import logger
-
 
 bool_values_true = frozenset(("y", "yes", "on", "1", "true", "t", 1, 1.0, True))
 bool_values_false = frozenset(("n", "no", "off", "0", "false", "f", 0, 0.0, False))
@@ -57,17 +57,19 @@ def get_lock_file_name(fpath):
 def install_galaxy_target(target, target_type, output_dir, source_repository="", target_version=""):
     server_option = ""
     if source_repository:
-        server_option = "--server {}".format(source_repository)
+        server_option = f"--server {source_repository}"
     target_name = target
     if target_version:
         target_name = f"{target}:{target_version}"
-    logger.debug("exec ansible-galaxy cmd: ansible-galaxy {} install {} {} -p {} --force".format(target_type, target_name, server_option, output_dir))
+    logger.debug(
+        f"exec ansible-galaxy cmd: ansible-galaxy {target_type} install {target_name} "
+        f"{server_option} -p {output_dir} --force"
+    )
     proc = subprocess.run(
-        "ansible-galaxy {} install {} {} -p {} --force".format(target_type, target_name, server_option, output_dir),
+        f"ansible-galaxy {target_type} install {target_name} {server_option} -p {output_dir} --force",
         shell=True,
         stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
     )
     return proc.stdout, proc.stderr
@@ -75,11 +77,10 @@ def install_galaxy_target(target, target_type, output_dir, source_repository="",
 
 def install_github_target(target, output_dir):
     proc = subprocess.run(
-        "git clone {} {}".format(target, output_dir),
+        f"git clone {target} {output_dir}",
         shell=True,
         stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
     )
     return proc.stdout
@@ -130,7 +131,7 @@ def get_installed_metadata(type, name, path, dep_dir=None):
             if dir_name.startswith(name) and dir_name.endswith(".info"):
                 galaxy_yml_path = os.path.join(base_dir, dir_name, galaxy_yml)
                 try:
-                    with open(galaxy_yml_path, "r") as galaxy_yml_file:
+                    with open(galaxy_yml_path) as galaxy_yml_file:
                         tmp_galaxy_data = yaml.safe_load(galaxy_yml_file)
                 except Exception:
                     pass
@@ -148,7 +149,7 @@ def get_collection_metadata(path: str):
     manifest_json_path = os.path.join(path, "MANIFEST.json")
     meta = None
     if os.path.exists(manifest_json_path):
-        with open(manifest_json_path, "r") as file:
+        with open(manifest_json_path) as file:
             meta = json.load(file)
     return meta
 
@@ -159,7 +160,7 @@ def get_role_metadata(path: str):
     meta_main_yml_path = os.path.join(path, "meta", "main.yml")
     meta = None
     if os.path.exists(meta_main_yml_path):
-        with open(meta_main_yml_path, "r") as file:
+        with open(meta_main_yml_path) as file:
             meta = yaml.safe_load(file)
     return meta
 
@@ -220,15 +221,12 @@ def version_to_num(ver: str):
     ver_num_part = ver.split("-")[0]
     parts = ver_num_part.split(".")
     num = 0
-    if len(parts) >= 1:
-        if parts[0].isnumeric():
-            num += float(parts[0])
-    if len(parts) >= 2:
-        if parts[1].isnumeric():
-            num += float(parts[1]) * (0.001**1)
-    if len(parts) >= 3:
-        if parts[2].isnumeric():
-            num += float(parts[2]) * (0.001**2)
+    if len(parts) >= 1 and parts[0].isnumeric():
+        num += float(parts[0])
+    if len(parts) >= 2 and parts[1].isnumeric():
+        num += float(parts[1]) * (0.001**1)
+    if len(parts) >= 3 and parts[2].isnumeric():
+        num += float(parts[2]) * (0.001**2)
     return num
 
 
@@ -308,7 +306,9 @@ def summarize_findings(findings, show_all: bool = False):
     return summarize_findings_data(metadata, dependencies, report, resolve_failures, extra_requirements, show_all)
 
 
-def summarize_findings_data(metadata, dependencies, report, resolve_failures, extra_requirements, show_all: bool = False):
+def summarize_findings_data(
+    metadata, dependencies, report, resolve_failures, extra_requirements, show_all: bool = False
+):
     target_name = metadata.get("name", "")
     output_lines = []
 
@@ -330,7 +330,8 @@ def summarize_findings_data(metadata, dependencies, report, resolve_failures, ex
 
     #     print("-" * 90)
     #     print("ARI scan completed!")
-    #     print(f"Findings have been saved at: {self.ram_client.make_findings_dir_path(self.type, self.name, self.version, self.hash)}")
+    #     print(f"Findings have been saved at: "
+    #           f"{self.ram_client.make_findings_dir_path(self.type, self.name, self.version, self.hash)}")
     #     print("-" * 90)
 
     module_failures = resolve_failures.get("module", {})
@@ -341,7 +342,9 @@ def summarize_findings_data(metadata, dependencies, report, resolve_failures, ex
     taskfile_fail_num = len(taskfile_failures)
     total_fail_num = module_fail_num + role_fail_num + taskfile_fail_num
     if total_fail_num > 0:
-        output_lines.append(f"Failed to resolve {module_fail_num} modules, {role_fail_num} roles, {taskfile_fail_num} taskfiles")
+        output_lines.append(
+            f"Failed to resolve {module_fail_num} modules, {role_fail_num} roles, {taskfile_fail_num} taskfiles"
+        )
     if module_fail_num > 0:
         output_lines.append("- modules: ")
         for module_action in module_failures:
@@ -509,7 +512,7 @@ def diff_files_data(files1, files2):
                 }
             )
 
-    for fpath, hash in files_dict2.items():
+    for fpath, _ in files_dict2.items():
         if fpath in files_dict1:
             continue
         else:
@@ -556,7 +559,14 @@ def get_module_specs_by_ansible_doc(module_files: str, fqcn_prefix: str, search_
     cmd_args = [f"ansible-doc {fqcn_list_str} --json"]
     _env = os.environ.copy()
     _env["ANSIBLE_COLLECTIONS_PATH"] = search_path
-    proc = subprocess.run(args=cmd_args, shell=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=_env)
+    proc = subprocess.run(
+        args=cmd_args,
+        shell=True,
+        stdin=subprocess.PIPE,
+        capture_output=True,
+        text=True,
+        env=_env,
+    )
     if proc.stderr and not proc.stdout:
         logger.debug(f"error while getting the documentation for modules `{fqcn_list_str}`: {proc.stderr}")
         return ""
@@ -579,7 +589,7 @@ def get_documentation_in_module_file(fpath: str):
     if not os.path.exists(fpath):
         return ""
     lines = []
-    with open(fpath, "r") as file:
+    with open(fpath) as file:
         for line in file:
             lines.append(line)
     doc_lines = []
@@ -637,7 +647,9 @@ def get_class_by_arg_type(arg_type: str):
     return mapping[arg_type]
 
 
-def load_classes_in_dir(dir_path: str, target_class: type, base_dir: str = "", only_subclass: bool = True, fail_on_error: bool = False):
+def load_classes_in_dir(
+    dir_path: str, target_class: type, base_dir: str = "", only_subclass: bool = True, fail_on_error: bool = False
+):
     search_path = dir_path
     found = False
     if os.path.exists(search_path):
@@ -672,11 +684,11 @@ def load_classes_in_dir(dir_path: str, target_class: type, base_dir: str = "", o
                 if only_subclass and cls == target_class:
                     continue
                 classes.append(cls)
-        except Exception:
+        except Exception as err:
             exc = traceback.format_exc()
             msg = f"failed to load a rule module {s}: {exc}"
             if fail_on_error:
-                raise ValueError(msg)
+                raise ValueError(msg) from err
             else:
                 errors.append(msg)
     return classes, errors
@@ -687,14 +699,14 @@ def equal(a: any, b: any):
     type_b = type(b)
     if type_a != type_b:
         return False
-    if type_a == dict:
+    if type_a is dict:
         all_keys = list(a.keys()) + list(b.keys())
         for key in all_keys:
             val_a = a.get(key, None)
             val_b = b.get(key, None)
             if not equal(val_a, val_b):
                 return False
-    elif type_a == list:
+    elif type_a is list:
         if len(a) != len(b):
             return False
         for i in range(len(a)):

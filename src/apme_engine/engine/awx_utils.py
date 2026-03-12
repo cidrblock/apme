@@ -2,7 +2,6 @@ import codecs
 import os
 import re
 
-
 valid_playbook_re = re.compile(r"^\s*?-?\s*?(?:hosts|include|import_playbook):\s*?.*?$")
 
 
@@ -19,15 +18,10 @@ def could_be_playbook(fpath):
     try:
         with codecs.open(fpath, "r", encoding="utf-8", errors="ignore") as f:
             for n, line in enumerate(f):
-                if valid_playbook_re.match(line):
+                if valid_playbook_re.match(line) or n == 0 and line.startswith("$ANSIBLE_VAULT;"):
                     matched = True
                     break
-                # Any YAML file can also be encrypted with vault;
-                # allow these to be used as the main playbook.
-                elif n == 0 and line.startswith("$ANSIBLE_VAULT;"):
-                    matched = True
-                    break
-    except IOError:
+    except OSError:
         return False
     return matched
 
@@ -37,7 +31,7 @@ def could_be_playbook(fpath):
 def search_playbooks(root_path):
     results = []
     if root_path and os.path.exists(root_path):
-        for dirpath, dirnames, filenames in os.walk(root_path, followlinks=False):
+        for dirpath, _dirnames, filenames in os.walk(root_path, followlinks=False):
             if skip_directory(dirpath):
                 continue
             for filename in filenames:
@@ -68,6 +62,4 @@ def skip_directory(relative_directory_path):
         if element.startswith("."):
             return True
     # Exclude anything inside of group or host vars directories
-    if "group_vars" in path_elements or "host_vars" in path_elements:
-        return True
-    return False
+    return bool("group_vars" in path_elements or "host_vars" in path_elements)

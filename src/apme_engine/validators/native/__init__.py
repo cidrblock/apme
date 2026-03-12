@@ -3,13 +3,12 @@
 import os
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any, Tuple
+from typing import Any
 
 from apme_engine.engine.risk_detector import detect
-from apme_engine.validators.base import ScanContext, Validator
+from apme_engine.validators.base import ScanContext
 
-
-RULES_REQUIRING_ANSIBLE: Tuple[str, ...] = ("P001", "P002", "P003", "P004")
+RULES_REQUIRING_ANSIBLE: tuple[str, ...] = ("P001", "P002", "P003", "P004")
 
 
 @dataclass
@@ -55,10 +54,7 @@ def _extract_results(data_report: dict) -> NativeRunResult:
                 severity = getattr(rule_meta, "severity", "") or "medium"
                 description = getattr(rule_meta, "description", "") or ""
                 detail = getattr(r, "detail", None)
-                if isinstance(detail, dict) and detail.get("message"):
-                    message = detail["message"]
-                else:
-                    message = description
+                message = detail["message"] if isinstance(detail, dict) and detail.get("message") else description
                 file_info = getattr(r, "file", None)
                 if isinstance(file_info, (list, tuple)) and len(file_info) >= 1:
                     file_path = str(file_info[0]) if file_info[0] else ""
@@ -70,14 +66,16 @@ def _extract_results(data_report: dict) -> NativeRunResult:
                 path = ""
                 if node and hasattr(node, "spec") and hasattr(node.spec, "key"):
                     path = getattr(node.spec, "key", "") or ""
-                violations.append({
-                    "rule_id": f"native:{rule_id}" if rule_id else "native:unknown",
-                    "level": severity,
-                    "message": message,
-                    "file": file_path,
-                    "line": line,
-                    "path": path,
-                })
+                violations.append(
+                    {
+                        "rule_id": f"native:{rule_id}" if rule_id else "native:unknown",
+                        "level": severity,
+                        "message": message,
+                        "file": file_path,
+                        "line": line,
+                        "path": path,
+                    }
+                )
 
     rule_timings = [
         NativeRuleTiming(rule_id=rid, elapsed_ms=v["elapsed_ms"], violations=v["violations"])
@@ -89,9 +87,11 @@ def _extract_results(data_report: dict) -> NativeRunResult:
 class NativeValidator:
     """Validator that runs in-tree native (Python) rules on context.scandata (no second parse)."""
 
-    def __init__(self, rules_dir: str = "", exclude_rule_ids: Tuple[str, ...] = None):
+    def __init__(self, rules_dir: str = "", exclude_rule_ids: tuple[str, ...] = None):
         self._rules_dir = rules_dir or _default_rules_dir()
-        self._exclude_rule_ids = list(exclude_rule_ids) if exclude_rule_ids is not None else list(RULES_REQUIRING_ANSIBLE)
+        self._exclude_rule_ids = (
+            list(exclude_rule_ids) if exclude_rule_ids is not None else list(RULES_REQUIRING_ANSIBLE)
+        )
 
     def run(self, context: ScanContext) -> list[dict]:
         """Run native rules on context.scandata; return list of violation dicts."""

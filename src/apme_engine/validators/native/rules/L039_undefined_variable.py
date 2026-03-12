@@ -2,12 +2,14 @@ from dataclasses import dataclass
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
-    RunTargetType,
-    VariableType,
     Rule,
-    Severity,
-    RuleTag as Tag,
     RuleResult,
+    RunTargetType,
+    Severity,
+    VariableType,
+)
+from apme_engine.engine.models import (
+    RuleTag as Tag,
 )
 
 

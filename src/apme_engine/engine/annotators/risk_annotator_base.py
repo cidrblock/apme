@@ -1,8 +1,9 @@
 from dataclasses import dataclass
-from apme_engine.engine.models import TaskCall, RiskAnnotation
-from apme_engine.engine.utils import load_classes_in_dir
+
 from apme_engine.engine.annotators.annotator_base import Annotator, AnnotatorResult
 from apme_engine.engine.annotators.module_annotator_base import ModuleAnnotator, ModuleAnnotatorResult
+from apme_engine.engine.models import RiskAnnotation, TaskCall
+from apme_engine.engine.utils import load_classes_in_dir
 
 
 class RiskAnnotator(Annotator):

@@ -6,15 +6,28 @@ from apme_engine.engine.yaml_utils import FormattedYAML
 from apme_engine.remediation.registry import TransformResult
 from apme_engine.remediation.transforms._helpers import find_task_at_line, get_module_key
 
-
-_FILE_MODULES = frozenset({
-    "ansible.builtin.copy", "ansible.builtin.file", "ansible.builtin.template",
-    "ansible.builtin.lineinfile", "ansible.builtin.replace",
-    "ansible.builtin.unarchive", "ansible.builtin.synchronize",
-    "ansible.legacy.copy", "ansible.legacy.file", "ansible.legacy.template",
-    "copy", "file", "template", "lineinfile", "replace",
-    "synchronize", "unarchive", "assemble",
-})
+_FILE_MODULES = frozenset(
+    {
+        "ansible.builtin.copy",
+        "ansible.builtin.file",
+        "ansible.builtin.template",
+        "ansible.builtin.lineinfile",
+        "ansible.builtin.replace",
+        "ansible.builtin.unarchive",
+        "ansible.builtin.synchronize",
+        "ansible.legacy.copy",
+        "ansible.legacy.file",
+        "ansible.legacy.template",
+        "copy",
+        "file",
+        "template",
+        "lineinfile",
+        "replace",
+        "synchronize",
+        "unarchive",
+        "assemble",
+    }
+)
 
 
 def fix_missing_mode(content: str, violation: dict) -> TransformResult:

@@ -35,14 +35,16 @@ def run(
     violations: list[dict] = []
 
     if not ansible_playbook.exists():
-        violations.append({
-            "rule_id": RULE_ID,
-            "level": "error",
-            "message": f"ansible-playbook not found: {ansible_playbook}",
-            "file": "",
-            "line": 1,
-            "path": "",
-        })
+        violations.append(
+            {
+                "rule_id": RULE_ID,
+                "level": "error",
+                "message": f"ansible-playbook not found: {ansible_playbook}",
+                "file": "",
+                "line": 1,
+                "path": "",
+            }
+        )
         return violations
 
     env = dict(os.environ)
@@ -61,14 +63,16 @@ def run(
                 env=env,
             )
         except subprocess.TimeoutExpired:
-            violations.append({
-                "rule_id": RULE_ID,
-                "level": "error",
-                "message": "ansible-playbook --syntax-check timed out",
-                "file": rel_path,
-                "line": 1,
-                "path": "",
-            })
+            violations.append(
+                {
+                    "rule_id": RULE_ID,
+                    "level": "error",
+                    "message": "ansible-playbook --syntax-check timed out",
+                    "file": rel_path,
+                    "line": 1,
+                    "path": "",
+                }
+            )
             continue
 
         if result.returncode != 0:
@@ -77,13 +81,15 @@ def run(
             line_match = re.search(r"\bline\s+(\d+)\b", stderr, re.I)
             if line_match:
                 line = int(line_match.group(1))
-            violations.append({
-                "rule_id": RULE_ID,
-                "level": "error",
-                "message": stderr or "syntax check failed",
-                "file": rel_path,
-                "line": line,
-                "path": "",
-            })
+            violations.append(
+                {
+                    "rule_id": RULE_ID,
+                    "level": "error",
+                    "message": stderr or "syntax check failed",
+                    "file": rel_path,
+                    "line": line,
+                    "path": "",
+                }
+            )
 
     return violations

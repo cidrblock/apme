@@ -22,11 +22,13 @@ class RAMUpdateCLI:
             raise ValueError('RAMUpdateCLI cannot be executed without "update" action')
 
         target_list = []
-        with open(args.file, "r") as file:
+        with open(args.file) as file:
             for line in file:
                 parts = line.replace("\n", "").split(" ")
                 if len(parts) != 2:
-                    raise ValueError('target list file must be lines of "<type> <name>" such as "collection community.general"')
+                    raise ValueError(
+                        'target list file must be lines of "<type> <name>" such as "collection community.general"'
+                    )
                 target_list.append((parts[0], parts[1]))
 
         resume = -1

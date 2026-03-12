@@ -1,11 +1,11 @@
 import argparse
 import json
-from typing import List
-from apme_engine.engine.annotators.risk_annotator_base import RiskAnnotator
-import apme_engine.engine.logger as logger
-from .models import TaskCallsInTree, AnsibleRunContext
-from .utils import load_classes_in_dir
 
+import apme_engine.engine.logger as logger
+from apme_engine.engine.annotators.risk_annotator_base import RiskAnnotator
+
+from .models import AnsibleRunContext, TaskCallsInTree
+from .utils import load_classes_in_dir
 
 annotator_cache = []
 
@@ -22,30 +22,30 @@ def load_annotators(ctx: AnsibleRunContext = None):
         try:
             _annotator = a(context=ctx)
             _annotators.append(_annotator)
-        except Exception:
-            raise ValueError(f"failed to load an annotator: {a}")
+        except Exception as err:
+            raise ValueError(f"failed to load an annotator: {a}") from err
     annotator_cache = _annotators
     return _annotators
 
 
-def load_taskcalls_in_trees(path: str) -> List[TaskCallsInTree]:
+def load_taskcalls_in_trees(path: str) -> list[TaskCallsInTree]:
     taskcalls_in_trees = []
     try:
-        with open(path, "r") as file:
+        with open(path) as file:
             for line in file:
                 taskcalls_in_tree = TaskCallsInTree.from_json(line)
                 taskcalls_in_trees.append(taskcalls_in_tree)
     except Exception as e:
-        raise ValueError("failed to load the json file {} {}".format(path, e))
+        raise ValueError(f"failed to load the json file {path} {e}") from e
     return taskcalls_in_trees
 
 
-def analyze(contexts: List[AnsibleRunContext]):
+def analyze(contexts: list[AnsibleRunContext]):
     num = len(contexts)
     for i, ctx in enumerate(contexts):
         if not isinstance(ctx, AnsibleRunContext):
             continue
-        for j, t in enumerate(ctx.tasks):
+        for _j, t in enumerate(ctx.tasks):
             annotator = None
             _annotators = load_annotators(ctx)
             for ax in _annotators:
@@ -61,7 +61,7 @@ def analyze(contexts: List[AnsibleRunContext]):
                 continue
             if result.annotations:
                 t.annotations.extend(result.annotations)
-        logger.debug("analyze() {}/{} done".format(i + 1, num))
+        logger.debug(f"analyze() {i + 1}/{num} done")
     return contexts
 
 
@@ -88,7 +88,7 @@ def main():
 
     if args.output != "":
         lines = [json.dumps(single_tree_data) for single_tree_data in taskcalls_in_trees]
-        with open(args.output, mode="wt") as file:
+        with open(args.output, mode="w") as file:
             file.write("\n".join(lines))
 
 

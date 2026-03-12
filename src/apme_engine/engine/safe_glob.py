@@ -1,11 +1,13 @@
 import os
-import sys
 import re
+import sys
 
 
 # glob.glob() may cause infinite loop when there is symlink loop
 # safe_glob() support the case by `followlink=False` option as default
-def safe_glob(patterns, root_dir="", recursive=True, type=["file", "dir"], followlinks=False):
+def safe_glob(patterns, root_dir="", recursive=True, type=None, followlinks=False):
+    if type is None:
+        type = ["file", "dir"]
     pattern_list = []
     if isinstance(patterns, list):
         pattern_list = [p for p in patterns]
@@ -22,11 +24,9 @@ def safe_glob(patterns, root_dir="", recursive=True, type=["file", "dir"], follo
         root_dir_for_this_pattern = ""
         if root_dir == "":
             root_cand = pattern.split("*")[0]
-            if root_cand.endswith("/"):
-                root_cand = root_cand[:-1]  # trim "/" suffix
-            else:
-                root_cand = "/".join(root_cand.split("/")[:-1])  # testdir1/testdir2/file-*.txt --> testdir1/testdir2
-            root_dir_for_this_pattern = root_cand
+            root_dir_for_this_pattern = (
+                root_cand[:-1] if root_cand.endswith("/") else "/".join(root_cand.split("/")[:-1])
+            )
         else:
             root_dir_for_this_pattern = root_dir
 
@@ -79,7 +79,7 @@ def pattern_match(pattern, fpath):
     pattern = pattern.replace("**/", "<ANY>")
     pattern = pattern.replace("*", "[^/]*")
     pattern = pattern.replace("<ANY>", ".*")
-    regex_pattern = r"^{}$".format(pattern)
+    regex_pattern = rf"^{pattern}$"
     return re.match(regex_pattern, fpath)
 
 

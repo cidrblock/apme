@@ -1,12 +1,12 @@
 # Colocated tests for L036 (UnnecessaryIncludeVarsRule).
 
+from apme_engine.engine.models import ExecutableType
 from apme_engine.validators.native.rules._test_helpers import (
-    make_task_spec,
-    make_task_call,
     make_context,
+    make_task_call,
+    make_task_spec,
 )
 from apme_engine.validators.native.rules.L036_unnecessary_include_vars import UnnecessaryIncludeVarsRule
-from apme_engine.engine.models import ExecutableType
 
 
 def test_L036_fires_when_include_vars_no_tags_no_when():

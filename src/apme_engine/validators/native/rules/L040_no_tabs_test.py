@@ -1,11 +1,10 @@
 # Colocated tests for L040 (NoTabsRule). Uses Python-object context from _test_helpers.
 
-import pytest
 
 from apme_engine.validators.native.rules._test_helpers import (
-    make_task_spec,
-    make_task_call,
     make_context,
+    make_task_call,
+    make_task_spec,
 )
 from apme_engine.validators.native.rules.L040_no_tabs import NoTabsRule
 
@@ -35,7 +34,8 @@ def test_L040_does_not_fire_when_no_tabs():
 
 
 def test_L040_does_not_fire_for_role():
-    from apme_engine.validators.native.rules._test_helpers import make_role_spec, make_role_call
+    from apme_engine.validators.native.rules._test_helpers import make_role_call, make_role_spec
+
     role = make_role_call(make_role_spec(name="foo"))
     ctx = make_context(role)
     rule = NoTabsRule()

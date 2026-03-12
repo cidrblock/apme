@@ -1,4 +1,5 @@
 import sys
+
 from .scanner import ARIScanner, Config
 
 # ARI CLI (ARICLI, RAMCLI) not imported by default to avoid pulling in heavy deps on scanner import.
@@ -13,7 +14,6 @@ all_actions = ari_actions + ram_actions
 
 def main():
     if len(sys.argv) == 1:
-
         print("Please specify one of the following operations of ari.")
         print("[operations]")
         print("   playbook     scan a playbook (e.g. `ari playbook path/to/playbook.yml` )")

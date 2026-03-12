@@ -9,8 +9,8 @@ from pathlib import Path
 
 from apme_engine.collection_cache.config import get_cache_root
 from apme_engine.collection_cache.manager import (
-    collection_path_in_cache,
     _parse_collection_spec,
+    collection_path_in_cache,
 )
 
 
@@ -43,14 +43,10 @@ def _resolve_collection_path(
 ) -> Path | None:
     """Resolve a collection spec to its path in the cache (galaxy first, then github)."""
     namespace, collection = _parse_collection_spec(spec)
-    path = collection_path_in_cache(
-        namespace, collection, cache_root=cache_root, source="galaxy"
-    )
+    path = collection_path_in_cache(namespace, collection, cache_root=cache_root, source="galaxy")
     if path is not None:
         return path
-    return collection_path_in_cache(
-        namespace, collection, cache_root=cache_root, source="github"
-    )
+    return collection_path_in_cache(namespace, collection, cache_root=cache_root, source="github")
 
 
 def build_venv(
@@ -167,10 +163,7 @@ def build_venv(
 
 def get_venv_python(venv_root: Path) -> Path:
     """Return the python executable inside the venv."""
-    if os.name == "nt":
-        exe = venv_root / "Scripts" / "python.exe"
-    else:
-        exe = venv_root / "bin" / "python"
+    exe = venv_root / "Scripts" / "python.exe" if os.name == "nt" else venv_root / "bin" / "python"
     if not exe.is_file():
         raise FileNotFoundError(f"venv has no python: {venv_root}")
     return exe

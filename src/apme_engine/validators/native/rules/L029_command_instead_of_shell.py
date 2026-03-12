@@ -2,12 +2,16 @@ from dataclasses import dataclass
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
-    RunTargetType,
-    ExecutableType as ActionType,
     Rule,
-    Severity,
-    RuleTag as Tag,
     RuleResult,
+    RunTargetType,
+    Severity,
+)
+from apme_engine.engine.models import (
+    ExecutableType as ActionType,
+)
+from apme_engine.engine.models import (
+    RuleTag as Tag,
 )
 
 

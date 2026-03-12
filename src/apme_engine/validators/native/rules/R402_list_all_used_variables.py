@@ -2,11 +2,13 @@ from dataclasses import dataclass
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
-    RunTargetType,
     Rule,
-    Severity,
-    RuleTag as Tag,
     RuleResult,
+    RunTargetType,
+    Severity,
+)
+from apme_engine.engine.models import (
+    RuleTag as Tag,
 )
 
 
@@ -29,7 +31,6 @@ class ListAllUsedVariablesRule(Rule):
         verdict = False
         detail = {}
         if ctx.is_end(task):
-
             verdict = True
             detail["metadata"] = ctx.info
             detail["variables"] = list(task.variable_use.keys())

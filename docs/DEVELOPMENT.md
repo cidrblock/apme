@@ -8,6 +8,49 @@ pip install -r requirements.txt
 pip install -e ".[dev]"
 ```
 
+## Pre-commit hooks (prek)
+
+The project uses [prek](https://github.com/j178/prek) to run [ruff](https://docs.astral.sh/ruff/) lint and format checks as pre-commit hooks.
+
+### Install prek
+
+```bash
+uv tool install prek   # recommended
+# or: pip install prek
+```
+
+### Install git hooks
+
+```bash
+prek install
+```
+
+This installs a Git pre-commit hook so checks run automatically on `git commit`.
+
+### Run manually
+
+```bash
+prek run --all-files
+```
+
+### What runs
+
+| Hook | What it does |
+|------|--------------|
+| `ruff` | Lint check (rules: E, F, W, I, UP, B, SIM) with `--fix` |
+| `ruff-format` | Code formatting |
+
+Configuration is in `pyproject.toml` under `[tool.ruff]`. Generated gRPC stubs (`src/apme/v1/*_pb2*.py`) are excluded.
+
+### Running ruff directly
+
+```bash
+ruff check src/ tests/          # lint
+ruff check --fix src/ tests/    # lint + auto-fix
+ruff format src/ tests/         # format
+ruff format --check src/ tests/ # format check (CI mode)
+```
+
 ## Code organization
 
 ```

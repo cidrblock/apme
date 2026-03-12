@@ -39,10 +39,7 @@ def fix_octal_mode(content: str, violation: dict) -> TransformResult:
         m = _MODE_NUMERIC.match(stripped)
         if m:
             prefix, digits, suffix = m.group(1), m.group(2), m.group(3) or ""
-            if digits.startswith("0") and len(digits) >= 4:
-                quoted = f'"{digits}"'
-            else:
-                quoted = f'"0{digits}"'
+            quoted = f'"{digits}"' if digits.startswith("0") and len(digits) >= 4 else f'"0{digits}"'
             lines[i] = prefix + quoted + suffix + nl
             applied = True
             break
@@ -51,7 +48,7 @@ def fix_octal_mode(content: str, violation: dict) -> TransformResult:
         if m2:
             prefix, quote, digits, suffix = m2.group(1), m2.group(2), m2.group(3), m2.group(4) or ""
             if not digits.startswith("0"):
-                lines[i] = f'{prefix}{quote}0{digits}{quote}{suffix}{nl}'
+                lines[i] = f"{prefix}{quote}0{digits}{quote}{suffix}{nl}"
                 applied = True
                 break
 

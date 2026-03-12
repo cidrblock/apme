@@ -1,8 +1,7 @@
 """Tests for apme_engine.opa_client."""
 
 import json
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -27,9 +26,11 @@ class TestRunOpa:
 
     def test_opa_not_found_returns_empty_list(self, opa_bundle_path):
         """When opa command is not found, returns [] and writes to stderr."""
-        with patch("apme_engine.opa_client.subprocess.run", side_effect=FileNotFoundError("opa not found")):
-            with patch("sys.stderr.write") as mock_stderr:
-                result = run_opa({"hierarchy": []}, str(opa_bundle_path))
+        with (
+            patch("apme_engine.opa_client.subprocess.run", side_effect=FileNotFoundError("opa not found")),
+            patch("sys.stderr.write") as mock_stderr,
+        ):
+            result = run_opa({"hierarchy": []}, str(opa_bundle_path))
         assert result == []
         mock_stderr.assert_called_once()
         assert "opa" in mock_stderr.call_args[0][0].lower()
@@ -54,7 +55,9 @@ class TestRunOpa:
         mock_stderr.assert_called_once()
         assert "invalid JSON" in mock_stderr.call_args[0][0]
 
-    def test_opa_empty_result_returns_empty_list(self, opa_bundle_path, sample_hierarchy_payload, opa_eval_result_empty):
+    def test_opa_empty_result_returns_empty_list(
+        self, opa_bundle_path, sample_hierarchy_payload, opa_eval_result_empty
+    ):
         """When OPA result has no expressions, returns []."""
         with patch("apme_engine.opa_client.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout=json.dumps({"result": []}), stderr="")

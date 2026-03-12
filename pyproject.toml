@@ -27,7 +27,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "pytest-mock", "pytest-asyncio>=0.24"]
+dev = ["pytest", "pytest-cov", "pytest-mock", "pytest-asyncio>=0.24", "ruff"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "src/apme_engine/validators/native/rules"]
@@ -59,6 +59,17 @@ apme-ansible-validator = "apme_engine.daemon.ansible_validator_main:main"
 apme-native-validator = "apme_engine.daemon.native_validator_main:main"
 apme-opa-validator = "apme_engine.daemon.opa_validator_main:main"
 apme-gitleaks-validator = "apme_engine.daemon.gitleaks_validator_main:main"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+exclude = ["src/apme/v1/*_pb2*.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/apme_engine/engine/annotators/ansible.builtin/*.py" = ["E501"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

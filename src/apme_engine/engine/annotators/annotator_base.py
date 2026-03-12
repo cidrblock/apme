@@ -1,9 +1,9 @@
 from dataclasses import dataclass
-from typing import List
-from apme_engine.engine.models import TaskCall, AnsibleRunContext, Annotation
+
+from apme_engine.engine.models import Annotation, AnsibleRunContext, TaskCall
 
 
-class Annotator(object):
+class Annotator:
     type: str = ""
     context: AnsibleRunContext = None
 
@@ -16,8 +16,8 @@ class Annotator(object):
 
 
 @dataclass
-class AnnotatorResult(object):
-    annotations: List[Annotation] = None
+class AnnotatorResult:
+    annotations: list[Annotation] = None
     data: any = None
 
     def print(self):

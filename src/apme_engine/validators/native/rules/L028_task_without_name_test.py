@@ -1,11 +1,10 @@
 # Colocated tests for L028 (TaskWithoutNameRule). Uses Python-object context from _test_helpers.
 
-import pytest
 
 from apme_engine.validators.native.rules._test_helpers import (
-    make_task_spec,
-    make_task_call,
     make_context,
+    make_task_call,
+    make_task_spec,
 )
 from apme_engine.validators.native.rules.L028_task_without_name import TaskWithoutNameRule
 
@@ -33,7 +32,8 @@ def test_L028_does_not_fire_when_task_has_name():
 
 
 def test_L028_does_not_fire_for_role():
-    from apme_engine.validators.native.rules._test_helpers import make_role_spec, make_role_call
+    from apme_engine.validators.native.rules._test_helpers import make_role_call, make_role_spec
+
     spec = make_role_spec(name="foo")
     role = make_role_call(spec)
     ctx = make_context(role)

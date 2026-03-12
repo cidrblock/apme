@@ -30,15 +30,11 @@ def main() -> None:
         sys.exit(1)
 
     # PluginResolutionContext: resolved_fqcn (ansible-core 2.14+)
-    fqcn = getattr(ctx, "resolved_fqcn", None) or getattr(
-        ctx, "plugin_resolved_name", None
-    )
+    fqcn = getattr(ctx, "resolved_fqcn", None) or getattr(ctx, "plugin_resolved_name", None)
     if not fqcn and hasattr(ctx, "plugin"):
         plugin = ctx.plugin
         if plugin is not None:
-            fqcn = getattr(plugin, "resolved_fqcn", None) or getattr(
-                plugin, "_load_name", None
-            )
+            fqcn = getattr(plugin, "resolved_fqcn", None) or getattr(plugin, "_load_name", None)
     if not fqcn:
         fqcn = name
     print(fqcn)

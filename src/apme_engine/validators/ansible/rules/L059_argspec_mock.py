@@ -140,7 +140,10 @@ for task in tasks:
             if val not in choices:
                 violations.append({
                     "module": module,
-                    "message": f"Value '{val}' for parameter '{pname}' of {module} is not one of: {', '.join(str(c) for c in choices)}",
+                    "message": (
+                        f"Value '{val}' for parameter '{pname}' of {module} "
+                        f"is not one of: {', '.join(str(c) for c in choices)}"
+                    ),
                     "task_key": task.get("key", ""),
                 })
 
@@ -161,7 +164,10 @@ for task in tasks:
             missing = [p for p in group if p not in user_keys]
             violations.append({
                 "module": module,
-                "message": f"Parameters must be used together for {module}: {', '.join(group)} (missing: {', '.join(missing)})",
+                "message": (
+                    f"Parameters must be used together for {module}: "
+                    f"{', '.join(group)} (missing: {', '.join(missing)})"
+                ),
                 "task_key": task.get("key", ""),
             })
 
@@ -184,13 +190,15 @@ def run(
         if not module or not isinstance(module_options, dict) or not module_options:
             continue
         task_modules[module] = True
-        tasks_for_check.append({
-            "module": module,
-            "module_options": module_options,
-            "key": node.get("key", ""),
-            "file": node.get("file", ""),
-            "line": node.get("line"),
-        })
+        tasks_for_check.append(
+            {
+                "module": module,
+                "module_options": module_options,
+                "key": node.get("key", ""),
+                "file": node.get("file", ""),
+                "line": node.get("line"),
+            }
+        )
 
     if not tasks_for_check:
         return []
@@ -234,13 +242,15 @@ def run(
         task = task_by_key.get(task_key, {})
         line = task.get("line")
         line_num = line[0] if isinstance(line, (list, tuple)) and line else 1
-        violations.append({
-            "rule_id": RULE_ID,
-            "level": "error",
-            "message": rv.get("message", "argument validation failed"),
-            "file": task.get("file", ""),
-            "line": line_num,
-            "path": task_key,
-        })
+        violations.append(
+            {
+                "rule_id": RULE_ID,
+                "level": "error",
+                "message": rv.get("message", "argument validation failed"),
+                "file": task.get("file", ""),
+                "line": line_num,
+                "path": task_key,
+            }
+        )
 
     return violations

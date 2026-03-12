@@ -15,7 +15,9 @@ class RAMGenerateCLI:
         parser.add_argument("--serial", action="store_true", help="if True, do not parallelize ram generation")
         parser.add_argument("--no-module-spec", action="store_true", help="if True, ansible-doc is not used")
         parser.add_argument("--download-only", action="store_true", help="if True, just download the content")
-        parser.add_argument("--include-tests", action="store_true", help='if true, load test contents in "tests/integration/targets"')
+        parser.add_argument(
+            "--include-tests", action="store_true", help='if true, load test contents in "tests/integration/targets"'
+        )
         parser.add_argument("--no-retry", action="store_true", help="if True, not retry failed items.")
         parser.add_argument("-o", "--out-dir", help="output directory for the rule evaluation result")
         args = parser.parse_args()
@@ -28,11 +30,13 @@ class RAMGenerateCLI:
             raise ValueError('RAMGenerateCLI cannot be executed without "generate" action')
 
         target_list = []
-        with open(args.file, "r") as file:
+        with open(args.file) as file:
             for line in file:
                 parts = line.replace("\n", "").split(" ")
                 if len(parts) != 2:
-                    raise ValueError('target list file must be lines of "<type> <name>" such as "collection community.general"')
+                    raise ValueError(
+                        'target list file must be lines of "<type> <name>" such as "collection community.general"'
+                    )
                 target_list.append((parts[0], parts[1]))
 
         resume = -1

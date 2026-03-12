@@ -1,8 +1,8 @@
 """Validator abstraction: ScanContext and Validator protocol."""
 
-from .base import ScanContext, Validator
-from .opa import OpaValidator
-from .native import NativeValidator
 from .ansible import AnsibleValidator
+from .base import ScanContext, Validator
+from .native import NativeValidator
+from .opa import OpaValidator
 
 __all__ = ["ScanContext", "Validator", "OpaValidator", "NativeValidator", "AnsibleValidator"]

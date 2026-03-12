@@ -1,6 +1,6 @@
 # Colocated tests for R115 (FileDeletionRule). Rule uses annotations; test no fire without annotation.
 
-from apme_engine.validators.native.rules._test_helpers import make_task_spec, make_task_call, make_context
+from apme_engine.validators.native.rules._test_helpers import make_context, make_task_call, make_task_spec
 from apme_engine.validators.native.rules.R115_file_deletion import FileDeletionRule
 
 

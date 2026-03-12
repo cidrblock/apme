@@ -28,16 +28,31 @@ JINJA_NORMALIZE_RE = re.compile(r"\{\{(\s*)(.*?)(\s*)\}\}")
 
 TASK_KEY_ORDER = [
     "name",
-    "block", "rescue", "always",
-    "when", "changed_when", "failed_when",
-    "loop", "loop_control",
-    "with_items", "with_dict", "with_fileglob", "with_subelements",
-    "with_sequence", "with_nested", "with_first_found",
+    "block",
+    "rescue",
+    "always",
+    "when",
+    "changed_when",
+    "failed_when",
+    "loop",
+    "loop_control",
+    "with_items",
+    "with_dict",
+    "with_fileglob",
+    "with_subelements",
+    "with_sequence",
+    "with_nested",
+    "with_first_found",
     "register",
-    "notify", "listen",
-    "become", "become_user", "become_method",
-    "delegate_to", "run_once",
-    "ignore_errors", "ignore_unreachable",
+    "notify",
+    "listen",
+    "become",
+    "become_user",
+    "become_method",
+    "delegate_to",
+    "run_once",
+    "ignore_errors",
+    "ignore_unreachable",
     "no_log",
     "tags",
     "environment",
@@ -239,6 +254,7 @@ def format_directory(
 def _matches_glob(path_str: str, pattern: str) -> bool:
     """Simple glob matching using fnmatch."""
     import fnmatch
+
     return fnmatch.fnmatch(path_str, pattern)
 
 

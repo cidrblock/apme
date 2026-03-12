@@ -5,7 +5,8 @@ import time
 from typing import Any
 
 import grpc
-from apme.v1 import common_pb2, primary_pb2_grpc, validate_pb2_grpc, cache_pb2_grpc
+
+from apme.v1 import cache_pb2_grpc, common_pb2, primary_pb2_grpc, validate_pb2_grpc
 
 
 def _derive_addresses(primary_addr: str) -> dict[str, str]:

@@ -9,6 +9,7 @@ def _import_single_scan():
     """Import SingleScan from apme_engine.engine; return None if import fails."""
     try:
         from apme_engine.engine.scanner import SingleScan
+
         return SingleScan
     except Exception:
         return None

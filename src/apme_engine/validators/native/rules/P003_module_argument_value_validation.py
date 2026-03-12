@@ -2,13 +2,15 @@ from dataclasses import dataclass
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
-    RunTargetType,
-    Rule,
-    Severity,
-    RuleTag as Tag,
     ArgumentsType,
     ExecutableType,
+    Rule,
+    RunTargetType,
+    Severity,
     VariableType,
+)
+from apme_engine.engine.models import (
+    RuleTag as Tag,
 )
 
 
@@ -50,7 +52,6 @@ class ModuleArgumentValueValidationRule(Rule):
         task = ctx.current
 
         if task.spec.executable_type == ExecutableType.MODULE_TYPE and task.module and task.module.arguments:
-
             wrong_values = []
             undefined_values = []
             unknown_type_values = []
@@ -146,7 +147,9 @@ class ModuleArgumentValueValidationRule(Rule):
                                 undefined_vars.append(v.name)
 
                         if undefined_vars:
-                            undefined_values.append({"key": key, "value": raw_value, "undefined_variables": undefined_vars})
+                            undefined_values.append(
+                                {"key": key, "value": raw_value, "undefined_variables": undefined_vars}
+                            )
 
             task.set_annotation("module.wrong_arg_values", wrong_values, rule_id=self.rule_id)
             task.set_annotation("module.undefined_values", undefined_values, rule_id=self.rule_id)

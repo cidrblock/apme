@@ -98,8 +98,7 @@ def test_rule_has_doc(validator, rule_id, source_file, md_dir):
         pytest.skip("No rules discovered")
     md_path = _find_md_for_rule(rule_id, md_dir)
     assert md_path is not None, (
-        f"Rule {rule_id} (from {source_file}, validator={validator}) "
-        f"has no .md doc file in {md_dir}"
+        f"Rule {rule_id} (from {source_file}, validator={validator}) has no .md doc file in {md_dir}"
     )
 
 

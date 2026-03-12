@@ -122,57 +122,65 @@ def run(
 
         # M004: Tombstoned / removed module
         if info.get("removed"):
-            violations.append({
-                "rule_id": "M004",
-                "level": "error",
-                "message": info.get("removal_msg") or f"Module {module_name} has been removed",
-                "file": file_path,
-                "line": line_num,
-                "path": node.get("key", ""),
-            })
+            violations.append(
+                {
+                    "rule_id": "M004",
+                    "level": "error",
+                    "message": info.get("removal_msg") or f"Module {module_name} has been removed",
+                    "file": file_path,
+                    "line": line_num,
+                    "path": node.get("key", ""),
+                }
+            )
             continue
 
         # M001: FQCN resolution
         fqcn = info.get("fqcn", "")
         if fqcn and fqcn != module_name and module_name.count(".") < 2:
-            violations.append({
-                "rule_id": "M001",
-                "level": "warning",
-                "message": f"Use FQCN for module: {module_name} -> {fqcn}",
-                "file": file_path,
-                "line": line_num,
-                "path": node.get("key", ""),
-                "resolved_fqcn": fqcn,
-                "original_module": module_name,
-            })
+            violations.append(
+                {
+                    "rule_id": "M001",
+                    "level": "warning",
+                    "message": f"Use FQCN for module: {module_name} -> {fqcn}",
+                    "file": file_path,
+                    "line": line_num,
+                    "path": node.get("key", ""),
+                    "resolved_fqcn": fqcn,
+                    "original_module": module_name,
+                }
+            )
 
         # M002: Deprecation
         if info.get("deprecated") or info.get("warnings"):
             warnings = info.get("warnings", [])
             msg = warnings[0] if warnings else f"Module {module_name} is deprecated"
-            violations.append({
-                "rule_id": "M002",
-                "level": "warning",
-                "message": msg,
-                "file": file_path,
-                "line": line_num,
-                "path": node.get("key", ""),
-            })
+            violations.append(
+                {
+                    "rule_id": "M002",
+                    "level": "warning",
+                    "message": msg,
+                    "file": file_path,
+                    "line": line_num,
+                    "path": node.get("key", ""),
+                }
+            )
 
         # M003: Redirects
         redirects = info.get("redirects", [])
         if len(redirects) > 1:
             chain = " -> ".join(redirects)
-            violations.append({
-                "rule_id": "M003",
-                "level": "info",
-                "message": f"Module has been redirected: {chain}",
-                "file": file_path,
-                "line": line_num,
-                "path": node.get("key", ""),
-                "original_module": module_name,
-                "resolved_fqcn": redirects[-1],
-                "redirect_chain": redirects,
-            })
+            violations.append(
+                {
+                    "rule_id": "M003",
+                    "level": "info",
+                    "message": f"Module has been redirected: {chain}",
+                    "file": file_path,
+                    "line": line_num,
+                    "path": node.get("key", ""),
+                    "original_module": module_name,
+                    "resolved_fqcn": redirects[-1],
+                    "redirect_chain": redirects,
+                }
+            )
 
     return violations

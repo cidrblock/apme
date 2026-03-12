@@ -1,13 +1,15 @@
-from dataclasses import dataclass
 import re
+from dataclasses import dataclass
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
-    RunTargetType,
     Rule,
-    Severity,
-    RuleTag as Tag,
     RuleResult,
+    RunTargetType,
+    Severity,
+)
+from apme_engine.engine.models import (
+    RuleTag as Tag,
 )
 
 URL_PATTERN = re.compile(r"^https?://\S+$")
@@ -34,7 +36,12 @@ class MetaVideoLinksRule(Rule):
         if not video_links:
             return RuleResult(verdict=False, file=role.file_info(), rule=self.get_metadata())
         if not isinstance(video_links, list):
-            return RuleResult(verdict=True, detail={"message": "video_links must be a list"}, file=role.file_info(), rule=self.get_metadata())
+            return RuleResult(
+                verdict=True,
+                detail={"message": "video_links must be a list"},
+                file=role.file_info(),
+                rule=self.get_metadata(),
+            )
         invalid = [u for u in video_links if not (isinstance(u, str) and URL_PATTERN.match(u.strip()))]
         verdict = len(invalid) > 0
         detail = {}

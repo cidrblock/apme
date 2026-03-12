@@ -2,10 +2,10 @@ from dataclasses import dataclass
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
-    RunTargetType,
     Rule,
-    Severity,
     RuleResult,
+    RunTargetType,
+    Severity,
 )
 
 

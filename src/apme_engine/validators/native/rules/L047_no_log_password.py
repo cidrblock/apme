@@ -2,25 +2,22 @@ from dataclasses import dataclass
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
-    RunTargetType,
     Rule,
-    Severity,
-    RuleTag as Tag,
     RuleResult,
+    RunTargetType,
+    Severity,
+)
+from apme_engine.engine.models import (
+    RuleTag as Tag,
 )
 
-PASSWORD_LIKE_KEYS = frozenset(
-    {"password", "passwd", "pwd", "secret", "token", "api_key", "apikey", "private_key"}
-)
+PASSWORD_LIKE_KEYS = frozenset({"password", "passwd", "pwd", "secret", "token", "api_key", "apikey", "private_key"})
 
 
 def _option_keys_look_like_password(module_options):
     if not isinstance(module_options, dict):
         return False
-    for k in module_options:
-        if k and k.lower() in PASSWORD_LIKE_KEYS:
-            return True
-    return False
+    return any(k and k.lower() in PASSWORD_LIKE_KEYS for k in module_options)
 
 
 @dataclass
@@ -41,9 +38,7 @@ class NoLogPasswordRule(Rule):
         options = getattr(task.spec, "options", None) or {}
         module_options = getattr(task.spec, "module_options", None) or {}
         has_no_log = options.get("no_log") is True
-        has_password_like = _option_keys_look_like_password(module_options) or _option_keys_look_like_password(
-            options
-        )
+        has_password_like = _option_keys_look_like_password(module_options) or _option_keys_look_like_password(options)
         verdict = has_password_like and not has_no_log
         detail = {}
         if verdict:
