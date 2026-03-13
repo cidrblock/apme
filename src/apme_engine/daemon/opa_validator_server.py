@@ -25,6 +25,7 @@ class OpaValidatorServicer(validate_pb2_grpc.ValidatorServicer):
     """Async gRPC facade: translates Validate RPCs into OPA REST queries via httpx."""
 
     def __init__(self) -> None:
+        """Initialize servicer with async HTTP client."""
         self._client = httpx.AsyncClient(timeout=30.0)
 
     async def Validate(
@@ -32,6 +33,15 @@ class OpaValidatorServicer(validate_pb2_grpc.ValidatorServicer):
         request: validate_pb2.ValidateRequest,
         context: grpc.aio.ServicerContext,  # type: ignore[type-arg]
     ) -> validate_pb2.ValidateResponse:
+        """Handle Validate RPC: POST hierarchy_payload to OPA REST API, return violations.
+
+        Args:
+            request: ValidateRequest with hierarchy_payload.
+            context: gRPC servicer context.
+
+        Returns:
+            ValidateResponse with violations and diagnostics.
+        """
         req_id = request.request_id or ""
         t0 = time.monotonic()
         violations: list[ViolationDict] = []
@@ -103,6 +113,15 @@ class OpaValidatorServicer(validate_pb2_grpc.ValidatorServicer):
         request: common_pb2.HealthRequest,
         context: grpc.aio.ServicerContext,  # type: ignore[type-arg]
     ) -> HealthResponse:
+        """Handle Health RPC: check OPA /health endpoint.
+
+        Args:
+            request: Health request (unused).
+            context: gRPC servicer context.
+
+        Returns:
+            HealthResponse with status from OPA or error message.
+        """
         try:
             r = await self._client.get(f"{OPA_REST_URL}/health")
             if r.status_code == 200:
@@ -113,7 +132,14 @@ class OpaValidatorServicer(validate_pb2_grpc.ValidatorServicer):
 
 
 async def serve(listen: str = "0.0.0.0:50054") -> grpc.aio.Server:
-    """Create, bind, and start async gRPC server with OPA servicer."""
+    """Create, bind, and start async gRPC server with OPA servicer.
+
+    Args:
+        listen: Host:port to bind (e.g. 0.0.0.0:50054).
+
+    Returns:
+        Started gRPC server (caller must wait_for_termination).
+    """
     server = grpc.aio.server(maximum_concurrent_rpcs=_MAX_CONCURRENT_RPCS)
     validate_pb2_grpc.add_ValidatorServicer_to_server(OpaValidatorServicer(), server)  # type: ignore[no-untyped-call]
     if ":" in listen:

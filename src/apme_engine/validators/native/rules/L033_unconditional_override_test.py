@@ -1,4 +1,4 @@
-# Colocated tests for L033 (UnconditionalOverrideRule / R202).
+"""Tests for native rule L033."""
 
 from typing import cast
 
@@ -12,6 +12,7 @@ from apme_engine.validators.native.rules.L033_unconditional_override import Unco
 
 
 def test_L033_does_not_fire_when_no_defined_vars() -> None:
+    """Verify L033 does not fire when no defined vars."""
     spec = make_task_spec(module="ansible.builtin.copy")
     task = make_task_call(spec)
     ctx = make_context(task)
@@ -24,6 +25,7 @@ def test_L033_does_not_fire_when_no_defined_vars() -> None:
 
 
 def test_L033_does_not_fire_when_task_has_tags() -> None:
+    """Verify L033 does not fire when task has tags."""
     spec = make_task_spec(module="ansible.builtin.set_fact", options={"tags": ["config"]})
     spec.set_facts = {"x": "y"}
     task = make_task_call(spec)

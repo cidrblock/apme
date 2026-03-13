@@ -1,4 +1,4 @@
-# Colocated tests for L036 (UnnecessaryIncludeVarsRule).
+"""Tests for native rule L036."""
 
 from apme_engine.engine.models import ExecutableType
 from apme_engine.validators.native.rules._test_helpers import (
@@ -10,6 +10,7 @@ from apme_engine.validators.native.rules.L036_unnecessary_include_vars import Un
 
 
 def test_L036_fires_when_include_vars_no_tags_no_when() -> None:
+    """Verify L036 fires when include_vars has no tags or when."""
     spec = make_task_spec(
         module="ansible.builtin.include_vars",
         executable_type=ExecutableType.MODULE_TYPE,
@@ -27,6 +28,7 @@ def test_L036_fires_when_include_vars_no_tags_no_when() -> None:
 
 
 def test_L036_does_not_fire_when_include_vars_has_tags() -> None:
+    """Verify L036 does not fire when include_vars has tags."""
     spec = make_task_spec(
         module="ansible.builtin.include_vars",
         executable_type=ExecutableType.MODULE_TYPE,
@@ -43,6 +45,7 @@ def test_L036_does_not_fire_when_include_vars_has_tags() -> None:
 
 
 def test_L036_does_not_fire_when_include_vars_has_when() -> None:
+    """Verify L036 does not fire when include_vars has when."""
     spec = make_task_spec(
         module="ansible.builtin.include_vars",
         executable_type=ExecutableType.MODULE_TYPE,
@@ -59,6 +62,7 @@ def test_L036_does_not_fire_when_include_vars_has_when() -> None:
 
 
 def test_L036_does_not_fire_for_non_include_vars() -> None:
+    """Verify L036 does not fire for non-include_vars tasks."""
     spec = make_task_spec(
         module="ansible.builtin.copy",
         resolved_name="ansible.builtin.copy",

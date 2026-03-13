@@ -18,14 +18,27 @@ class FakeGrpcContext:
     """Minimal stub for grpc.ServicerContext. Use cast when passing to servicers."""
 
     def set_code(self, code: type) -> None:
+        """Stub for set_code.
+
+        Args:
+            code: gRPC status code type.
+        """
         pass
 
     def set_details(self, details: str) -> None:
+        """Stub for set_details.
+
+        Args:
+            details: Error details string.
+        """
         pass
 
 
 class TestOpaValidatorServicer:
+    """Tests for OPA validator gRPC servicer."""
+
     async def test_validate_posts_to_opa_rest(self) -> None:
+        """Validate posts hierarchy to OPA REST and returns violations."""
         from apme_engine.daemon.opa_validator_server import OpaValidatorServicer
 
         hierarchy: YAMLDict = {"hierarchy": [{"tree_type": "playbook", "nodes": []}]}
@@ -54,6 +67,7 @@ class TestOpaValidatorServicer:
         assert resp.request_id == "test-req-1"  # type: ignore[attr-defined]
 
     async def test_validate_returns_diagnostics(self) -> None:
+        """Validate returns ValidatorDiagnostics with rule timings."""
         from apme_engine.daemon.opa_validator_server import OpaValidatorServicer
 
         hierarchy: dict[str, object] = {"hierarchy": []}
@@ -94,6 +108,7 @@ class TestOpaValidatorServicer:
         assert l024_timing.violations == 2
 
     async def test_validate_empty_payload_returns_empty(self) -> None:
+        """Validate with empty payload returns empty violations."""
         from apme_engine.daemon.opa_validator_server import OpaValidatorServicer
 
         request = validate_pb2.ValidateRequest(request_id="test-req-2")
@@ -112,6 +127,7 @@ class TestOpaValidatorServicer:
         assert resp.diagnostics.violations_found == 0  # type: ignore[attr-defined]
 
     async def test_validate_opa_http_error_returns_empty(self) -> None:
+        """Validate returns empty violations when OPA HTTP errors."""
         from apme_engine.daemon.opa_validator_server import OpaValidatorServicer
 
         request = validate_pb2.ValidateRequest(
@@ -127,6 +143,7 @@ class TestOpaValidatorServicer:
         assert len(resp.violations) == 0  # type: ignore[attr-defined]
 
     async def test_health_opa_up(self) -> None:
+        """Health returns ok when OPA is reachable."""
         from apme_engine.daemon.opa_validator_server import OpaValidatorServicer
 
         mock_response = MagicMock()
@@ -138,6 +155,7 @@ class TestOpaValidatorServicer:
         assert resp.status == "ok"
 
     async def test_health_opa_down(self) -> None:
+        """Health returns unreachable when OPA connection fails."""
         from apme_engine.daemon.opa_validator_server import OpaValidatorServicer
 
         servicer = OpaValidatorServicer()
@@ -147,7 +165,10 @@ class TestOpaValidatorServicer:
 
 
 class TestNativeValidatorServicer:
+    """Tests for Native validator gRPC servicer."""
+
     async def test_validate_deserializes_scandata_and_runs(self) -> None:
+        """Validate deserializes scandata and runs native rules."""
         from apme_engine.daemon.native_validator_server import NativeValidatorServicer
         from apme_engine.validators.native import NativeRuleTiming, NativeRunResult
 
@@ -184,6 +205,7 @@ class TestNativeValidatorServicer:
         assert resp.request_id == "native-1"  # type: ignore[attr-defined]
 
     async def test_validate_returns_diagnostics(self) -> None:
+        """Validate returns ValidatorDiagnostics with rule timings."""
         from apme_engine.daemon.native_validator_server import NativeValidatorServicer
         from apme_engine.validators.native import NativeRuleTiming, NativeRunResult
 
@@ -224,6 +246,7 @@ class TestNativeValidatorServicer:
         assert l028.violations == 1
 
     async def test_validate_no_scandata_returns_empty(self) -> None:
+        """Validate with no scandata returns empty violations."""
         from apme_engine.daemon.native_validator_server import NativeValidatorServicer
         from apme_engine.validators.native import NativeRunResult
 
@@ -239,6 +262,7 @@ class TestNativeValidatorServicer:
         assert len(resp.violations) == 0  # type: ignore[attr-defined]
 
     async def test_validate_bad_scandata_returns_empty(self) -> None:
+        """Validate with invalid scandata returns empty violations."""
         from apme_engine.daemon.native_validator_server import NativeValidatorServicer
 
         request = validate_pb2.ValidateRequest(
@@ -251,6 +275,7 @@ class TestNativeValidatorServicer:
         assert len(resp.violations) == 0  # type: ignore[attr-defined]
 
     async def test_health_returns_ok(self) -> None:
+        """Health returns ok for Native validator."""
         from apme_engine.daemon.native_validator_server import NativeValidatorServicer
 
         servicer = NativeValidatorServicer()
@@ -259,7 +284,10 @@ class TestNativeValidatorServicer:
 
 
 class TestGitleaksValidatorServicerDiagnostics:
+    """Tests for Gitleaks validator diagnostics."""
+
     async def test_validate_returns_diagnostics(self) -> None:
+        """Validate returns ValidatorDiagnostics with rule timings."""
         from apme_engine.daemon.gitleaks_validator_server import GitleaksValidatorServicer
 
         request = validate_pb2.ValidateRequest(
@@ -287,6 +315,7 @@ class TestGitleaksValidatorServicerDiagnostics:
         assert diag.metadata["files_written"] == "1"
 
     async def test_validate_empty_files_no_diagnostics(self) -> None:
+        """Validate with empty files returns empty violations."""
         from apme_engine.daemon.gitleaks_validator_server import GitleaksValidatorServicer
 
         request = validate_pb2.ValidateRequest(request_id="diag-gl-2")
@@ -299,11 +328,13 @@ class TestAnsibleValidatorServicerMigration:
     """Verify Ansible validator now uses the unified Validator service."""
 
     def test_servicer_extends_validator_servicer(self) -> None:
+        """AnsibleValidatorServicer has Validate method from base."""
         from apme_engine.daemon.ansible_validator_server import AnsibleValidatorServicer
 
         assert hasattr(AnsibleValidatorServicer, "Validate")
 
     def test_serve_is_async(self) -> None:
+        """AnsibleValidator serve is an async coroutine."""
         import inspect
 
         from apme_engine.daemon.ansible_validator_server import serve
@@ -311,6 +342,7 @@ class TestAnsibleValidatorServicerMigration:
         assert inspect.iscoroutinefunction(serve)
 
     async def test_validate_returns_diagnostics(self) -> None:
+        """Validate returns ValidatorDiagnostics with ansible metadata."""
         from apme_engine.daemon.ansible_validator_server import AnsibleValidatorServicer, _AnsibleResult
         from apme_engine.validators.ansible import AnsibleRuleTiming, AnsibleRunResult
 
@@ -361,6 +393,7 @@ class TestPrimaryFanOut:
     """Verify Primary uses async fan-out for all backends."""
 
     async def test_call_validator_uses_async_channel(self) -> None:
+        """_call_validator uses grpc.aio channel and returns violations."""
         from apme_engine.daemon.primary_server import _call_validator
 
         mock_resp = MagicMock()
@@ -382,6 +415,7 @@ class TestPrimaryFanOut:
         assert result.violations == []
 
     async def test_call_validator_captures_diagnostics(self) -> None:
+        """_call_validator captures diagnostics from response."""
         from apme_engine.daemon.primary_server import _call_validator
 
         diag = common_pb2.ValidatorDiagnostics(
@@ -433,6 +467,7 @@ class TestPrimaryFanOut:
         assert "request_id=scan_id" in source
 
     def test_primary_serve_is_async(self) -> None:
+        """Primary serve function is an async coroutine."""
         import inspect
 
         from apme_engine.daemon.primary_server import serve
@@ -463,6 +498,12 @@ class TestGrpcAioConsistency:
         ],
     )  # type: ignore[untyped-decorator]
     def test_serve_is_async_coroutine(self, module_path: str) -> None:
+        """Each module's serve function is async.
+
+        Args:
+            module_path: Parametrized module path string (e.g. apme_engine.daemon.primary_server).
+
+        """
         import importlib
         import inspect
 
@@ -480,6 +521,12 @@ class TestGrpcAioConsistency:
         ],
     )  # type: ignore[untyped-decorator]
     def test_server_uses_grpc_aio(self, module_path: str) -> None:
+        """Each module uses grpc.aio in source.
+
+        Args:
+            module_path: Parametrized module path string (e.g. apme_engine.daemon.primary_server).
+
+        """
         import importlib
 
         mod = importlib.import_module(module_path)
@@ -496,6 +543,12 @@ class TestGrpcAioConsistency:
         ],
     )  # type: ignore[untyped-decorator]
     def test_validator_echoes_request_id(self, module_path: str) -> None:
+        """Validator modules handle request_id in source.
+
+        Args:
+            module_path: Parametrized module path string (e.g. apme_engine.daemon.native_validator_server).
+
+        """
         import importlib
 
         mod = importlib.import_module(module_path)
@@ -512,7 +565,12 @@ class TestGrpcAioConsistency:
         ],
     )  # type: ignore[untyped-decorator]
     def test_validator_returns_diagnostics(self, module_path: str) -> None:
-        """All validator servicers should populate diagnostics in ValidateResponse."""
+        """Validator modules build ValidatorDiagnostics in response.
+
+        Args:
+            module_path: Parametrized module path string (e.g. apme_engine.daemon.native_validator_server).
+
+        """
         import importlib
 
         mod = importlib.import_module(str(module_path))
@@ -525,14 +583,17 @@ class TestRequestIdPropagation:
     """Verify request_id flows through the proto contract."""
 
     def test_validate_request_has_request_id_field(self) -> None:
+        """ValidateRequest has request_id field."""
         req = validate_pb2.ValidateRequest(request_id="abc-123")
         assert req.request_id == "abc-123"
 
     def test_validate_response_has_request_id_field(self) -> None:
+        """ValidateResponse has request_id field."""
         resp = validate_pb2.ValidateResponse(request_id="abc-123")
         assert resp.request_id == "abc-123"  # type: ignore[attr-defined]
 
     def test_validate_response_has_diagnostics_field(self) -> None:
+        """ValidateResponse has diagnostics field."""
         diag = common_pb2.ValidatorDiagnostics(
             validator_name="test",
             total_ms=10.0,
@@ -551,12 +612,14 @@ class TestDiagnosticsProtoMessages:
     """Verify the diagnostics proto messages work correctly."""
 
     def test_rule_timing(self) -> None:
+        """RuleTiming proto holds rule_id, elapsed_ms, violations."""
         rt = common_pb2.RuleTiming(rule_id="L024", elapsed_ms=5.2, violations=3)
         assert rt.rule_id == "L024"
         assert rt.elapsed_ms == pytest.approx(5.2)
         assert rt.violations == 3
 
     def test_validator_diagnostics(self) -> None:
+        """ValidatorDiagnostics proto holds validator metadata."""
         rt = common_pb2.RuleTiming(rule_id="L024", elapsed_ms=5.2, violations=3)
         diag = common_pb2.ValidatorDiagnostics(
             validator_name="opa",
@@ -573,6 +636,7 @@ class TestDiagnosticsProtoMessages:
         assert diag.metadata["key"] == "value"
 
     def test_scan_diagnostics(self) -> None:
+        """ScanDiagnostics proto holds engine and validator stats."""
         from apme.v1 import primary_pb2
 
         vd = common_pb2.ValidatorDiagnostics(validator_name="native", total_ms=10.0)
@@ -598,21 +662,25 @@ class TestCliDiagnosticsDisplay:
     """Verify the CLI diagnostics formatting functions."""
 
     def test_fmt_ms_sub_1(self) -> None:
+        """_fmt_ms formats sub-millisecond as '<1ms'."""
         from apme_engine.cli import _fmt_ms
 
         assert _fmt_ms(0.5) == "<1ms"
 
     def test_fmt_ms_normal(self) -> None:
+        """_fmt_ms formats milliseconds with 'ms' suffix."""
         from apme_engine.cli import _fmt_ms
 
         assert _fmt_ms(42.3) == "42ms"
 
     def test_fmt_ms_seconds(self) -> None:
+        """_fmt_ms formats seconds with 's' suffix."""
         from apme_engine.cli import _fmt_ms
 
         assert _fmt_ms(1500.0) == "1.5s"
 
     def test_diag_to_dict(self) -> None:
+        """_diag_to_dict converts ScanDiagnostics to dict."""
         from apme.v1 import primary_pb2
         from apme_engine.cli import _diag_to_dict
 
@@ -651,6 +719,12 @@ class TestCliDiagnosticsDisplay:
         assert v["metadata"] == {"foo": "bar"}
 
     def test_print_diagnostics_v_no_crash(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """_print_diagnostics_v prints without crashing.
+
+        Args:
+            capsys: Pytest output capture fixture.
+
+        """
         from apme.v1 import primary_pb2
         from apme_engine.cli import _print_diagnostics_v
 
@@ -674,6 +748,12 @@ class TestCliDiagnosticsDisplay:
         assert "L028" in captured.err
 
     def test_print_diagnostics_vv_no_crash(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """_print_diagnostics_vv prints verbose output without crashing.
+
+        Args:
+            capsys: Pytest output capture fixture.
+
+        """
         from apme.v1 import primary_pb2
         from apme_engine.cli import _print_diagnostics_vv
 

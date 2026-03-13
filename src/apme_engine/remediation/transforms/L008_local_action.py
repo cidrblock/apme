@@ -11,7 +11,15 @@ from apme_engine.remediation.transforms._helpers import find_task_at_line, viola
 
 
 def fix_local_action(content: str, violation: ViolationDict) -> TransformResult:
-    """Convert local_action to the module key + delegate_to: localhost."""
+    """Convert local_action to the module key + delegate_to: localhost.
+
+    Args:
+        content: YAML file content.
+        violation: Violation dict with line.
+
+    Returns:
+        TransformResult with modified content if applied.
+    """
     yaml = FormattedYAML(typ="rt", pure=True, version=(1, 1))
 
     try:

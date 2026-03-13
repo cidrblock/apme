@@ -16,6 +16,7 @@ async def _run(listen: str) -> None:
 
 
 def main() -> None:
+    """Run the Native validator gRPC server (entry point)."""
     listen = os.environ.get("APME_NATIVE_VALIDATOR_LISTEN", "0.0.0.0:50055")
     try:
         asyncio.run(_run(listen))

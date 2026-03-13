@@ -1,3 +1,5 @@
+"""Native rule L039: detect undefined variables."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -17,6 +19,18 @@ from apme_engine.engine.models import (
 
 @dataclass
 class UndefinedVariableRule(Rule):
+    """Rule for undefined variable references.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "L039"
     description: str = "Undefined variable is found"
     enabled: bool = True
@@ -26,11 +40,27 @@ class UndefinedVariableRule(Rule):
     tags: tuple[str, ...] = (Tag.VARIABLE,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check for undefined variables and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with undefined_variables detail, or None.
+        """
         task = ctx.current
         if task is None:
             return None

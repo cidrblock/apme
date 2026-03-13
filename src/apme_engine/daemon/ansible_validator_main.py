@@ -9,6 +9,11 @@ from apme_engine.daemon.ansible_validator_server import serve
 
 
 async def _run(listen: str) -> None:
+    """Start the Ansible validator server and wait for termination.
+
+    Args:
+        listen: Host:port address to bind (e.g. 0.0.0.0:50053).
+    """
     server = await serve(listen)
     sys.stderr.write(f"Ansible validator listening on {listen}\n")
     sys.stderr.flush()
@@ -16,6 +21,10 @@ async def _run(listen: str) -> None:
 
 
 def main() -> None:
+    """Entry point: run Ansible validator gRPC server until interrupted.
+
+    Uses APME_ANSIBLE_VALIDATOR_LISTEN for bind address. Exits with code 1 on failure.
+    """
     listen = os.environ.get("APME_ANSIBLE_VALIDATOR_LISTEN", "0.0.0.0:50053")
     try:
         asyncio.run(_run(listen))

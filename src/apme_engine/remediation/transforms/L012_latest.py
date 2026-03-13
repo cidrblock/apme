@@ -9,7 +9,15 @@ from apme_engine.remediation.transforms._helpers import find_task_at_line, get_m
 
 
 def fix_latest(content: str, violation: ViolationDict) -> TransformResult:
-    """Replace ``state: latest`` with ``state: present``."""
+    """Replace ``state: latest`` with ``state: present``.
+
+    Args:
+        content: YAML file content.
+        violation: Violation dict with line.
+
+    Returns:
+        TransformResult with modified content if applied.
+    """
     yaml = FormattedYAML(typ="rt", pure=True, version=(1, 1))
 
     try:

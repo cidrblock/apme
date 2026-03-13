@@ -1,5 +1,7 @@
-"""Gitleaks validator daemon: async gRPC server that writes files to a temp dir,
-runs gitleaks detect, and returns violations."""
+"""Gitleaks validator daemon: async gRPC server for secret detection.
+
+Writes files to a temp dir, runs gitleaks detect, and returns violations.
+"""
 
 import asyncio
 import contextlib
@@ -35,7 +37,14 @@ _SCANNABLE_EXTENSIONS = (
 
 
 def _run_scan(files: list[File]) -> tuple[list[dict[str, str | int | list[int] | None]], int]:
-    """Blocking function: write files to temp dir, run gitleaks, return (violations, files_written)."""
+    """Blocking function: write files to temp dir, run gitleaks, return (violations, files_written).
+
+    Args:
+        files: List of File protos with path and content.
+
+    Returns:
+        Tuple of (violations list, count of files written).
+    """
     temp_dir = Path(tempfile.mkdtemp(prefix="apme_gitleaks_"))
     try:
         file_count = 0
@@ -54,7 +63,11 @@ def _run_scan(files: list[File]) -> tuple[list[dict[str, str | int | list[int] |
 
 
 def _get_gitleaks_version() -> str:
-    """Attempt to get gitleaks version string (best-effort)."""
+    """Attempt to get gitleaks version string (best-effort).
+
+    Returns:
+        Version string from gitleaks --version, or "unknown" on failure.
+    """
     import subprocess as _sp
 
     try:
@@ -72,6 +85,15 @@ class GitleaksValidatorServicer(validate_pb2_grpc.ValidatorServicer):
         request: ValidateRequest,
         context: grpc.aio.ServicerContext,  # type: ignore[type-arg]
     ) -> ValidateResponse:
+        """Handle Validate RPC: write files to temp dir, run gitleaks, return violations.
+
+        Args:
+            request: ValidateRequest with files to scan.
+            context: gRPC servicer context.
+
+        Returns:
+            ValidateResponse with violations and diagnostics.
+        """
         req_id = request.request_id or ""
         t0 = time.monotonic()
         try:
@@ -128,6 +150,15 @@ class GitleaksValidatorServicer(validate_pb2_grpc.ValidatorServicer):
         request: common_pb2.HealthRequest,
         context: grpc.aio.ServicerContext,  # type: ignore[type-arg]
     ) -> HealthResponse:
+        """Handle Health RPC: verify gitleaks binary is available.
+
+        Args:
+            request: Health request (unused).
+            context: gRPC servicer context.
+
+        Returns:
+            HealthResponse with status including gitleaks version or error.
+        """
         try:
             proc = await asyncio.create_subprocess_exec(
                 GITLEAKS_BIN,
@@ -147,7 +178,14 @@ class GitleaksValidatorServicer(validate_pb2_grpc.ValidatorServicer):
 
 
 async def serve(listen: str = "0.0.0.0:50056") -> grpc.aio.Server:
-    """Create, bind, and start async gRPC server with Gitleaks servicer."""
+    """Create, bind, and start async gRPC server with Gitleaks servicer.
+
+    Args:
+        listen: Host:port to bind (e.g. 0.0.0.0:50056).
+
+    Returns:
+        Started gRPC server (caller must wait_for_termination).
+    """
     server = grpc.aio.server(maximum_concurrent_rpcs=_MAX_CONCURRENT_RPCS)
     validate_pb2_grpc.add_ValidatorServicer_to_server(GitleaksValidatorServicer(), server)  # type: ignore[no-untyped-call]
     if ":" in listen:

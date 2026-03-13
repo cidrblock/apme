@@ -1,3 +1,5 @@
+"""Native rule P004: validate variables and set annotations."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -16,7 +18,15 @@ from apme_engine.engine.models import RuleTag as Tag
 
 
 def is_loop_var(value: str, task: TaskCall) -> bool:
-    # `item` or alternative loop variable (if any) should not be replaced to avoid breaking loop
+    """Check if value references a loop variable (item or loop_control.loop_var).
+
+    Args:
+        value: Jinja expression string to check.
+        task: TaskCall with loop/loop_control info.
+
+    Returns:
+        True if value references a loop variable.
+    """
     skip_variables: list[str] = []
     loop = getattr(task.spec, "loop", None)
     if loop and isinstance(loop, dict):
@@ -34,6 +44,19 @@ def is_loop_var(value: str, task: TaskCall) -> bool:
 
 @dataclass
 class VariableValidationRule(Rule):
+    """Rule to validate variables and set annotations.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+        precedence: Evaluation order.
+    """
+
     rule_id: str = "P004"
     description: str = "Validate variables and set annotations"
     enabled: bool = True
@@ -44,11 +67,27 @@ class VariableValidationRule(Rule):
     precedence: int = 0
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Validate variables and set annotations on task.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            None (sets annotations on task).
+        """
         task = ctx.current
         if task is None or not isinstance(task, TaskCall):
             return None

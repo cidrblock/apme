@@ -1,3 +1,5 @@
+"""Native rule L050: detect variable names not following naming convention."""
+
 import re
 from dataclasses import dataclass
 from typing import cast
@@ -19,6 +21,18 @@ VAR_NAMING_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 
 @dataclass
 class VarNamingRule(Rule):
+    """Rule for variable names to follow naming convention (lowercase, underscores).
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "L050"
     description: str = "Variable names should follow naming convention (lowercase, underscores)"
     enabled: bool = True
@@ -28,11 +42,27 @@ class VarNamingRule(Rule):
     tags: tuple[str, ...] = (Tag.VARIABLE,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check variable naming and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with variables/message detail, or None.
+        """
         task = ctx.current
         if task is None:
             return None

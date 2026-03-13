@@ -1,3 +1,5 @@
+"""Sample rule that echoes task block content for testing."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -14,6 +16,18 @@ from apme_engine.engine.models import (
 
 @dataclass
 class SampleRule(Rule):
+    """Sample rule that echoes task block content.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "Sample101"
     description: str = "echo task block"
     enabled: bool = False
@@ -23,12 +37,29 @@ class SampleRule(Rule):
     tags: tuple[str, ...] = ("sample",)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
-        # specify targets to be checked
+        """Return True if the current target is a task.
+
+        Args:
+            ctx: Current Ansible run context.
+
+        Returns:
+            True if the current target is a task.
+
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Process task and return rule result with task block.
+
+        Args:
+            ctx: Current Ansible run context.
+
+        Returns:
+            RuleResult with task block content, None if task unavailable.
+
+        """
         if ctx.current is None:
             return None
         task = ctx.current

@@ -1,5 +1,7 @@
-# Collection cache: Galaxy + GitHub collections for Ansible validator.
-# Populate with pull_galaxy / pull_github_org; use cache path when building venvs.
+"""Collection cache: Galaxy + GitHub collections for Ansible validator.
+
+Populate with pull_galaxy / pull_github_org; use cache path when building venvs.
+"""
 
 from apme_engine.collection_cache.config import get_cache_root
 from apme_engine.collection_cache.manager import (

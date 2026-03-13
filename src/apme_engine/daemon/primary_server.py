@@ -29,11 +29,27 @@ _MAX_CONCURRENT_RPCS = int(os.environ.get("APME_PRIMARY_MAX_RPCS", "16"))
 
 @dataclass
 class _ValidatorResult:
+    """Result from a single validator RPC call.
+
+    Attributes:
+        violations: List of violation dicts from the validator.
+        diagnostics: Optional ValidatorDiagnostics from the response.
+    """
+
     violations: list[ViolationDict] = field(default_factory=list)
     diagnostics: ValidatorDiagnostics | None = None
 
 
 def _sort_violations(violations: list[ViolationDict]) -> list[ViolationDict]:
+    """Sort violations by file then line for stable ordering.
+
+    Args:
+        violations: List of violation dicts.
+
+    Returns:
+        Sorted list of violations.
+    """
+
     def key(v: ViolationDict) -> tuple[str, int | float]:
         f = str(v.get("file") or "")
         line = v.get("line")
@@ -47,7 +63,14 @@ def _sort_violations(violations: list[ViolationDict]) -> list[ViolationDict]:
 
 
 def _deduplicate_violations(violations: list[ViolationDict]) -> list[ViolationDict]:
-    """Remove duplicate violations sharing the same (rule_id, file, line)."""
+    """Remove duplicate violations sharing the same (rule_id, file, line).
+
+    Args:
+        violations: List of violation dicts (may contain duplicates).
+
+    Returns:
+        Deduplicated list preserving first occurrence order.
+    """
     seen: set[tuple[str, str, str | int | list[int] | tuple[int, ...] | bool | None]] = set()
     out: list[ViolationDict] = []
     for v in violations:
@@ -62,7 +85,15 @@ def _deduplicate_violations(violations: list[ViolationDict]) -> list[ViolationDi
 
 
 def _write_chunked_fs(project_root: str, files: list[File]) -> Path:
-    """Write request.files into a temp directory; return path to that directory."""
+    """Write request.files into a temp directory; return path to that directory.
+
+    Args:
+        project_root: Name for project root (used in path structure).
+        files: List of File protos with path and content.
+
+    Returns:
+        Path to the created temp directory.
+    """
     tmp = Path(tempfile.mkdtemp(prefix="apme_primary_"))
     for f in files:
         path = tmp / f.path
@@ -76,7 +107,16 @@ async def _call_validator(
     request: ValidateRequest,
     timeout: int = 60,
 ) -> _ValidatorResult:
-    """Call a validator over async gRPC; return violations + diagnostics."""
+    """Call a validator over async gRPC; return violations + diagnostics.
+
+    Args:
+        address: gRPC address of the validator (e.g. localhost:50055).
+        request: ValidateRequest to send.
+        timeout: Request timeout in seconds.
+
+    Returns:
+        _ValidatorResult with violations and optional diagnostics.
+    """
     req_id = request.request_id or ""
     channel = grpc.aio.insecure_channel(address)
     stub = validate_pb2_grpc.ValidatorStub(channel)  # type: ignore[no-untyped-call]
@@ -103,7 +143,21 @@ VALIDATOR_ENV_VARS = {
 
 
 class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
+    """Primary gRPC servicer: runs engine, fans out to validators, aggregates results."""
+
     async def Scan(self, request: ScanRequest, context: grpc.aio.ServicerContext) -> primary_pb2.ScanResponse:  # type: ignore[type-arg]
+        """Handle Scan RPC: run engine, fan out to validators, aggregate violations.
+
+        Args:
+            request: ScanRequest with files and options.
+            context: gRPC servicer context.
+
+        Returns:
+            ScanResponse with violations and diagnostics.
+
+        Raises:
+            Exception: If scan fails (re-raised from inner exception).
+        """
         scan_id = request.scan_id or str(uuid.uuid4())
         violations: list[ViolationDict] = []
         temp_dir = None
@@ -220,12 +274,29 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                     shutil.rmtree(temp_dir)
 
     async def Format(self, request: FormatRequest, context: grpc.aio.ServicerContext) -> FormatResponse:  # type: ignore[type-arg]
+        """Handle Format RPC: format YAML files and return diffs for changed ones.
+
+        Args:
+            request: FormatRequest with files to format.
+            context: gRPC servicer context.
+
+        Returns:
+            FormatResponse with diffs for files that changed.
+        """
         from apme_engine.formatter import format_content
 
         sys.stderr.write(f"Format: received {len(request.files)} file(s)\n")
         sys.stderr.flush()
 
         def _do_format(files: list[File]) -> list[FileDiff]:
+            """Format YAML files and return diffs for changed ones.
+
+            Args:
+                files: List of File protos to format.
+
+            Returns:
+                List of FileDiff for files that changed.
+            """
             diffs = []
             for f in files:
                 if not f.path.endswith((".yml", ".yaml")):
@@ -261,10 +332,27 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
         request: common_pb2.HealthRequest,
         context: grpc.aio.ServicerContext,  # type: ignore[type-arg]
     ) -> HealthResponse:
+        """Handle Health RPC.
+
+        Args:
+            request: Health request (unused).
+            context: gRPC servicer context.
+
+        Returns:
+            HealthResponse with status "ok".
+        """
         return HealthResponse(status="ok")
 
 
 async def serve(listen_address: str = "0.0.0.0:50051") -> grpc.aio.Server:
+    """Create, bind, and start async gRPC server with Primary servicer.
+
+    Args:
+        listen_address: Host:port to bind (e.g. 0.0.0.0:50051).
+
+    Returns:
+        Started gRPC server (caller must wait_for_termination).
+    """
     server = grpc.aio.server(maximum_concurrent_rpcs=_MAX_CONCURRENT_RPCS)
     primary_pb2_grpc.add_PrimaryServicer_to_server(PrimaryServicer(), server)  # type: ignore[no-untyped-call]
     if ":" in listen_address:

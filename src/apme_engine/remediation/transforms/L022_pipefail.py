@@ -17,7 +17,15 @@ _SHELL_MODULES = frozenset(
 
 
 def fix_pipefail(content: str, violation: ViolationDict) -> TransformResult:
-    """Prepend ``set -o pipefail &&`` to a piped shell command."""
+    """Prepend ``set -o pipefail &&`` to a piped shell command.
+
+    Args:
+        content: YAML file content.
+        violation: Violation dict with line.
+
+    Returns:
+        TransformResult with modified content if applied.
+    """
     yaml = FormattedYAML(typ="rt", pure=True, version=(1, 1))
 
     try:

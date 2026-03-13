@@ -24,7 +24,11 @@ from apme_engine.remediation.transforms.M009_with_to_loop import fix_with_to_loo
 
 
 def build_default_registry() -> TransformRegistry:
-    """Create a registry with all built-in transforms."""
+    """Create a registry with all built-in transforms.
+
+    Returns:
+        TransformRegistry populated with L/M rule transforms.
+    """
     reg = TransformRegistry()
 
     # OPA lint rules

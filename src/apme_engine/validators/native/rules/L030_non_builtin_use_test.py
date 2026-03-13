@@ -1,5 +1,4 @@
-# Colocated tests for L030 (NonBuiltinUseRule). Uses Python-object context from _test_helpers.
-
+"""Tests for native rule L030."""
 
 from apme_engine.engine.models import ExecutableType
 from apme_engine.validators.native.rules._test_helpers import (
@@ -11,6 +10,7 @@ from apme_engine.validators.native.rules.L030_non_builtin_use import NonBuiltinU
 
 
 def test_L030_fires_when_module_not_builtin() -> None:
+    """Verify L030 fires when module is not builtin."""
     spec = make_task_spec(
         module="copy",
         executable_type=ExecutableType.MODULE_TYPE,
@@ -27,6 +27,7 @@ def test_L030_fires_when_module_not_builtin() -> None:
 
 
 def test_L030_does_not_fire_when_builtin() -> None:
+    """Verify L030 does not fire when module is builtin."""
     spec = make_task_spec(
         module="ansible.builtin.copy",
         executable_type=ExecutableType.MODULE_TYPE,

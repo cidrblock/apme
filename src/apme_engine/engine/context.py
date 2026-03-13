@@ -1,3 +1,5 @@
+"""Variable resolution context for playbook/role/task chains."""
+
 from __future__ import annotations
 
 import copy
@@ -47,6 +49,20 @@ def get_object(
     name: str,
     cache: dict[str, tuple[str, str]] | None = None,
 ) -> Object | Role | Collection | Play | Task | TaskFile | Module | None:
+    """Get a specific object (role, playbook, task, module) from a JSON export.
+
+    Args:
+        json_path: Path to role-*.json or collection-*.json file.
+        type: Object type ('role', 'collection', 'playbook', 'taskfile', 'task', 'module').
+        name: Name or ID of the object to find.
+        cache: Optional cache of (json_type, json_str) by path.
+
+    Returns:
+        The requested object or None if not found.
+
+    Raises:
+        ValueError: If json path not found, data empty, or type mismatch (e.g. collection in role).
+    """
     if cache is None:
         cache = {}
     json_type = ""
@@ -144,6 +160,15 @@ def get_object(
 
 
 def recursive_find_variable(var_name: str, var_dict: dict[str, object] | None = None) -> object:
+    """Recursively find a variable value by dotted name in a nested dict.
+
+    Args:
+        var_name: Dotted variable name (e.g. 'foo.bar.baz').
+        var_dict: Nested dict to search.
+
+    Returns:
+        Value at the path, or None if not found.
+    """
     if var_dict is None:
         var_dict = {}
 
@@ -166,6 +191,15 @@ def recursive_find_variable(var_name: str, var_dict: dict[str, object] | None = 
 
 
 def flatten(var_dict: YAMLDict | None = None, _prefix: str = "") -> YAMLDict:
+    """Flatten a nested dict to dotted keys.
+
+    Args:
+        var_dict: Nested dict to flatten.
+        _prefix: Internal prefix for recursion.
+
+    Returns:
+        Flat dict with dotted keys (e.g. {'foo.bar': 1}).
+    """
     if var_dict is None:
         var_dict = {}
     flat_vars = {}
@@ -182,6 +216,25 @@ def flatten(var_dict: YAMLDict | None = None, _prefix: str = "") -> YAMLDict:
 
 @dataclass
 class Context:
+    """Context for variable resolution along a playbook/role/task chain.
+
+    Attributes:
+        keep_obj: Whether to store Object/CallObject in chain nodes.
+        chain: List of chain nodes (key, depth, optional obj).
+        variables: Merged variables from plays, roles, tasks.
+        options: Merged play/task options.
+        inventories: Inventory objects for group_vars.
+        role_defaults: Variable names from role defaults.
+        role_vars: Variable names from role vars.
+        registered_vars: Variable names from task register.
+        set_facts: Variable names from set_fact.
+        task_vars: Variable names from task vars.
+        become: BecomeInfo from play/task.
+        module_defaults: Module defaults from play/task.
+        var_set_history: History of variable assignments.
+        var_use_history: History of variable uses.
+    """
+
     keep_obj: bool = False
     chain: list[ChainNodeDict] = field(default_factory=list)
     variables: YAMLDict = field(default_factory=dict)
@@ -202,6 +255,12 @@ class Context:
     _flat_vars: YAMLDict = field(default_factory=dict)
 
     def add(self, obj: Object | CallObject, depth_lvl: int = 0) -> None:
+        """Add an object to the context and merge its variables/options.
+
+        Args:
+            obj: Object or CallObject (Playbook, Play, Role, Task, etc.).
+            depth_lvl: Depth level for chain display.
+        """
         _obj: Object | CallObject | None = None
         _spec: Object | None = None
         if isinstance(obj, Object):
@@ -290,6 +349,15 @@ class Context:
         var_name: str,
         resolve_history: ResolveHistoryDict | None = None,
     ) -> tuple[YAMLValue | None, VariablePrecedence, ResolveHistoryDict]:
+        """Resolve a variable name to its value and precedence.
+
+        Args:
+            var_name: Variable name to resolve.
+            resolve_history: Optional cache of already-resolved variables.
+
+        Returns:
+            Tuple of (resolved value, VariablePrecedence type, updated resolve_history).
+        """
         if resolve_history is None:
             resolve_history = {}
         if var_name in resolve_history:
@@ -380,6 +448,15 @@ class Context:
         txt: YAMLValue,
         resolve_history: ResolveHistoryDict | None = None,
     ) -> tuple[YAMLValue, ResolveHistoryDict]:
+        """Resolve Jinja2 variables in a string or list.
+
+        Args:
+            txt: String or value that may contain {{ var }}.
+            resolve_history: Optional cache of resolved variables.
+
+        Returns:
+            Tuple of (resolved value, updated resolve_history).
+        """
         if resolve_history is None:
             resolve_history = {}
         new_history = resolve_history.copy()
@@ -407,6 +484,12 @@ class Context:
             return txt, new_history
 
     def update_flat_vars(self, new_vars: YAMLDict, _prefix: str = "") -> None:
+        """Merge new variables into _flat_vars with dotted keys.
+
+        Args:
+            new_vars: Dict of variables to add.
+            _prefix: Internal prefix for nested keys.
+        """
         for k, v in new_vars.items():
             if isinstance(v, dict):
                 flat_var_name = f"{_prefix}{k}"
@@ -419,6 +502,11 @@ class Context:
         return
 
     def chain_str(self) -> str:
+        """Format the context chain as an indented string.
+
+        Returns:
+            Multi-line string showing object hierarchy.
+        """
         lines: list[str] = []
         for chain_item in self.chain:
             obj_raw = chain_item.get("obj", None)
@@ -436,6 +524,11 @@ class Context:
         return "".join(lines)
 
     def copy(self) -> Context:
+        """Return a shallow copy of the context.
+
+        Returns:
+            New Context with copied chain, variables, options, inventories.
+        """
         return Context(
             keep_obj=self.keep_obj,
             chain=copy.copy(self.chain),
@@ -450,6 +543,15 @@ class Context:
 
 
 def resolved_vars_contains(resolved_vars: list[ResolvedVarDict], new_var: ResolvedVarDict) -> bool:
+    """Check if a resolved var dict is already in the list (by key).
+
+    Args:
+        resolved_vars: List of resolved variable dicts.
+        new_var: New variable dict to check.
+
+    Returns:
+        True if a var with the same key exists in resolved_vars.
+    """
     if not isinstance(new_var, dict):
         return False
     new_var_key = new_var.get("key", "")
@@ -471,6 +573,18 @@ def resolved_vars_contains(resolved_vars: list[ResolvedVarDict], new_var: Resolv
 def resolve_module_options(
     context: Context, taskcall: TaskCall
 ) -> tuple[list[YAMLValue], list[ResolvedVarDict], dict[str, list[str]], dict[str, ResolveHistoryDict]]:
+    """Resolve module options and variables for a taskcall, including loop expansion.
+
+    Args:
+        context: Variable resolution context.
+        taskcall: TaskCall with module_options and optional loop.
+
+    Returns:
+        Tuple of (resolved_opts_per_loop_item, resolved_vars, mutable_vars_per_mo, used_variables).
+
+    Raises:
+        ValueError: If loop_values type is not supported.
+    """
     resolved_vars: list[ResolvedVarDict] = []
     variables_in_loop: list[ResolvedVarDict] = []
     used_variables: dict[str, ResolveHistoryDict] = {}
@@ -744,6 +858,14 @@ def resolve_module_options(
 
 
 def extract_variable_names(txt: str) -> list[dict[str, str]]:
+    """Extract Jinja2 variable names and defaults from a string.
+
+    Args:
+        txt: String that may contain {{ var }} or {{ var | default(...) }}.
+
+    Returns:
+        List of dicts with original, name, and optional default keys.
+    """
     if not variable_block_re.search(txt):
         return []
     found_var_blocks = variable_block_re.findall(txt)
@@ -779,6 +901,15 @@ def extract_variable_names(txt: str) -> list[dict[str, str]]:
 
 
 def flatten_dict_vars(variables: YAMLDict, _prefix: str = "") -> YAMLDict:
+    """Flatten nested variables to dotted keys (vars only, not full flatten).
+
+    Args:
+        variables: Nested dict of variables.
+        _prefix: Internal prefix for recursion.
+
+    Returns:
+        Flat dict with dotted keys for variable values.
+    """
     flat_vars_dict: YAMLDict = {}
     for key, val in variables.items():
         var_name = f"{_prefix}{key}" if _prefix else key

@@ -9,7 +9,15 @@ from apme_engine.remediation.transforms._helpers import find_task_at_line, viola
 
 
 def fix_name_casing(content: str, violation: ViolationDict) -> TransformResult:
-    """Capitalize the first letter of a task or play name."""
+    """Capitalize the first letter of a task or play name.
+
+    Args:
+        content: YAML file content.
+        violation: Violation dict with line.
+
+    Returns:
+        TransformResult with modified content if applied.
+    """
     yaml = FormattedYAML(typ="rt", pure=True, version=(1, 1))
 
     try:

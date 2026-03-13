@@ -7,13 +7,16 @@ import yaml
 
 
 def parse_rule_doc(md_path: str | Path) -> dict[str, object] | None:
-    """
-    Parse a rule .md file. Returns dict with:
-      - rule_id: str
-      - validator: "native" | "opa"
-      - description: str (optional)
-      - examples: list of { "expect_violation": bool, "yaml": str }
+    """Parse a rule .md file.
+
+    Returns dict with: rule_id, validator, description, examples.
     Returns None if frontmatter is missing or invalid.
+
+    Args:
+        md_path: Path to rule .md file.
+
+    Returns:
+        Dict with rule_id, validator, description, examples, or None.
     """
     path = Path(md_path)
     if not path.exists():
@@ -67,11 +70,19 @@ def discover_rule_docs(
     opa_bundle_dir: str | Path,
     ansible_rules_dir: str | Path | None = None,
 ) -> list[tuple[str, dict[str, object]]]:
-    """
-    Discover all rule .md files and parse them. Returns list of (file_path, parsed_doc).
-    Native: *.md next to .py in native_rules_dir (exclude *_test.md, README).
-    OPA: *.md in opa_bundle_dir (exclude README, _helpers).
-    Ansible: *.md in ansible_rules_dir (if provided).
+    """Discover all rule .md files and parse them.
+
+    Returns list of (file_path, parsed_doc). Native: *.md next to .py in
+    native_rules_dir (exclude *_test.md, README). OPA: *.md in opa_bundle_dir
+    (exclude README, _helpers). Ansible: *.md in ansible_rules_dir (if provided).
+
+    Args:
+        native_rules_dir: Path to native rules.
+        opa_bundle_dir: Path to OPA bundle.
+        ansible_rules_dir: Optional path to ansible rules.
+
+    Returns:
+        List of (file_path, parsed_doc) tuples.
     """
     out = []
     native_dir = Path(native_rules_dir)

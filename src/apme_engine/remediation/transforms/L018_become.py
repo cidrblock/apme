@@ -9,7 +9,15 @@ from apme_engine.remediation.transforms._helpers import find_task_at_line, viola
 
 
 def fix_become(content: str, violation: ViolationDict) -> TransformResult:
-    """Add ``become: true`` when ``become_user`` is set."""
+    """Add ``become: true`` when ``become_user`` is set.
+
+    Args:
+        content: YAML file content.
+        violation: Violation dict with line.
+
+    Returns:
+        TransformResult with modified content if applied.
+    """
     yaml = FormattedYAML(typ="rt", pure=True, version=(1, 1))
 
     try:

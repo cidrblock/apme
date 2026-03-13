@@ -10,13 +10,17 @@ from apme_engine.validators.opa import OpaValidator
 
 
 class TestScanContext:
+    """Tests for ScanContext."""
+
     def test_scan_context_defaults(self) -> None:
+        """ScanContext defaults scandata to None and root_dir to empty."""
         ctx = ScanContext(hierarchy_payload=cast(YAMLDict, {"scan_id": "x"}))
         assert ctx.hierarchy_payload["scan_id"] == "x"
         assert ctx.scandata is None
         assert ctx.root_dir == ""
 
     def test_scan_context_with_scandata(self) -> None:
+        """ScanContext stores scandata and root_dir."""
         mock = object()
         ctx = ScanContext(hierarchy_payload=cast(YAMLDict, {}), scandata=mock, root_dir="/tmp")
         assert ctx.scandata is mock
@@ -24,9 +28,18 @@ class TestScanContext:
 
 
 class TestOpaValidator:
+    """Tests for OpaValidator."""
+
     def test_opa_validator_run_calls_run_opa(
         self, opa_bundle_path: Path, sample_hierarchy_payload: dict[str, object]
     ) -> None:
+        """OpaValidator.run calls run_opa with hierarchy payload and bundle path.
+
+        Args:
+            opa_bundle_path: Fixture providing path to OPA bundle.
+            sample_hierarchy_payload: Fixture providing sample hierarchy data.
+
+        """
         from unittest.mock import patch
 
         ctx = ScanContext(hierarchy_payload=cast(YAMLDict, sample_hierarchy_payload))
@@ -41,6 +54,13 @@ class TestOpaValidator:
     def test_opa_validator_run_returns_violations(
         self, sample_hierarchy_payload: dict[str, object], tmp_path: Path
     ) -> None:
+        """OpaValidator.run returns violations from run_opa.
+
+        Args:
+            sample_hierarchy_payload: Fixture providing sample hierarchy data.
+            tmp_path: Pytest temporary directory fixture.
+
+        """
         from unittest.mock import patch
 
         (tmp_path / "bundle").mkdir()
@@ -53,17 +73,22 @@ class TestOpaValidator:
 
 
 class TestNativeValidator:
+    """Tests for NativeValidator."""
+
     def test_native_empty_context_returns_empty(self) -> None:
+        """NativeValidator with empty context returns empty list."""
         ctx = ScanContext(hierarchy_payload=cast(YAMLDict, {}), scandata=None)
         v = NativeValidator()
         assert v.run(ctx) == []
 
     def test_native_no_scandata_returns_empty(self) -> None:
+        """NativeValidator with no scandata returns empty list."""
         ctx = ScanContext(hierarchy_payload=cast(YAMLDict, {"scan_id": "x"}), scandata=None)
         v = NativeValidator()
         assert v.run(ctx) == []
 
     def test_native_scandata_without_contexts_returns_empty(self) -> None:
+        """NativeValidator with scandata but empty contexts returns empty."""
         mock_scandata = type("Scandata", (), {"contexts": []})()
         ctx = ScanContext(hierarchy_payload=cast(YAMLDict, {}), scandata=mock_scandata)
         v = NativeValidator()

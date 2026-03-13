@@ -9,6 +9,11 @@ from apme_engine.daemon.primary_server import serve
 
 
 async def _run(listen: str) -> None:
+    """Start the Primary daemon server and wait for termination.
+
+    Args:
+        listen: Host:port address to bind (e.g. 0.0.0.0:50051).
+    """
     server = await serve(listen)
     sys.stderr.write(f"Primary daemon listening on {listen}\n")
     sys.stderr.flush()
@@ -16,6 +21,10 @@ async def _run(listen: str) -> None:
 
 
 def main() -> None:
+    """Entry point: run Primary daemon gRPC server until interrupted.
+
+    Uses APME_PRIMARY_LISTEN for bind address. Exits with code 1 on failure.
+    """
     listen = os.environ.get("APME_PRIMARY_LISTEN", "0.0.0.0:50051")
     try:
         asyncio.run(_run(listen))

@@ -1,3 +1,5 @@
+"""Native rule L043: detect deprecated bare variables (prefer explicit form)."""
+
 import re
 from dataclasses import dataclass
 from typing import cast
@@ -19,12 +21,26 @@ BARE_VAR_PATTERN = re.compile(r"\{\{\s*[\w.]+\s*\}\}")
 
 
 def _find_bare_vars(text: str | None) -> list[str]:
+    """Find bare variable patterns (e.g. {{ var }}) in text.
+
+    Args:
+        text: Text to search for bare variables.
+
+    Returns:
+        List of matched bare variable strings.
+    """
     if not text or not isinstance(text, str):
         return []
     return BARE_VAR_PATTERN.findall(text)
 
 
 def _collect_strings_from_dict(d: object, out: list[str]) -> None:
+    """Recursively collect string values from dict into out list.
+
+    Args:
+        d: Dict or value to traverse.
+        out: List to append string values to.
+    """
     if not isinstance(d, dict):
         if isinstance(d, str):
             out.append(d)
@@ -44,6 +60,18 @@ def _collect_strings_from_dict(d: object, out: list[str]) -> None:
 
 @dataclass
 class DeprecatedBareVarsRule(Rule):
+    """Rule for deprecated bare variables (e.g. {{ foo }}); prefer explicit form.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "L043"
     description: str = "Deprecated bare variables (e.g. {{ foo }}); prefer explicit form"
     enabled: bool = True
@@ -53,11 +81,27 @@ class DeprecatedBareVarsRule(Rule):
     tags: tuple[str, ...] = (Tag.VARIABLE,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check for deprecated bare variables and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with bare_vars detail, or None.
+        """
         task = ctx.current
         if task is None:
             return None

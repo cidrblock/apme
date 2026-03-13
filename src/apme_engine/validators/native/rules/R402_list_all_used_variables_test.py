@@ -1,4 +1,4 @@
-# Colocated tests for R402 (ListAllUsedVariablesRule).
+"""Tests for native rule R402."""
 
 from apme_engine.engine.models import YAMLValue
 from apme_engine.validators.native.rules._test_helpers import (
@@ -10,6 +10,7 @@ from apme_engine.validators.native.rules.R402_list_all_used_variables import Lis
 
 
 def test_R402_fires_at_end_and_includes_variable_use_keys() -> None:
+    """Verify R402 fires at end and includes variable_use keys."""
     spec = make_task_spec(module="ansible.builtin.copy")
     task = make_task_call(spec)
     task.variable_use["my_var"] = []
@@ -28,6 +29,7 @@ def test_R402_fires_at_end_and_includes_variable_use_keys() -> None:
 
 
 def test_R402_does_not_fire_when_not_end() -> None:
+    """Verify R402 does not fire when not at end."""
     spec = make_task_spec(module="ansible.builtin.copy")
     task = make_task_call(spec)
     ctx = make_context(task)  # sequence empty

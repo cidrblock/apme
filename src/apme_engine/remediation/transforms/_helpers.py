@@ -8,7 +8,14 @@ from apme_engine.engine.models import ViolationDict
 
 
 def violation_line_to_int(violation: ViolationDict) -> int:
-    """Extract 1-indexed line number from violation dict. Returns 0 if missing/invalid."""
+    """Extract 1-indexed line number from violation dict.
+
+    Args:
+        violation: Violation dict with optional line field.
+
+    Returns:
+        1-indexed line number, or 0 if missing/invalid.
+    """
     line = violation.get("line", 0)
     if isinstance(line, (list, tuple)) and line:
         val = line[0]
@@ -27,6 +34,13 @@ def find_task_at_line(data: CommentedMap | CommentedSeq, line: int) -> Commented
     """Walk a playbook structure and return the task mapping at the given line.
 
     ``line`` is 1-indexed (from the violation); ruamel uses 0-indexed internally.
+
+    Args:
+        data: Playbook root (CommentedMap or CommentedSeq).
+        line: 1-indexed line number from violation.
+
+    Returns:
+        Task CommentedMap at that line, or None if not found.
     """
     target = line - 1
 
@@ -44,6 +58,15 @@ def find_task_at_line(data: CommentedMap | CommentedSeq, line: int) -> Commented
 
 
 def _search_node(node: CommentedMap | CommentedSeq, target_line: int) -> CommentedMap | None:
+    """Recursively search for a task node at the target 0-indexed line.
+
+    Args:
+        node: Current YAML node (CommentedMap or CommentedSeq).
+        target_line: 0-indexed target line number.
+
+    Returns:
+        Task CommentedMap at target_line, or None.
+    """
     if not isinstance(node, CommentedMap):
         return None
 
@@ -117,6 +140,12 @@ def get_module_key(task: CommentedMap) -> str | None:
     """Return the module/action key in a task mapping.
 
     The module key is the first key that isn't a known Ansible task keyword.
+
+    Args:
+        task: Task CommentedMap.
+
+    Returns:
+        Module key string, or None if no module found.
     """
     for key in task:
         if key not in _TASK_META_KEYS:
@@ -125,7 +154,13 @@ def get_module_key(task: CommentedMap) -> str | None:
 
 
 def rename_key(mapping: CommentedMap, old_key: str, new_key: str) -> None:
-    """Rename a key in a CommentedMap while preserving insertion order and value."""
+    """Rename a key in a CommentedMap while preserving insertion order and value.
+
+    Args:
+        mapping: CommentedMap to modify.
+        old_key: Key to rename.
+        new_key: New key name.
+    """
     if old_key not in mapping:
         return
 

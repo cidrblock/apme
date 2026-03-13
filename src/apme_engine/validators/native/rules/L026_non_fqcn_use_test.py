@@ -1,5 +1,4 @@
-# Colocated tests for L026 (NonFQCNUseRule). Uses Python-object context from _test_helpers.
-
+"""Tests for native rule L026."""
 
 from apme_engine.engine.models import ExecutableType
 from apme_engine.validators.native.rules._test_helpers import (
@@ -11,6 +10,7 @@ from apme_engine.validators.native.rules.L026_non_fqcn_use import NonFQCNUseRule
 
 
 def test_L026_fires_when_short_module_not_builtin() -> None:
+    """Verify L026 fires when short module name is not builtin."""
     spec = make_task_spec(
         module="copy",
         executable="copy",
@@ -28,6 +28,7 @@ def test_L026_fires_when_short_module_not_builtin() -> None:
 
 
 def test_L026_does_not_fire_when_fqcn_builtin() -> None:
+    """Verify L026 does not fire when FQCN is builtin."""
     spec = make_task_spec(
         module="ansible.builtin.copy",
         executable="ansible.builtin.copy",
@@ -44,6 +45,7 @@ def test_L026_does_not_fire_when_fqcn_builtin() -> None:
 
 
 def test_L026_does_not_fire_for_non_task() -> None:
+    """Verify L026 does not fire for non-task targets."""
     from apme_engine.validators.native.rules._test_helpers import make_role_call, make_role_spec
 
     role_spec = make_role_spec(name="foo")

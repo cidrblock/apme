@@ -1,3 +1,5 @@
+"""Load Ansible content (repositories, playbooks, roles, modules, collections) into model objects."""
+
 from __future__ import annotations
 
 import datetime
@@ -70,7 +72,14 @@ from .utils import (
 
 
 def _safe_int(val: object) -> int:
-    """Safely convert YAMLValue to int for task_loading counters."""
+    """Safely convert YAMLValue to int for task_loading counters.
+
+    Args:
+        val: Value to convert (int, float, or str).
+
+    Returns:
+        Integer value, or 0 if conversion fails.
+    """
     if isinstance(val, (int, float)):
         return int(val)
     if isinstance(val, str):
@@ -124,6 +133,26 @@ def load_repository(
     yaml_label_list: list[tuple[str, str, YAMLValue]] | None = None,
     load_children: bool = True,
 ) -> Repository:
+    """Load a full repository with playbooks, roles, modules, and inventories.
+
+    Args:
+        path: Path to the repository root.
+        installed_collections_path: Path to installed Ansible collections.
+        installed_roles_path: Path to installed Ansible roles.
+        my_collection_name: Override collection name for the repo.
+        basedir: Base directory for resolving relative paths.
+        target_playbook_path: Path to target playbook when scanning a single playbook.
+        target_taskfile_path: Path to target taskfile when scanning a single taskfile.
+        use_ansible_doc: Whether to use ansible-doc for module specs.
+        skip_playbook_format_error: Whether to skip malformed playbooks.
+        skip_task_format_error: Whether to skip malformed tasks.
+        include_test_contents: Whether to include test/molecule content.
+        yaml_label_list: Pre-computed list of (path, label, role_info) for YAML files.
+        load_children: Whether to load full objects or just paths.
+
+    Returns:
+        Repository object with playbooks, roles, modules, inventories, and files.
+    """
     repoObj = Repository()
 
     repo_path = ""
@@ -240,6 +269,14 @@ def load_repository(
 
 
 def load_installed_collections(installed_collections_path: str) -> list[Collection]:
+    """Load all installed Ansible collections from a directory.
+
+    Args:
+        installed_collections_path: Path to the collections directory (e.g. ~/.ansible/collections).
+
+    Returns:
+        List of Collection objects.
+    """
     search_path = installed_collections_path
     if installed_collections_path == "" or not os.path.exists(search_path):
         return []
@@ -265,6 +302,18 @@ def load_installed_collections(installed_collections_path: str) -> list[Collecti
 
 
 def load_inventory(path: str, basedir: str = "") -> Inventory:
+    """Load a single inventory file (YAML or JSON).
+
+    Args:
+        path: Path to the inventory file.
+        basedir: Base directory for resolving relative paths.
+
+    Returns:
+        Inventory object with variables and metadata.
+
+    Raises:
+        ValueError: If the file is not found.
+    """
     invObj = Inventory()
     fullpath = ""
     if os.path.exists(path) and path != "" and path != ".":
@@ -316,6 +365,15 @@ def load_inventory(path: str, basedir: str = "") -> Inventory:
 
 
 def load_inventories(path: str, basedir: str = "") -> list[Inventory]:
+    """Load all inventory files in a directory.
+
+    Args:
+        path: Path to search for inventory files.
+        basedir: Base directory for resolving relative paths.
+
+    Returns:
+        List of Inventory objects.
+    """
     if not os.path.exists(path):
         return []
     inventories = []
@@ -341,6 +399,21 @@ def load_file(
     role_name: str = "",
     collection_name: str = "",
 ) -> File:
+    """Load a file (variable file, template, or other) into a File object.
+
+    Args:
+        path: Path to the file.
+        basedir: Base directory for resolving relative paths.
+        label: Label for the file (e.g. 'others', 'vars').
+        body: Pre-read file body; used when read is False.
+        error: Pre-set error message if load failed.
+        read: Whether to read the file from disk.
+        role_name: Role name if file belongs to a role.
+        collection_name: Collection name if file belongs to a collection.
+
+    Returns:
+        File object with body, data, and metadata.
+    """
     fullpath = os.path.join(basedir, path)
     if not os.path.exists(fullpath) and path and os.path.exists(path):
         fullpath = path
@@ -408,6 +481,19 @@ def load_files(
     collection_name: str = "",
     load_children: bool = True,
 ) -> list[File | str]:
+    """Load general files (variable files, templates) labeled as 'others'.
+
+    Args:
+        path: Path to the repository root.
+        basedir: Base directory for resolving relative paths.
+        yaml_label_list: Pre-computed list of (path, label, role_info).
+        role_name: Role name for files in a role.
+        collection_name: Collection name for files in a collection.
+        load_children: Whether to load full File objects or just paths.
+
+    Returns:
+        List of File objects or paths.
+    """
     if not yaml_label_list:
         return []
 
@@ -440,6 +526,28 @@ def load_play(
     basedir: str = "",
     skip_task_format_error: bool = True,
 ) -> Play:
+    """Load a single play block from a playbook dict into a Play object.
+
+    Args:
+        path: Path to the playbook file.
+        index: Index of the play in the playbook list.
+        play_block_dict: Parsed YAML dict for the play block.
+        role_name: Role name if play is in a role.
+        collection_name: Collection name if play is in a collection.
+        parent_key: Parent object key for hierarchy.
+        parent_local_key: Parent local key for hierarchy.
+        yaml_lines: Raw YAML content for line number lookup.
+        basedir: Base directory for path resolution.
+        skip_task_format_error: Whether to skip malformed tasks.
+
+    Returns:
+        Play object with tasks, roles, handlers, and variables.
+
+    Raises:
+        ValueError: If play_block_dict is None.
+        PlaybookFormatError: If play block is not a valid dict.
+        TaskFormatError: If a task block is malformed and skip_task_format_error is False.
+    """
     pbObj = Play()
     if play_block_dict is None:
         raise ValueError("play block dict is required to load Play")
@@ -796,6 +904,23 @@ def load_roleinplay(
     playbook_yaml: str = "",
     basedir: str = "",
 ) -> RoleInPlay:
+    """Load a RoleInPlay from a play's roles block entry.
+
+    Args:
+        name: Role name or FQCN.
+        options: Role options dict (vars, tags, etc.).
+        defined_in: Path to the playbook file.
+        role_index: Index of role in the play's roles list.
+        play_index: Index of the play.
+        role_name: Parent role name if nested.
+        collection_name: Parent collection name.
+        collections_in_play: Collections declared in the play.
+        playbook_yaml: Unused; kept for API compatibility.
+        basedir: Base directory for path resolution.
+
+    Returns:
+        RoleInPlay instance.
+    """
     if collections_in_play is None:
         collections_in_play = []
     ripObj = RoleInPlay()
@@ -827,6 +952,24 @@ def load_playbook(
     skip_playbook_format_error: bool = True,
     skip_task_format_error: bool = True,
 ) -> Playbook:
+    """Load a playbook file or YAML string into a Playbook object.
+
+    Args:
+        path: Path to the playbook file.
+        yaml_str: Raw YAML string (alternative to path).
+        role_name: Role name if playbook is in a role.
+        collection_name: Collection name if playbook is in a collection.
+        basedir: Base directory for path resolution.
+        skip_playbook_format_error: Whether to skip malformed playbooks.
+        skip_task_format_error: Whether to skip malformed tasks.
+
+    Returns:
+        Playbook object with plays.
+
+    Raises:
+        ValueError: If file not found or path is invalid.
+        PlaybookFormatError: If YAML is malformed and skip_playbook_format_error is False.
+    """
     pbObj = Playbook()
     fullpath = ""
     if yaml_str:
@@ -916,6 +1059,23 @@ def load_playbooks(
     yaml_label_list: list[tuple[str, str, YAMLValue]] | None = None,
     load_children: bool = True,
 ) -> list[Playbook | str]:
+    """Load all playbook files in a directory.
+
+    Args:
+        path: Path to search for playbooks.
+        basedir: Base directory for resolving paths.
+        skip_playbook_format_error: Whether to skip malformed playbooks.
+        skip_task_format_error: Whether to skip malformed tasks.
+        include_test_contents: Whether to include tests/molecule playbooks.
+        yaml_label_list: Pre-computed list of (path, label, role_info).
+        load_children: Whether to load full Playbook objects or just paths.
+
+    Returns:
+        List of Playbook objects or paths.
+
+    Raises:
+        PlaybookFormatError: If a playbook file is malformed and skip_playbook_format_error is False.
+    """
     if path == "":
         return []
     patterns = [
@@ -1001,6 +1161,27 @@ def load_role(
     include_test_contents: bool = False,
     load_children: bool = True,
 ) -> Role:
+    """Load an Ansible role directory into a Role object.
+
+    Args:
+        path: Path to the role directory.
+        name: Override role name (default from directory name).
+        collection_name: Collection name if role is in a collection.
+        module_dir_paths: Additional paths to search for modules.
+        basedir: Base directory for resolving paths.
+        use_ansible_doc: Whether to use ansible-doc for module specs.
+        skip_playbook_format_error: Whether to skip malformed playbooks.
+        skip_task_format_error: Whether to skip malformed tasks.
+        include_test_contents: Whether to include test playbooks.
+        load_children: Whether to load full child objects or just paths.
+
+    Returns:
+        Role object with playbooks, taskfiles, modules, and variables.
+
+    Raises:
+        ValueError: If role directory not found or path is invalid.
+        TaskFormatError: If skip_task_format_error is False and a task is malformed.
+    """
     if module_dir_paths is None:
         module_dir_paths = []
     roleObj = Role()
@@ -1241,6 +1422,21 @@ def load_roles(
     yaml_label_list: list[tuple[str, str, YAMLValue]] | None = None,
     load_children: bool = True,
 ) -> list[Role | str]:
+    """Load all roles from a repository path.
+
+    Args:
+        path: Path to search for roles (e.g. roles/, playbooks/roles/).
+        basedir: Base directory for resolving paths.
+        use_ansible_doc: Whether to use ansible-doc for module specs.
+        skip_playbook_format_error: Whether to skip malformed playbooks.
+        skip_task_format_error: Whether to skip malformed tasks.
+        include_test_contents: Whether to include test playbooks.
+        yaml_label_list: Pre-computed list of (path, label, role_info).
+        load_children: Whether to load full Role objects or just paths.
+
+    Returns:
+        List of Role objects or paths.
+    """
     if path == "":
         return []
     roles_patterns = ["roles", "playbooks/roles", "playbook/roles"]
@@ -1258,6 +1454,14 @@ def load_roles(
             roles_dir_path = found_roles[0]
 
     def is_role_dir(found_dirs: list[str]) -> bool:
+        """Check if a directory contains role structure (tasks, handlers, etc.).
+
+        Args:
+            found_dirs: List of subdirectory names in the candidate path.
+
+        Returns:
+            True if at least one role dir (tasks, handlers, templates, etc.) exists.
+        """
         # From ansible role doc
         # if none of the following dirs are found, we don't treat it as a role dir
         role_dir_patterns = set(
@@ -1339,6 +1543,14 @@ def load_roles(
 
 
 def load_requirements(path: str) -> dict[str, object]:
+    """Load requirements.yml from a project or role directory.
+
+    Args:
+        path: Path to the directory containing requirements.yml.
+
+    Returns:
+        Parsed requirements dict (roles, collections, etc.).
+    """
     requirements = {}
     requirements_yml_path = os.path.join(path, "requirements.yml")
     if os.path.exists(requirements_yml_path):
@@ -1351,6 +1563,14 @@ def load_requirements(path: str) -> dict[str, object]:
 
 
 def load_installed_roles(installed_roles_path: str) -> list[Role]:
+    """Load all installed Ansible roles from a directory.
+
+    Args:
+        installed_roles_path: Path to the roles directory (e.g. ~/.ansible/roles).
+
+    Returns:
+        List of Role objects.
+    """
     search_path = installed_roles_path
     if installed_roles_path == "" or not os.path.exists(search_path):
         return []
@@ -1392,6 +1612,22 @@ def load_module(
     use_ansible_doc: bool = True,
     module_specs: dict[str, dict[str, object]] | None = None,
 ) -> Module:
+    """Load a Python module file into a Module object.
+
+    Args:
+        module_file_path: Path to the module .py file.
+        collection_name: Collection name if module is in a collection.
+        role_name: Role name if module is in a role's library.
+        basedir: Base directory for resolving paths.
+        use_ansible_doc: Whether to use ansible-doc for argument specs.
+        module_specs: Pre-fetched module specs from ansible-doc.
+
+    Returns:
+        Module object with name, FQCN, arguments, and documentation.
+
+    Raises:
+        ValueError: If module path is empty or file not found.
+    """
     if module_specs is None:
         module_specs = {}
     moduleObj = Module()
@@ -1504,6 +1740,11 @@ builtin_modules: dict[str, Module] = {}
 
 
 def load_builtin_modules() -> dict[str, Module]:
+    """Load built-in Ansible modules from bundled JSON.
+
+    Returns:
+        Dict mapping module name to Module object.
+    """
     global builtin_modules
     if builtin_modules:
         return builtin_modules
@@ -1526,6 +1767,19 @@ def load_modules(
     use_ansible_doc: bool = True,
     load_children: bool = True,
 ) -> list[Module | str]:
+    """Load all custom modules in a repository or collection.
+
+    Args:
+        path: Path to search for modules (library, plugins/modules).
+        basedir: Base directory for resolving paths.
+        collection_name: Collection name for FQCN.
+        module_dir_paths: Additional paths to search for modules.
+        use_ansible_doc: Whether to use ansible-doc for specs.
+        load_children: Whether to load full Module objects or just paths.
+
+    Returns:
+        List of Module objects or paths.
+    """
     if module_dir_paths is None:
         module_dir_paths = []
     if path == "":
@@ -1586,6 +1840,30 @@ def load_task(
     previous_task_line: int = -1,
     basedir: str = "",
 ) -> Task:
+    """Load a single task block into a Task object.
+
+    Args:
+        path: Path to the playbook or task file.
+        index: Index of the task in the task list.
+        task_block_dict: Parsed YAML dict for the task block.
+        task_jsonpath: JSONPath for the task in the document.
+        role_name: Role name if task is in a role.
+        collection_name: Collection name if task is in a collection.
+        collections_in_play: Collections declared in the play.
+        play_index: Index of the play containing this task.
+        parent_key: Parent object key for hierarchy.
+        parent_local_key: Parent local key for hierarchy.
+        yaml_lines: Raw YAML content for line number lookup.
+        previous_task_line: Line number of previous task for context.
+        basedir: Base directory for path normalization.
+
+    Returns:
+        Task object with module, options, variables, and loop info.
+
+    Raises:
+        ValueError: If file not found or task_block_dict is None.
+        TaskFormatError: If task block is not a valid dict.
+    """
     if collections_in_play is None:
         collections_in_play = []
     taskObj = Task()
@@ -1776,6 +2054,23 @@ def load_taskfile(
     basedir: str = "",
     skip_task_format_error: bool = True,
 ) -> TaskFile:
+    """Load a task file (tasks/*.yml or includes) into a TaskFile object.
+
+    Args:
+        path: Path to the task file.
+        yaml_str: Raw YAML string (alternative to path).
+        role_name: Role name if taskfile is in a role.
+        collection_name: Collection name if taskfile is in a collection.
+        basedir: Base directory for resolving paths.
+        skip_task_format_error: Whether to skip malformed tasks.
+
+    Returns:
+        TaskFile object with tasks.
+
+    Raises:
+        ValueError: If file not found or not .yml/.yaml.
+        TaskFormatError: If skip_task_format_error is False and a task is malformed.
+    """
     tfObj = TaskFile()
     fullpath = ""
     if yaml_str:
@@ -1870,6 +2165,17 @@ def load_taskfiles(
     yaml_label_list: list[tuple[str, str, YAMLValue]] | None = None,
     load_children: bool = True,
 ) -> list[TaskFile | str]:
+    """Load taskfiles from playbooks/tasks directories, optionally filtered by yaml_label_list.
+
+    Args:
+        path: Repository root path.
+        basedir: Base directory for resolving paths.
+        yaml_label_list: Pre-computed (path, label, role_info) for YAML files.
+        load_children: Whether to load full TaskFile objects or just paths.
+
+    Returns:
+        List of TaskFile objects or paths.
+    """
     if not os.path.exists(path):
         return []
 
@@ -1918,6 +2224,23 @@ def load_collection(
     include_test_contents: bool = False,
     load_children: bool = True,
 ) -> Collection:
+    """Load an Ansible collection directory into a Collection object.
+
+    Args:
+        collection_dir: Path to the collection directory.
+        basedir: Base directory for resolving paths.
+        use_ansible_doc: Whether to use ansible-doc for module specs.
+        skip_playbook_format_error: Whether to skip malformed playbooks.
+        skip_task_format_error: Whether to skip malformed tasks.
+        include_test_contents: Whether to include test playbooks.
+        load_children: Whether to load full child objects or just paths.
+
+    Returns:
+        Collection object with playbooks, roles, modules, and taskfiles.
+
+    Raises:
+        ValueError: If collection directory not found or path is invalid.
+    """
     colObj = Collection()
     fullpath = ""
     if os.path.exists(collection_dir):
@@ -2060,6 +2383,11 @@ def load_collection(
 
 
 def load_object(loadObj: Load) -> None:
+    """Load Ansible content (collection, role, playbook, etc.) and populate Load object.
+
+    Args:
+        loadObj: Load object with target_type, path, and options. Populated in place.
+    """
     target_type = loadObj.target_type
     path = loadObj.path
     obj: Collection | Role | Playbook | Repository | TaskFile | None = None
@@ -2147,6 +2475,15 @@ def load_object(loadObj: Load) -> None:
 def find_playbook_role_module(
     path: str, use_ansible_doc: bool = True
 ) -> tuple[list[Playbook | str], list[str | Role], list[Module | str]]:
+    """Load playbooks, roles, and modules from a path without full hierarchy.
+
+    Args:
+        path: Repository or project path.
+        use_ansible_doc: Whether to use ansible-doc for module specs.
+
+    Returns:
+        Tuple of (playbooks, roles, modules). Roles may include "." for root role.
+    """
     playbooks = load_playbooks(path, basedir=path, load_children=False)
     root_role = None
     with contextlib.suppress(Exception):

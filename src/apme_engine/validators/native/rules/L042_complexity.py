@@ -1,3 +1,5 @@
+"""Native rule L042: detect plays or blocks with high task count (complexity)."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -19,6 +21,18 @@ DEFAULT_TASK_COUNT_THRESHOLD = 20
 
 @dataclass
 class ComplexityRule(Rule):
+    """Rule for play/block with high task count (complexity).
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "L042"
     description: str = "Play or block has high task count (complexity)"
     enabled: bool = True
@@ -28,11 +42,27 @@ class ComplexityRule(Rule):
     tags: tuple[str, ...] = (Tag.DEPENDENCY,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check play/block complexity and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with task_count/threshold detail, or None.
+        """
         task = ctx.current
         if task is None:
             return None

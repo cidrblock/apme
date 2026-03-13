@@ -35,12 +35,25 @@ _MAX_CONCURRENT_RPCS = int(os.environ.get("APME_ANSIBLE_MAX_RPCS", "8"))
 
 @dataclass
 class _AnsibleResult:
+    """Result of running Ansible validator with timing metadata.
+
+    Attributes:
+        run_result: Violations and rule timings from AnsibleValidator.
+        venv_build_ms: Time spent building ephemeral venv in milliseconds.
+        ansible_core_version: Ansible core version string used.
+    """
+
     run_result: AnsibleRunResult
     venv_build_ms: float = 0.0
     ansible_core_version: str = ""
 
 
 def _cache_root() -> Path:
+    """Resolve cache root from APME_CACHE_ROOT or get_cache_root().
+
+    Returns:
+        Resolved Path to the collection cache root.
+    """
     root = os.environ.get("APME_CACHE_ROOT", "").strip()
     if root:
         return Path(root).resolve()
@@ -48,7 +61,14 @@ def _cache_root() -> Path:
 
 
 def _write_chunked_fs(files: list[File]) -> Path:
-    """Write request.files into a temp directory; return path to that directory."""
+    """Write request.files into a temp directory; return path to that directory.
+
+    Args:
+        files: List of File protos with path and content.
+
+    Returns:
+        Path to the created temp directory.
+    """
     tmp = Path(tempfile.mkdtemp(prefix="apme_ansible_val_"))
     for f in files:
         path = tmp / f.path
@@ -62,7 +82,18 @@ def _build_ephemeral_venv(
     collection_specs: list[str],
     cache_root: Path,
 ) -> Path:
-    """Build a fresh ephemeral venv for this request. UV cache makes this fast."""
+    """Build a fresh ephemeral venv for this request.
+
+    UV cache makes this fast.
+
+    Args:
+        version: Ansible core version string.
+        collection_specs: List of collection specifiers.
+        cache_root: Root path for collection cache.
+
+    Returns:
+        Path to the created venv root.
+    """
     venvs_root = Path(tempfile.mkdtemp(prefix="apme_venvs_"))
     return build_venv(
         ansible_core_version=version,
@@ -79,7 +110,18 @@ def _run_ansible_validate(
     hierarchy_payload: YAMLDict,
     req_id: str,
 ) -> _AnsibleResult:
-    """Blocking function: build ephemeral venv, run validator, return result with timing."""
+    """Blocking function: build ephemeral venv, run validator, return result with timing.
+
+    Args:
+        files: List of File protos to validate.
+        raw_version: Ansible core version string.
+        collection_specs: Collection specs to install.
+        hierarchy_payload: Parsed hierarchy payload for context.
+        req_id: Request ID for logging.
+
+    Returns:
+        _AnsibleResult with violations, venv build time, and version.
+    """
     temp_dir = None
     venv_root = None
     venv_build_ms = 0.0
@@ -158,6 +200,15 @@ class AnsibleValidatorServicer(validate_pb2_grpc.ValidatorServicer):
     """Async gRPC adapter: builds ephemeral venv per request, runs AnsibleValidator."""
 
     async def Validate(self, request: ValidateRequest, context: grpc.aio.ServicerContext) -> ValidateResponse:  # type: ignore[type-arg]
+        """Handle Validate RPC: build ephemeral venv, run AnsibleValidator, return violations.
+
+        Args:
+            request: ValidateRequest with files, version, collection specs.
+            context: gRPC servicer context.
+
+        Returns:
+            ValidateResponse with violations and diagnostics.
+        """
         req_id = request.request_id or ""
         t0 = time.monotonic()
         try:
@@ -235,11 +286,27 @@ class AnsibleValidatorServicer(validate_pb2_grpc.ValidatorServicer):
         request: common_pb2.HealthRequest,
         context: grpc.aio.ServicerContext,  # type: ignore[type-arg]
     ) -> HealthResponse:
+        """Handle Health RPC.
+
+        Args:
+            request: Health request (unused).
+            context: gRPC servicer context.
+
+        Returns:
+            HealthResponse with status "ok".
+        """
         return HealthResponse(status="ok")
 
 
 async def serve(listen: str = "0.0.0.0:50053") -> grpc.aio.Server:
-    """Create, bind, and start async gRPC server with Ansible servicer."""
+    """Create, bind, and start async gRPC server with Ansible servicer.
+
+    Args:
+        listen: Host:port to bind (e.g. 0.0.0.0:50053).
+
+    Returns:
+        Started gRPC server (caller must wait_for_termination).
+    """
     server = grpc.aio.server(maximum_concurrent_rpcs=_MAX_CONCURRENT_RPCS)
     validate_pb2_grpc.add_ValidatorServicer_to_server(AnsibleValidatorServicer(), server)  # type: ignore[no-untyped-call]
     if ":" in listen:

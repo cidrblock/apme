@@ -1,4 +1,4 @@
-# L052: Galaxy version in meta should follow semantic version format
+"""Native rule L052: detect galaxy version not following semantic version format."""
 
 import re
 from dataclasses import dataclass
@@ -21,6 +21,18 @@ GALAXY_VERSION_PATTERN = re.compile(r"^\d+\.\d+(\.\d+)?$")
 
 @dataclass
 class GalaxyVersionIncorrectRule(Rule):
+    """Rule for galaxy version in meta to follow semantic version format.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "L052"
     description: str = "Galaxy version in meta should follow semantic version format (x.y.z)"
     enabled: bool = True
@@ -30,11 +42,27 @@ class GalaxyVersionIncorrectRule(Rule):
     tags: tuple[str, ...] = (Tag.DEPENDENCY,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a role target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a role.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Role)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check galaxy version format and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with version/message detail, or None.
+        """
         role = ctx.current
         if role is None:
             return None

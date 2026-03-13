@@ -1,3 +1,5 @@
+"""Native rule P001: validate module names and set annotations."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -17,6 +19,19 @@ from apme_engine.engine.models import RuleTag as Tag
 
 @dataclass
 class ModuleNameValidationRule(Rule):
+    """Rule to validate module name and set annotations.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+        precedence: Evaluation order.
+    """
+
     rule_id: str = "P001"
     description: str = "Validate a module name and set annotations"
     enabled: bool = True
@@ -27,11 +42,27 @@ class ModuleNameValidationRule(Rule):
     precedence: int = 0
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Validate module name and set annotations on task.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            None (sets annotations on task).
+        """
         task = ctx.current
         if task is None or not isinstance(task, TaskCall):
             return None

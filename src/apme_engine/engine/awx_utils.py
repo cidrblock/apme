@@ -1,3 +1,5 @@
+"""AWX-derived utilities for playbook detection and directory filtering."""
+
 import codecs
 import os
 import re
@@ -8,6 +10,17 @@ valid_playbook_re = re.compile(r"^\s*?-?\s*?(?:hosts|include|import_playbook):\s
 # this method is based on awx code
 # awx/main/utils/ansible.py#L42-L64 in ansible/awx
 def could_be_playbook(fpath: str) -> bool:
+    """Check if a file might be an Ansible playbook based on extension and content.
+
+    Uses regex to detect hosts/include/import_playbook at top level or vault header,
+    allowing files with invalid YAML to be identified as potential playbooks.
+
+    Args:
+        fpath: Path to the file to check.
+
+    Returns:
+        True if the file has .yml/.yaml extension and appears playbook-like.
+    """
     basename, ext = os.path.splitext(fpath)
     if ext not in [".yml", ".yaml"]:
         return False
@@ -29,6 +42,17 @@ def could_be_playbook(fpath: str) -> bool:
 # this method is based on awx code
 # awx/main/models/projects.py#L206-L217 in ansible/awx
 def search_playbooks(root_path: str) -> list[str]:
+    """Recursively find all files that could be Ansible playbooks under a root path.
+
+    Walks the directory tree, skipping directories per skip_directory, and returns
+    paths to files that pass could_be_playbook.
+
+    Args:
+        root_path: Root directory to search.
+
+    Returns:
+        Sorted list of playbook file paths (case-insensitive sort).
+    """
     results = []
     if root_path and os.path.exists(root_path):
         for dirpath, _dirnames, filenames in os.walk(root_path, followlinks=False):
@@ -44,6 +68,17 @@ def search_playbooks(root_path: str) -> list[str]:
 # this method is based on awx code
 # awx/main/utils/ansible.py#L24-L39 in ansible/awx
 def skip_directory(relative_directory_path: str) -> bool:
+    """Determine if a directory should be excluded from playbook search.
+
+    Skips roles, tasks, molecule, tests/integration, dot-prefixed paths,
+    group_vars, and host_vars directories.
+
+    Args:
+        relative_directory_path: Path of the directory to check.
+
+    Returns:
+        True if the directory should be skipped.
+    """
     path_elements = relative_directory_path.split(os.sep)
     # Exclude files in a roles subdirectory.
     if "roles" in path_elements:

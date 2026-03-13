@@ -23,7 +23,15 @@ _MAX_CONCURRENT_RPCS = int(os.environ.get("APME_NATIVE_MAX_RPCS", "32"))
 
 
 def _run_native(hierarchy_payload: dict[str, object], scandata: object) -> NativeRunResult:
-    """Blocking function: create ScanContext and run NativeValidator with timing."""
+    """Blocking function: create ScanContext and run NativeValidator with timing.
+
+    Args:
+        hierarchy_payload: Parsed hierarchy payload for context.
+        scandata: Deserialized scandata object.
+
+    Returns:
+        NativeRunResult with violations and rule timings.
+    """
     scan_context = ScanContext(
         hierarchy_payload=cast(YAMLDict, hierarchy_payload),
         scandata=scandata,
@@ -40,6 +48,15 @@ class NativeValidatorServicer(validate_pb2_grpc.ValidatorServicer):
         request: validate_pb2.ValidateRequest,
         context: grpc.aio.ServicerContext,  # type: ignore[type-arg]
     ) -> ValidateResponse:
+        """Handle Validate RPC: deserialize scandata, run native rules in executor.
+
+        Args:
+            request: ValidateRequest with hierarchy_payload and scandata.
+            context: gRPC servicer context.
+
+        Returns:
+            ValidateResponse with violations and diagnostics.
+        """
         req_id = request.request_id or ""
         t0 = time.monotonic()
         try:
@@ -103,11 +120,27 @@ class NativeValidatorServicer(validate_pb2_grpc.ValidatorServicer):
         request: common_pb2.HealthRequest,
         context: grpc.aio.ServicerContext,  # type: ignore[type-arg]
     ) -> HealthResponse:
+        """Handle Health RPC.
+
+        Args:
+            request: Health request (unused).
+            context: gRPC servicer context.
+
+        Returns:
+            HealthResponse with status "ok".
+        """
         return HealthResponse(status="ok")
 
 
 async def serve(listen: str = "0.0.0.0:50055") -> grpc.aio.Server:
-    """Create, bind, and start async gRPC server with Native servicer."""
+    """Create, bind, and start async gRPC server with Native servicer.
+
+    Args:
+        listen: Host:port to bind (e.g. 0.0.0.0:50055).
+
+    Returns:
+        Started gRPC server (caller must wait_for_termination).
+    """
     server = grpc.aio.server(maximum_concurrent_rpcs=_MAX_CONCURRENT_RPCS)
     validate_pb2_grpc.add_ValidatorServicer_to_server(NativeValidatorServicer(), server)  # type: ignore[no-untyped-call]
     if ":" in listen:

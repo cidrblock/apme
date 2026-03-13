@@ -18,7 +18,15 @@ _PATTERNS = [
 
 
 def fix_empty_string(content: str, violation: ViolationDict) -> TransformResult:
-    """Replace `var == ""` with `var | length == 0` and similar."""
+    """Replace `var == ""` with `var | length == 0` and similar.
+
+    Args:
+        content: YAML file content.
+        violation: Violation dict with line.
+
+    Returns:
+        TransformResult with modified content if applied.
+    """
     yaml = FormattedYAML(typ="rt", pure=True, version=(1, 1))
 
     try:

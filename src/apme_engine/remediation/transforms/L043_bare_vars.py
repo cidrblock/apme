@@ -23,7 +23,15 @@ _LOOP_KEYS = (
 
 
 def fix_bare_vars(content: str, violation: ViolationDict) -> TransformResult:
-    """Wrap bare variable references in Jinja delimiters: ``foo`` -> ``{{ foo }}``."""
+    """Wrap bare variable references in Jinja delimiters: ``foo`` -> ``{{ foo }}``.
+
+    Args:
+        content: YAML file content.
+        violation: Violation dict with line.
+
+    Returns:
+        TransformResult with modified content if applied.
+    """
     yaml = FormattedYAML(typ="rt", pure=True, version=(1, 1))
 
     try:

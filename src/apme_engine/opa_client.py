@@ -17,10 +17,20 @@ def _run_opa_podman(
     entrypoint: str,
     timeout: int,
 ) -> subprocess.CompletedProcess[str]:
-    """Run OPA via podman run with bundle mounted. Returns CompletedProcess.
+    """Run OPA via podman run with bundle mounted.
+
     Uses --userns=keep-id and -u root so the container can read the bind mount
     when the OPA image runs as non-root (rootless Podman). :z allows SELinux
     to relabel the mount for container read access.
+
+    Args:
+        input_str: JSON input for OPA eval.
+        bundle_path: Path to OPA bundle directory.
+        entrypoint: Rego entrypoint (e.g. data.apme.rules.violations).
+        timeout: Timeout in seconds.
+
+    Returns:
+        CompletedProcess from subprocess.run.
     """
     bundle_abs = bundle_path.resolve()
     cmd = [
@@ -58,7 +68,17 @@ def _run_opa_local(
     entrypoint: str,
     timeout: int,
 ) -> subprocess.CompletedProcess[str]:
-    """Run local opa binary. Returns CompletedProcess."""
+    """Run local opa binary.
+
+    Args:
+        input_str: JSON input for OPA eval.
+        bundle_path: Path to OPA bundle directory.
+        entrypoint: Rego entrypoint.
+        timeout: Timeout in seconds.
+
+    Returns:
+        CompletedProcess from subprocess.run.
+    """
     return subprocess.run(
         ["opa", "eval", "-i", "-", "-d", str(bundle_path), entrypoint, "--format", "json"],
         input=input_str,
@@ -69,7 +89,17 @@ def _run_opa_local(
 
 
 def _run_opa_test_podman(bundle_path: Path, timeout: int = 120) -> subprocess.CompletedProcess[str]:
-    """Run `opa test . -v` inside Podman with bundle mounted. Same volume/user flags as eval."""
+    """Run `opa test . -v` inside Podman with bundle mounted.
+
+    Same volume/user flags as eval.
+
+    Args:
+        bundle_path: Path to OPA bundle directory.
+        timeout: Timeout in seconds (default 120).
+
+    Returns:
+        CompletedProcess from subprocess.run.
+    """
     bundle_abs = bundle_path.resolve()
     cmd = [
         "podman",
@@ -94,7 +124,15 @@ def _run_opa_test_podman(bundle_path: Path, timeout: int = 120) -> subprocess.Co
 
 
 def _run_opa_test_local(bundle_path: Path, timeout: int = 120) -> subprocess.CompletedProcess[str]:
-    """Run `opa test . -v` using local opa binary with cwd = bundle_path."""
+    """Run `opa test . -v` using local opa binary with cwd = bundle_path.
+
+    Args:
+        bundle_path: Path to OPA bundle directory.
+        timeout: Timeout in seconds (default 120).
+
+    Returns:
+        CompletedProcess from subprocess.run.
+    """
     return subprocess.run(
         ["opa", "test", ".", "-v"],
         cwd=str(bundle_path.resolve()),
@@ -105,10 +143,19 @@ def _run_opa_test_local(bundle_path: Path, timeout: int = 120) -> subprocess.Com
 
 
 def run_opa_test(bundle_path: str | Path, timeout: int = 120) -> tuple[bool, str, str]:
-    """
-    Run OPA Rego unit tests (`opa test . -v`) in the bundle directory.
+    """Run OPA Rego unit tests (`opa test . -v`) in the bundle directory.
+
     Uses Podman by default; set OPA_USE_PODMAN=0 to use a local opa binary.
-    Returns (success, stdout, stderr).
+
+    Args:
+        bundle_path: Path to OPA bundle directory.
+        timeout: Timeout in seconds (default 120).
+
+    Returns:
+        Tuple of (success, stdout, stderr).
+
+    Raises:
+        FileNotFoundError: If bundle_path is not a directory.
     """
     bundle = Path(bundle_path)
     if not bundle.is_dir():
@@ -132,10 +179,21 @@ def run_opa_test(bundle_path: str | Path, timeout: int = 120) -> tuple[bool, str
 def run_opa(
     input_data: YAMLDict, bundle_path: str, entrypoint: str = "data.apme.rules.violations"
 ) -> list[ViolationDict]:
-    """
-    Run OPA eval with input_data as input and bundle at bundle_path.
-    Uses Podman container (openpolicyagent/opa) by default; set OPA_USE_PODMAN=0 to use a local opa binary.
-    Returns list of violation objects (each with rule_id, level, message, file, line, path).
+    """Run OPA eval with input_data as input and bundle at bundle_path.
+
+    Uses Podman container (openpolicyagent/opa) by default; set OPA_USE_PODMAN=0
+    to use a local opa binary.
+
+    Args:
+        input_data: Hierarchy payload as YAML dict for OPA input.
+        bundle_path: Path to OPA bundle directory.
+        entrypoint: Rego entrypoint (default: data.apme.rules.violations).
+
+    Returns:
+        List of violation objects (each with rule_id, level, message, file, line, path).
+
+    Raises:
+        FileNotFoundError: If bundle_path is not a directory.
     """
     bundle = Path(bundle_path)
     if not bundle.is_dir():

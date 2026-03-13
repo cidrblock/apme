@@ -15,11 +15,26 @@ from apme_engine.collection_cache.manager import (
 
 
 def _uv_available() -> bool:
+    """Check if uv is available on PATH.
+
+    Returns:
+        True if uv executable is found, False otherwise.
+    """
     return shutil.which("uv") is not None
 
 
 def _venv_site_packages(venv_root: Path) -> Path:
-    """Return site-packages path for a venv (e.g. venv/lib/python3.12/site-packages)."""
+    """Return site-packages path for a venv (e.g. venv/lib/python3.12/site-packages).
+
+    Args:
+        venv_root: Root path of the virtual environment.
+
+    Returns:
+        Path to site-packages directory.
+
+    Raises:
+        FileNotFoundError: If venv has no lib dir or pythonX.Y directory.
+    """
     lib = venv_root / "lib"
     if not lib.is_dir():
         raise FileNotFoundError(f"venv has no lib dir: {venv_root}")
@@ -32,7 +47,15 @@ def _venv_site_packages(venv_root: Path) -> Path:
 
 
 def _venv_key(ansible_core_version: str, collection_specs: list[str]) -> str:
-    """Stable key for (ansible-core version, collection set) to reuse venvs."""
+    """Stable key for (ansible-core version, collection set) to reuse venvs.
+
+    Args:
+        ansible_core_version: Ansible core version string.
+        collection_specs: List of collection specifiers.
+
+    Returns:
+        Hex digest string (first 16 chars) for cache key.
+    """
     parts = [ansible_core_version] + sorted(s.strip() for s in collection_specs)
     return hashlib.sha256("|".join(parts).encode()).hexdigest()[:16]
 
@@ -41,7 +64,15 @@ def _resolve_collection_path(
     spec: str,
     cache_root: Path,
 ) -> Path | None:
-    """Resolve a collection spec to its path in the cache (galaxy first, then github)."""
+    """Resolve a collection spec to its path in the cache (galaxy first, then github).
+
+    Args:
+        spec: Collection specifier (namespace.collection or with version).
+        cache_root: Root path of the collection cache.
+
+    Returns:
+        Path to collection if found, None otherwise.
+    """
     namespace, collection = _parse_collection_spec(spec)
     path = collection_path_in_cache(namespace, collection, cache_root=cache_root, source="galaxy")
     if path is not None:
@@ -57,8 +88,7 @@ def build_venv(
     python_exe: str | None = None,
     symlink_collections: bool = True,
 ) -> Path:
-    """
-    Create or reuse a venv with ansible-core and collections from the cache.
+    """Create or reuse a venv with ansible-core and collections from the cache.
 
     Collections are symlinked from the cache into the venv's site-packages
     ansible_collections tree so Ansible finds them on the path.
@@ -78,7 +108,7 @@ def build_venv(
 
     Raises:
         FileNotFoundError: If a collection in collection_specs is not in the cache.
-        subprocess.CalledProcessError: If venv or pip install fails.
+
     """
     root = cache_root or get_cache_root()
     base = venvs_root or (root / "venvs")
@@ -162,7 +192,17 @@ def build_venv(
 
 
 def get_venv_python(venv_root: Path) -> Path:
-    """Return the python executable inside the venv."""
+    """Return the python executable inside the venv.
+
+    Args:
+        venv_root: Root path of the virtual environment.
+
+    Returns:
+        Path to the python executable.
+
+    Raises:
+        FileNotFoundError: If venv has no python executable.
+    """
     exe = venv_root / "Scripts" / "python.exe" if os.name == "nt" else venv_root / "bin" / "python"
     if not exe.is_file():
         raise FileNotFoundError(f"venv has no python: {venv_root}")

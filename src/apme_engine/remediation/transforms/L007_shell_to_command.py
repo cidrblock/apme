@@ -22,11 +22,27 @@ _SHELL_TO_COMMAND = {
 
 
 def _uses_shell_features(cmd: str) -> bool:
+    """Check if command string uses shell features (pipes, redirects, etc).
+
+    Args:
+        cmd: Command string to check.
+
+    Returns:
+        True if cmd contains shell-specific characters.
+    """
     return any(ch in cmd for ch in _SHELL_CHARS)
 
 
 def fix_shell_to_command(content: str, violation: ViolationDict) -> TransformResult:
-    """Replace shell with command when the command string uses no shell features."""
+    """Replace shell with command when the command string uses no shell features.
+
+    Args:
+        content: YAML file content.
+        violation: Violation dict with line.
+
+    Returns:
+        TransformResult with modified content if applied.
+    """
     yaml = FormattedYAML(typ="rt", pure=True, version=(1, 1))
 
     try:

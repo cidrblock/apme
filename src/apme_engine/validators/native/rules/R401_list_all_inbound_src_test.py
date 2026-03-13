@@ -1,4 +1,4 @@
-# Colocated tests for R401 (ListAllInboundSrcRule).
+"""Tests for native rule R401."""
 
 from apme_engine.validators.native.rules._test_helpers import (
     make_context,
@@ -9,6 +9,7 @@ from apme_engine.validators.native.rules.R401_list_all_inbound_src import ListAl
 
 
 def test_R401_does_not_fire_when_not_end() -> None:
+    """Verify R401 does not fire when not at end."""
     spec = make_task_spec(module="ansible.builtin.copy")
     task = make_task_call(spec)
     ctx = make_context(task)
@@ -21,6 +22,7 @@ def test_R401_does_not_fire_when_not_end() -> None:
 
 
 def test_R401_does_not_fire_at_end_when_no_inbound_sources() -> None:
+    """Verify R401 does not fire at end when no inbound sources."""
     spec = make_task_spec(module="ansible.builtin.copy")
     task = make_task_call(spec)
     ctx = make_context(task, sequence=[task])

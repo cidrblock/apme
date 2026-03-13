@@ -1,3 +1,5 @@
+"""Find and load Ansible collection and role dependencies."""
+
 from __future__ import annotations
 
 import json
@@ -32,6 +34,17 @@ def find_dependency(
     dependency_dir: str,
     use_ansible_path: bool = False,
 ) -> YAMLDict:
+    """Find dependencies for a project, role, or collection.
+
+    Args:
+        type: LoadType (PROJECT, ROLE, or COLLECTION).
+        target: Path to the project, role, or collection directory.
+        dependency_dir: Optional pre-downloaded dependency dir to use.
+        use_ansible_path: Whether to search ANSIBLE_HOME for installed deps.
+
+    Returns:
+        Dict with dependencies, paths, metadata, type, and file keys.
+    """
     dependencies: YAMLDict = {"dependencies": {}, "type": "", "file": ""}
     logger.debug("search dependency")
     if dependency_dir:
@@ -77,6 +90,15 @@ def find_dependency(
 def search_ansible_dir(
     dependencies: YAMLDict, ansible_dir: str
 ) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, YAMLValue]]]:
+    """Search ANSIBLE_HOME for installed roles and collections.
+
+    Args:
+        dependencies: Dict with 'roles' and 'collections' keys.
+        ansible_dir: Path to ~/.ansible or ANSIBLE_HOME.
+
+    Returns:
+        Tuple of (paths dict, metadata dict) for roles and collections.
+    """
     if not dependencies:
         return {}, {}
     if not isinstance(dependencies, dict):
@@ -143,6 +165,17 @@ def search_ansible_dir(
 
 
 def find_role_dependency(target: str) -> tuple[YAMLDict, str]:
+    """Find role and collection dependencies from meta/main.yml.
+
+    Args:
+        target: Path to the role directory.
+
+    Returns:
+        Tuple of (requirements dict with roles/collections, path to main.yml).
+
+    Raises:
+        ValueError: If target directory does not exist.
+    """
     requirements = {}
     if not os.path.exists(target):
         raise ValueError(f"Invalid target dir: {target}")
@@ -202,6 +235,14 @@ def find_role_dependency(target: str) -> tuple[YAMLDict, str]:
 
 
 def find_collection_dependency(target: str) -> tuple[YAMLDict, str]:
+    """Find collection dependencies from MANIFEST.json or galaxy.yml.
+
+    Args:
+        target: Path to the collection directory.
+
+    Returns:
+        Tuple of (requirements dict with collections, path to manifest/galaxy file).
+    """
     requirements: YAMLDict = {}
     # collection dir installed by ansible-galaxy command
     manifest_json_files = safe_glob(os.path.join(target, "**", collection_manifest_json), recursive=True)
@@ -224,6 +265,17 @@ def find_collection_dependency(target: str) -> tuple[YAMLDict, str]:
 
 
 def find_project_dependency(target: str) -> tuple[YAMLDict, str]:
+    """Find dependencies for a project (collection, role, or requirements.yml).
+
+    Args:
+        target: Path to the project directory.
+
+    Returns:
+        Tuple of (requirements dict, path to requirements file).
+
+    Raises:
+        ValueError: If target directory does not exist.
+    """
     if os.path.exists(target):
         coll_req = os.path.join(target, collection_manifest_json)
         role_req1 = os.path.join(target, role_meta_main_yaml)
@@ -242,6 +294,14 @@ def find_project_dependency(target: str) -> tuple[YAMLDict, str]:
 
 
 def load_requirements(path: str) -> tuple[YAMLDict, str]:
+    """Load requirements from requirements.yml or galaxy.yml.
+
+    Args:
+        path: Path to the project directory.
+
+    Returns:
+        Tuple of (requirements dict, path to the yaml file).
+    """
     requirements = {}
     yaml_path = ""
     # project dir
@@ -279,6 +339,14 @@ def load_requirements(path: str) -> tuple[YAMLDict, str]:
 
 
 def is_galaxy_yml(path: str) -> bool:
+    """Check if a file is a valid galaxy.yml (has name and namespace).
+
+    Args:
+        path: Path to the YAML file.
+
+    Returns:
+        True if file exists and has name and namespace keys.
+    """
     if not os.path.exists(path):
         return False
 
@@ -296,6 +364,14 @@ def is_galaxy_yml(path: str) -> bool:
 
 
 def load_dependency_from_galaxy(path: str) -> tuple[YAMLDict, str]:
+    """Load collection dependencies from galaxy.yml or GALAXY.yml.
+
+    Args:
+        path: Path to search for galaxy.yml files.
+
+    Returns:
+        Tuple of (requirements dict with collections, path to galaxy file).
+    """
     requirements = {}
     yaml_path = ""
     galaxy_yml_files = safe_glob(os.path.join(path, "**", galaxy_yml), recursive=True)
@@ -322,6 +398,14 @@ def load_existing_dependency_dir(
     dict[str, dict[str, str]],
     dict[str, dict[str, YAMLValue]],
 ]:
+    """Load dependencies from an existing installed dependency directory.
+
+    Args:
+        dependency_dir: Path to directory with installed collections/roles.
+
+    Returns:
+        Tuple of (requirements, paths, metadata) for roles and collections.
+    """
     # role_meta_files = safe_glob(
     #     [
     #         os.path.join(dependency_dir, "**", role_meta_main_yml),
@@ -375,6 +459,15 @@ def load_existing_dependency_dir(
 
 
 def install_github_target(target: str, output_dir: str) -> str:
+    """Clone a GitHub repo to output_dir via git clone.
+
+    Args:
+        target: Git URL or repo identifier.
+        output_dir: Directory to clone into.
+
+    Returns:
+        stdout from the git clone command.
+    """
     proc = subprocess.run(
         f"git clone {target} {output_dir}",
         shell=True,
@@ -388,6 +481,14 @@ def install_github_target(target: str, output_dir: str) -> str:
 
 
 def format_dependency_info(dependencies: YAMLDict | list[YAMLValue]) -> list[YAMLDict]:
+    """Convert dependency dict (name: version) to list of {name, version} dicts.
+
+    Args:
+        dependencies: Dict mapping name to version, or list.
+
+    Returns:
+        List of dicts with name and version keys.
+    """
     results: list[YAMLDict] = []
     if not isinstance(dependencies, dict):
         return results

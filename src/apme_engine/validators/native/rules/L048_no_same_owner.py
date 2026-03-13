@@ -1,3 +1,5 @@
+"""Native rule L048: detect copy with remote_src without explicit owner."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -23,6 +25,18 @@ COPY_MODULES = frozenset(
 
 @dataclass
 class NoSameOwnerRule(Rule):
+    """Rule for copy with remote_src to set owner explicitly.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "L048"
     description: str = "copy with remote_src should set owner explicitly; avoid same-owner default"
     enabled: bool = False
@@ -32,11 +46,27 @@ class NoSameOwnerRule(Rule):
     tags: tuple[str, ...] = (Tag.SYSTEM,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check for copy with remote_src without owner and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with message detail, or None.
+        """
         task = ctx.current
         if task is None:
             return None

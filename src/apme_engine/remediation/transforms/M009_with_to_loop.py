@@ -22,6 +22,13 @@ def fix_with_to_loop(content: str, violation: ViolationDict) -> TransformResult:
     Only handles the straightforward cases (with_items, with_list,
     with_flattened -> loop).  More complex with_* forms (with_dict,
     with_subelements) need manual review or AI.
+
+    Args:
+        content: YAML file content.
+        violation: Violation dict with line and optional with_key.
+
+    Returns:
+        TransformResult with modified content if applied.
     """
     yaml = FormattedYAML(typ="rt", pure=True, version=(1, 1))
 

@@ -1,5 +1,4 @@
-"""
-Resolve a module/plugin short name to FQCN using Ansible's loader in the current env.
+"""Resolve a module/plugin short name to FQCN using Ansible's loader in the current env.
 
 Run with the venv's Python (which has ansible-core + collections on path):
   python -m apme_engine.collection_cache._fqcn_resolve <module_name>

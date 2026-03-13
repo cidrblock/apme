@@ -1,3 +1,5 @@
+"""Load project/collection/role/playbook and produce load JSON."""
+
 import contextlib
 import json
 import os
@@ -11,8 +13,16 @@ role_meta_main_yml = "meta/main.yml"
 role_meta_main_yaml = "meta/main.yaml"
 
 
-# remove a dir which is a sub directory of another dir in the list
 def remove_subdirectories(dir_list: list[str]) -> list[str]:
+    """Remove directories that are subdirectories of another in the list.
+
+    Args:
+        dir_list: List of directory paths.
+
+    Returns:
+        Filtered list with parent paths only.
+
+    """
     sorted_dir_list = sorted(dir_list)
     new_dir_list = []
     for i, dir in enumerate(sorted_dir_list):
@@ -23,6 +33,16 @@ def remove_subdirectories(dir_list: list[str]) -> list[str]:
 
 
 def trim_suffix(txt: str, suffix_patterns: str | list[str] | None = None) -> str:
+    """Remove the first matching suffix from txt.
+
+    Args:
+        txt: String to trim.
+        suffix_patterns: Single suffix or list of suffixes to try.
+
+    Returns:
+        txt with one matching suffix removed, or unchanged if none match.
+
+    """
     if suffix_patterns is None:
         suffix_patterns = []
     if isinstance(suffix_patterns, str):
@@ -36,6 +56,12 @@ def trim_suffix(txt: str, suffix_patterns: str | list[str] | None = None) -> str
 
 
 def get_loader_version() -> str:
+    """Return apme-engine package version, or empty string if unavailable.
+
+    Returns:
+        Version string from package metadata.
+
+    """
     version = ""
     with contextlib.suppress(Exception):
         version = _pkg_version("apme-engine")
@@ -51,6 +77,16 @@ def get_loader_version() -> str:
 
 
 def get_target_name(target_type: str, target_path: str) -> str:
+    """Derive a target name from type and path (project/collection/role/playbook).
+
+    Args:
+        target_type: One of LoadType.PROJECT, COLLECTION, ROLE, PLAYBOOK.
+        target_path: Path to the target.
+
+    Returns:
+        Human-readable target name.
+
+    """
     target_name = ""
     if target_type == LoadType.PROJECT:
         project_name = os.path.normpath(target_path).split("/")[-1]
@@ -72,6 +108,15 @@ def get_target_name(target_type: str, target_path: str) -> str:
 
 
 def filepath_to_target_name(filepath: str) -> str:
+    """Convert a file path to a safe target name (spaces/slashes/dots replaced).
+
+    Args:
+        filepath: Path string.
+
+    Returns:
+        Sanitized string for use as a target name.
+
+    """
     return filepath.translate(
         str.maketrans({" ": "___", "/": "---", ".": "_dot_"})  # type: ignore[arg-type]
     )

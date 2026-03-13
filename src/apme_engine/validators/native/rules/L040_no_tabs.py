@@ -1,3 +1,5 @@
+"""Native rule L040: detect YAML containing tabs instead of spaces."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -16,6 +18,18 @@ from apme_engine.engine.models import (
 
 @dataclass
 class NoTabsRule(Rule):
+    """Rule for YAML containing tabs instead of spaces.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "L040"
     description: str = "YAML should not contain tabs; use spaces"
     enabled: bool = True
@@ -25,11 +39,27 @@ class NoTabsRule(Rule):
     tags: tuple[str, ...] = (Tag.DEPENDENCY,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check for tabs in YAML and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with lines_with_tabs detail, or None.
+        """
         task = ctx.current
         if task is None:
             return None

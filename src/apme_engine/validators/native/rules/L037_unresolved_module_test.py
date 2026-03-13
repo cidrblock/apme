@@ -1,4 +1,4 @@
-# Colocated tests for L037 (UnresolvedModuleRule).
+"""Tests for native rule L037."""
 
 from apme_engine.engine.models import ExecutableType
 from apme_engine.validators.native.rules._test_helpers import (
@@ -10,6 +10,7 @@ from apme_engine.validators.native.rules.L037_unresolved_module import Unresolve
 
 
 def test_L037_fires_when_module_unresolved() -> None:
+    """Verify L037 fires when module is unresolved."""
     spec = make_task_spec(
         module="unknown_module",
         executable_type=ExecutableType.MODULE_TYPE,
@@ -27,6 +28,7 @@ def test_L037_fires_when_module_unresolved() -> None:
 
 
 def test_L037_does_not_fire_when_module_resolved() -> None:
+    """Verify L037 does not fire when module is resolved."""
     spec = make_task_spec(
         module="copy",
         executable_type=ExecutableType.MODULE_TYPE,

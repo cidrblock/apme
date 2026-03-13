@@ -37,7 +37,15 @@ class OctalIntYAML11(ScalarInt):  # type: ignore[misc]
     _underscore: object
 
     def __new__(cls: type[OctalIntYAML11], *args: object, **kwargs: object) -> OctalIntYAML11:
-        """Create a new int with ScalarInt-defined attributes."""
+        """Create a new int with ScalarInt-defined attributes.
+
+        Args:
+            *args: Positional args for ScalarInt.__new__.
+            **kwargs: Keyword args for ScalarInt.__new__.
+
+        Returns:
+            New OctalIntYAML11 instance.
+        """
         return cast("OctalIntYAML11", ScalarInt.__new__(cls, *args, **kwargs))
 
     @staticmethod
@@ -46,6 +54,13 @@ class OctalIntYAML11(ScalarInt):  # type: ignore[misc]
 
         Based on ruamel.yaml.representer.RoundTripRepresenter.represent_octal_int()
         (which only handles the YAML 1.2 octal representation).
+
+        Args:
+            representer: RoundTripRepresenter instance.
+            data: OctalIntYAML11 value to represent.
+
+        Returns:
+            Representer output (node) for the octal value.
         """
         v = format(data, "o")
         anchor = data.yaml_anchor(any=True)
@@ -68,6 +83,12 @@ class CustomConstructor(RoundTripConstructor):  # type: ignore[misc]
         For 1.1, it converts the octal to an int. So, we preserve the format.
 
         Code partially copied from ruamel.yaml (MIT licensed).
+
+        Args:
+            node: ScalarNode for the integer value.
+
+        Returns:
+            int, HexInt, or OctalIntYAML11 depending on format.
         """
         ret = super().construct_yaml_int(node)
         if self.resolver.processing_version == (1, 1) and isinstance(ret, int):
@@ -118,6 +139,12 @@ class FormattedEmitter(Emitter):  # type: ignore[misc]
 
     Earlier implementations used dedent on ruamel.yaml's dumped output,
     but string magic like that had a ton of problematic edge cases.
+
+    Attributes:
+        preferred_quote: Quote character to prefer for scalars.
+        min_spaces_inside: Minimum spaces inside flow mappings.
+        max_spaces_inside: Maximum spaces inside flow mappings.
+
     """
 
     preferred_quote = '"'  # either " or '
@@ -138,6 +165,12 @@ class FormattedEmitter(Emitter):  # type: ignore[misc]
         ruamel.yaml uses a special prefix to protect '#' characters in
         strings from being treated as comments during post-processing.
         This strips that protection in the final output.
+
+        Args:
+            line: Input line that may contain octothorpe protection.
+
+        Returns:
+            Line with protection stripped.
         """
         return line.replace("\u0000#", "#")
 
@@ -212,6 +245,13 @@ class FormattedYAML(YAML):  # type: ignore[misc]
             - name: Playbook
               tasks:
                 - name: Task
+
+        Args:
+            typ: YAML type (e.g. "rt" for round-trip).
+            pure: Use pure Python implementation.
+            output: Output stream for dump.
+            plug_ins: List of plugin module paths.
+            version: YAML version tuple (e.g. (1, 1)).
         """
         if version:
             if isinstance(version, str):
@@ -293,6 +333,9 @@ class FormattedYAML(YAML):  # type: ignore[misc]
         The yaml Reader updates this value based on the ``%YAML`` directive in files.
         So, if a file does not include the directive, it sets this to None.
         But, None effectively resets the parsing version to YAML 1.2 (ruamel's default).
+
+        Args:
+            value: YAML version tuple (e.g. (1, 1)) or None to use default.
         """
         if value is not None:
             self._yaml_version = value
@@ -301,7 +344,20 @@ class FormattedYAML(YAML):  # type: ignore[misc]
         # We do nothing if the object did not have a previous default version defined
 
     def load(self, stream: Path | StreamTextType) -> YAMLValue | None:
-        """Load YAML content from a string while avoiding known ruamel.yaml issues."""
+        """Load YAML content from a string while avoiding known ruamel.yaml issues.
+
+        Handles ComposerError by falling back to load_all. Preserves preamble
+        comments. Path input is not supported (raises NotImplementedError).
+
+        Args:
+            stream: String or Path to load from. Only str supported.
+
+        Returns:
+            Parsed YAML value, or None for invalid/empty documents.
+
+        Raises:
+            NotImplementedError: If stream is not a str.
+        """
         if not isinstance(stream, str):
             msg = f"expected a str but got {type(stream)}"
             raise NotImplementedError(msg)
@@ -331,13 +387,24 @@ class FormattedYAML(YAML):  # type: ignore[misc]
 
     @staticmethod
     def _prevent_wrapping_flow_style(data: YAMLValue) -> None:
-        """Walk data and set flow style width hints so short mappings stay on one line."""
+        """Walk data and set flow style width hints so short mappings stay on one line.
+
+        Args:
+            data: YAML value (map or seq) to process in place.
+        """
         if isinstance(data, (CommentedMap, CommentedSeq)):
             for item in data.values() if isinstance(data, CommentedMap) else data:
                 FormattedYAML._prevent_wrapping_flow_style(item)
 
     def dumps(self, data: YAMLValue) -> str:
-        """Dump YAML document to string (including its preamble_comment)."""
+        """Dump YAML document to string (including its preamble_comment).
+
+        Args:
+            data: YAML value to serialize.
+
+        Returns:
+            YAML string with preamble comment if present.
+        """
         preamble_comment: str | None = getattr(data, "preamble_comment", None)
         self._prevent_wrapping_flow_style(data)
         with StringIO() as stream:
@@ -364,6 +431,12 @@ class FormattedYAML(YAML):  # type: ignore[misc]
 
         For more on preamble comments, see:
         https://stackoverflow.com/questions/70286108/python-ruamel-yaml-package-how-to-get-header-comment-lines/70287507#70287507
+
+        Args:
+            text: Raw YAML text to preprocess.
+
+        Returns:
+            Tuple of (processed text, preamble comment string or None).
         """
         text = self._whitespace_only_lines_re.sub("", text)
 
@@ -407,6 +480,13 @@ class FormattedYAML(YAML):  # type: ignore[misc]
         identified as full line comments in post-processing.
 
         Make sure null list items don't end in a space.
+
+        Args:
+            text: Dumped YAML text to postprocess.
+            strip_version_directive: If True, remove %YAML directive from start.
+
+        Returns:
+            Postprocessed YAML string.
         """
         # remove YAML directive
         if strip_version_directive and text.startswith("%YAML"):

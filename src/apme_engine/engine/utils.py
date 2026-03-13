@@ -1,3 +1,5 @@
+"""Engine utilities: locking, parsing, hashing, diff/display helpers."""
+
 from __future__ import annotations
 
 import codecs
@@ -28,10 +30,29 @@ bool_values = bool_values_true.union(bool_values_false)
 
 
 def get_lock_file_name(fpath: str) -> str:
+    """Return the lock file path for a given file path.
+
+    Args:
+        fpath: Path to the file to lock.
+
+    Returns:
+        The path with a .lock suffix.
+
+    """
     return fpath + ".lock"
 
 
 def lock_file(fpath: str | None, timeout: int = 10) -> FileLock | None:
+    """Acquire a file lock for the given path.
+
+    Args:
+        fpath: Path to the file to lock; None or empty returns None.
+        timeout: Lock acquisition timeout in seconds.
+
+    Returns:
+        The FileLock instance if acquired, else None.
+
+    """
     if not fpath:
         return None
     lockfile = get_lock_file_name(fpath)
@@ -41,6 +62,12 @@ def lock_file(fpath: str | None, timeout: int = 10) -> FileLock | None:
 
 
 def unlock_file(lock: object) -> None:
+    """Release a file lock if it is a FileLock.
+
+    Args:
+        lock: The lock object; ignored if not a FileLock.
+
+    """
     if not lock:
         return
     if not isinstance(lock, FileLock):
@@ -49,6 +76,12 @@ def unlock_file(lock: object) -> None:
 
 
 def remove_lock_file(lock: FileLock | None) -> None:
+    """Remove the lock file from disk if it exists.
+
+    Args:
+        lock: The FileLock whose backing file to remove; ignored if None or not a FileLock.
+
+    """
     if not lock:
         return
     if not isinstance(lock, FileLock):
@@ -68,6 +101,19 @@ def install_galaxy_target(
     source_repository: str = "",
     target_version: str = "",
 ) -> tuple[str, str]:
+    """Install a Galaxy collection or role via ansible-galaxy.
+
+    Args:
+        target: Collection or role name (e.g. namespace.collection).
+        target_type: Either 'collection' or 'role'.
+        output_dir: Directory to install into.
+        source_repository: Optional Galaxy server URL.
+        target_version: Optional version specifier.
+
+    Returns:
+        Tuple of (stdout, stderr) from the subprocess.
+
+    """
     server_option = ""
     if source_repository:
         server_option = f"--server {source_repository}"
@@ -89,6 +135,16 @@ def install_galaxy_target(
 
 
 def install_github_target(target: str, output_dir: str) -> str:
+    """Clone a GitHub repo into the given directory.
+
+    Args:
+        target: Git clone URL (e.g. https://github.com/org/repo).
+        output_dir: Directory to clone into.
+
+    Returns:
+        Subprocess stdout.
+
+    """
     proc = subprocess.run(
         f"git clone {target} {output_dir}",
         shell=True,
@@ -100,6 +156,16 @@ def install_github_target(target: str, output_dir: str) -> str:
 
 
 def get_download_metadata(typ: str, install_msg: str) -> tuple[str, str, str]:
+    """Parse ansible-galaxy install output for download URL, version, and hash.
+
+    Args:
+        typ: Either 'collection' or 'role'.
+        install_msg: Stdout/stderr from ansible-galaxy install.
+
+    Returns:
+        Tuple of (download_url, version, hash_val).
+
+    """
     download_url = ""
     version = ""
     if typ == "collection":
@@ -121,6 +187,18 @@ def get_download_metadata(typ: str, install_msg: str) -> tuple[str, str, str]:
 
 
 def get_installed_metadata(type: str, name: str, path: str, dep_dir: str | None = None) -> tuple[str, str]:
+    """Look up installed collection/role metadata for download URL and version.
+
+    Args:
+        type: Either 'collection' or 'role'.
+        name: Collection or role name.
+        path: Path to the installed artifact.
+        dep_dir: Optional dependency directory to search.
+
+    Returns:
+        Tuple of (download_url, version).
+
+    """
     download_url: str
     version: str
     if dep_dir:
@@ -159,6 +237,15 @@ def get_installed_metadata(type: str, name: str, path: str, dep_dir: str | None 
 
 
 def get_collection_metadata(path: str) -> dict[str, object] | None:
+    """Load collection metadata from MANIFEST.json in the given path.
+
+    Args:
+        path: Path to the collection directory.
+
+    Returns:
+        Parsed manifest dict or None if not found.
+
+    """
     if not os.path.exists(path):
         return None
     manifest_json_path = os.path.join(path, "MANIFEST.json")
@@ -170,6 +257,15 @@ def get_collection_metadata(path: str) -> dict[str, object] | None:
 
 
 def get_role_metadata(path: str) -> dict[str, object] | None:
+    """Load role metadata from meta/main.yml in the given path.
+
+    Args:
+        path: Path to the role root directory.
+
+    Returns:
+        Parsed meta dict or None if not found.
+
+    """
     if not os.path.exists(path):
         return None
     meta_main_yml_path = os.path.join(path, "meta", "main.yml")
@@ -181,17 +277,44 @@ def get_role_metadata(path: str) -> dict[str, object] | None:
 
 
 def escape_url(url: str) -> str:
+    """Convert URL to a filesystem-safe string (:// and / replaced).
+
+    Args:
+        url: URL to escape.
+
+    Returns:
+        String safe for use as a filename component.
+
+    """
     base_url = url.split("?")[0]
     replaced = base_url.replace("://", "__").replace("/", "_")
     return replaced
 
 
 def escape_local_path(path: str) -> str:
+    """Replace slashes in path with double underscores.
+
+    Args:
+        path: Local filesystem path.
+
+    Returns:
+        Path with / replaced by __.
+
+    """
     replaced = path.replace("/", "__")
     return replaced
 
 
 def get_hash_of_url(url: str) -> str:
+    """Fetch URL content and return SHA-256 hex digest.
+
+    Args:
+        url: URL to fetch.
+
+    Returns:
+        SHA-256 hash of the response body.
+
+    """
     response = httpx.get(url, follow_redirects=True)
     response.raise_for_status()
     hash = hashlib.sha256(response.content).hexdigest()
@@ -199,6 +322,15 @@ def get_hash_of_url(url: str) -> str:
 
 
 def split_name_and_version(target_name: str) -> tuple[str, str]:
+    """Split a target name that may include a version (e.g. ns.coll:1.0).
+
+    Args:
+        target_name: String possibly containing ':' and a version.
+
+    Returns:
+        Tuple of (name, version); version is empty if not present.
+
+    """
     name = target_name
     version = ""
     if ":" in target_name:
@@ -209,6 +341,15 @@ def split_name_and_version(target_name: str) -> tuple[str, str]:
 
 
 def split_target_playbook_fullpath(fullpath: str) -> tuple[str, str]:
+    """Split full path into base directory and playbook-relative path.
+
+    Args:
+        fullpath: Absolute path to a playbook file.
+
+    Returns:
+        Tuple of (base_dir, target_playbook_path).
+
+    """
     basedir = os.path.dirname(fullpath)
     if "/playbooks/" in fullpath:
         basedir = fullpath.split("/playbooks/")[0]
@@ -219,6 +360,15 @@ def split_target_playbook_fullpath(fullpath: str) -> tuple[str, str]:
 
 
 def split_target_taskfile_fullpath(fullpath: str) -> tuple[str, str]:
+    """Split full path into base directory and taskfile-relative path.
+
+    Args:
+        fullpath: Absolute path to a task file.
+
+    Returns:
+        Tuple of (base_dir, target_taskfile_path).
+
+    """
     basedir = os.path.dirname(fullpath)
     if "/roles/" in fullpath:
         basedir = fullpath.split("/roles/")[0]
@@ -231,6 +381,15 @@ def split_target_taskfile_fullpath(fullpath: str) -> tuple[str, str]:
 
 
 def version_to_num(ver: str) -> float:
+    """Convert a version string to a comparable numeric value.
+
+    Args:
+        ver: Version string (e.g. 1.2.3 or 1.2.3-suffix).
+
+    Returns:
+        Float for comparison; 0.0 for 'unknown'.
+
+    """
     if ver == "unknown":
         return 0.0
     # version string can be 1.2.3-abcdxyz
@@ -247,10 +406,28 @@ def version_to_num(ver: str) -> float:
 
 
 def is_url(txt: str) -> bool:
+    """Return True if the string looks like a URL (contains ://).
+
+    Args:
+        txt: String to check.
+
+    Returns:
+        True if txt contains '://'.
+
+    """
     return "://" in txt
 
 
 def is_local_path(txt: str) -> bool:
+    """Return True if the string is a URL or an existing local path.
+
+    Args:
+        txt: String to check.
+
+    Returns:
+        True if not a URL and (contains / or exists on disk).
+
+    """
     if is_url(txt):
         return False
     if "/" in txt:
@@ -259,12 +436,31 @@ def is_local_path(txt: str) -> bool:
 
 
 def indent(multi_line_txt: str, level: int = 0) -> str:
+    """Indent each non-empty line by the given number of spaces.
+
+    Args:
+        multi_line_txt: Multi-line string to indent.
+        level: Number of spaces to prepend to each line.
+
+    Returns:
+        Indented string with newlines.
+
+    """
     lines = multi_line_txt.splitlines()
     lines = [" " * level + line for line in lines if line.replace(" ", "") != ""]
     return "\n".join(lines)
 
 
 def report_to_display(data_report: dict[str, object]) -> str:
+    """Format a risk report dict as human-readable text.
+
+    Args:
+        data_report: Report dict with summary and details.
+
+    Returns:
+        Formatted report string.
+
+    """
     summary = cast(dict[str, object], data_report.get("summary", {}))
     playbook_num_total = cast(int, cast(dict[str, object], summary.get("playbooks", {})).get("total", 0))
     # playbook_num_risk_found = data_report["summary"].get("playbooks", {}).get("risk_found", 0)
@@ -318,6 +514,16 @@ def report_to_display(data_report: dict[str, object]) -> str:
 
 
 def summarize_findings(findings: Findings, show_all: bool = False) -> str:
+    """Build a text summary from a Findings instance.
+
+    Args:
+        findings: Findings object with metadata, dependencies, report, etc.
+        show_all: Whether to include all details.
+
+    Returns:
+        Formatted summary string.
+
+    """
     metadata = findings.metadata
     dependencies = findings.dependencies
     report = findings.report
@@ -341,6 +547,20 @@ def summarize_findings_data(
     extra_requirements: list[dict[str, object]],
     show_all: bool = False,
 ) -> str:
+    """Build a text summary from findings components.
+
+    Args:
+        metadata: Target metadata (e.g. name).
+        dependencies: List of dependency dicts.
+        report: Risk report dict.
+        resolve_failures: Dict of module/role/taskfile resolution failures.
+        extra_requirements: List of extra requirement dicts.
+        show_all: Whether to include all details.
+
+    Returns:
+        Formatted summary string.
+
+    """
     target_name = metadata.get("name", "")
     output_lines = []
 
@@ -499,6 +719,12 @@ def summarize_findings_data(
 
 
 def show_all_ram_metadata(ram_meta_list: list[dict[str, str]]) -> None:
+    """Print a table of RAM metadata (name, version, hash) to stdout.
+
+    Args:
+        ram_meta_list: List of dicts with name, version, hash keys.
+
+    """
     table: list[tuple[str, str, str]] = [("NAME", "VERSION", "HASH")]
     for meta in ram_meta_list:
         table.append((str(meta.get("name", "")), str(meta.get("version", "")), str(meta.get("hash", ""))))
@@ -506,6 +732,16 @@ def show_all_ram_metadata(ram_meta_list: list[dict[str, str]]) -> None:
 
 
 def diff_files_data(files1: dict[str, object], files2: dict[str, object]) -> list[dict[str, str]]:
+    """Compare two file lists (by path and checksum) and return created/updated/deleted.
+
+    Args:
+        files1: First files dict (e.g. from scan) with 'files' list.
+        files2: Second files dict with 'files' list.
+
+    Returns:
+        List of dicts with type (created/updated/deleted) and filepath.
+
+    """
     files_dict1: dict[str, str] = {}
     files_list1 = files1.get("files", [])
     if not isinstance(files_list1, list):
@@ -570,6 +806,12 @@ def diff_files_data(files1: dict[str, object], files2: dict[str, object]) -> lis
 
 
 def show_diffs(diffs: list[dict[str, str]]) -> None:
+    """Print a table of file diffs (filepath, type) to stdout.
+
+    Args:
+        diffs: List of dicts with filepath and type keys.
+
+    """
     table = [("NAME", "DIFF_TYPE")]
     for d in diffs:
         table.append((d["filepath"], d["type"]))
@@ -581,6 +823,17 @@ def get_module_specs_by_ansible_doc(
     fqcn_prefix: str,
     search_path: str,
 ) -> dict[str, dict[str, object]]:
+    """Run ansible-doc on module paths and return doc/examples per FQCN.
+
+    Args:
+        module_files: Single path or list of module file paths.
+        fqcn_prefix: FQCN prefix (e.g. ansible.builtin).
+        search_path: ANSIBLE_COLLECTIONS_PATH to use.
+
+    Returns:
+        Dict mapping FQCN to dict with doc and examples.
+
+    """
     if not module_files:
         return {}
     if isinstance(module_files, str):
@@ -633,6 +886,15 @@ def get_module_specs_by_ansible_doc(
 
 
 def get_documentation_in_module_file(fpath: str) -> str:
+    """Extract the DOCUMENTATION block from an Ansible module file.
+
+    Args:
+        fpath: Path to the module .py file.
+
+    Returns:
+        Raw docstring content of DOCUMENTATION or empty string.
+
+    """
     if not fpath:
         return ""
     if not os.path.exists(fpath):
@@ -670,6 +932,15 @@ def get_documentation_in_module_file(fpath: str) -> str:
 
 
 def get_class_by_arg_type(arg_type: str) -> type[object] | None:
+    """Map an argument type name to its Python type for validation.
+
+    Args:
+        arg_type: Type name (e.g. str, list, path).
+
+    Returns:
+        The corresponding type or None if unknown.
+
+    """
     if not isinstance(arg_type, str):
         return None
 
@@ -703,6 +974,22 @@ def load_classes_in_dir(
     only_subclass: bool = True,
     fail_on_error: bool = False,
 ) -> tuple[list[type[object]], list[str]]:
+    """Discover and load classes from Python files in a directory.
+
+    Args:
+        dir_path: Directory to scan for .py files (excluding _test.py).
+        target_class: Only include subclasses of this type if only_subclass.
+        base_dir: Optional base path to resolve dir_path.
+        only_subclass: If True, only yield subclasses of target_class.
+        fail_on_error: If True, re-raise on load errors.
+
+    Returns:
+        Tuple of (list of classes, list of error messages).
+
+    Raises:
+        ValueError: If dir_path is not found.
+
+    """
     search_path = dir_path
     found = False
     if os.path.exists(search_path):
@@ -750,6 +1037,16 @@ def load_classes_in_dir(
 
 
 def equal(a: object, b: object) -> bool:
+    """Compare two values for equality (handles dict/list recursively).
+
+    Args:
+        a: First value.
+        b: Second value.
+
+    Returns:
+        True if a and b are equal.
+
+    """
     type_a = type(a)
     type_b = type(b)
     if type_a != type_b:
@@ -779,6 +1076,16 @@ def equal(a: object, b: object) -> bool:
 
 
 def recursive_copy_dict(src: YAMLDict, dst: YAMLDict) -> None:
+    """Recursively copy nested dict/list from src into dst in place.
+
+    Args:
+        src: Source dict (YAML-like).
+        dst: Destination dict; modified in place.
+
+    Raises:
+        ValueError: If src is not a dict.
+
+    """
     if not isinstance(src, dict):
         raise ValueError(f"only dict input is allowed, but got {type(src)}")
 
@@ -796,10 +1103,31 @@ def recursive_copy_dict(src: YAMLDict, dst: YAMLDict) -> None:
 
 
 def is_test_object(path: str) -> bool:
+    """Return True if path is under tests/integration/ or molecule/.
+
+    Args:
+        path: File or directory path.
+
+    Returns:
+        True if path appears to be a test artifact.
+
+    """
     return path.startswith("tests/integration/") or path.startswith("molecule/")
 
 
 def parse_bool(value: object) -> bool:
+    """Parse a value to bool (supports y/n, yes/no, 1/0, true/false, etc.).
+
+    Args:
+        value: Value to parse (str, bool, or number).
+
+    Returns:
+        Boolean interpretation of value.
+
+    Raises:
+        TypeError: If value cannot be interpreted as bool.
+
+    """
     value_str: str | None = None
     use_value_str = False
     if isinstance(value, bool):

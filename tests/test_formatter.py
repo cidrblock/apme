@@ -19,6 +19,15 @@ from apme_engine.formatter import (
 
 
 def _fmt(text: str, filename: str = "test.yml") -> FormatResult:
+    """Format dedented text and return FormatResult.
+
+    Args:
+        text: YAML content (will be dedented).
+        filename: Optional filename for the formatter.
+
+    Returns:
+        FormatResult from format_content.
+    """
     return format_content(textwrap.dedent(text), filename=filename)
 
 
@@ -28,12 +37,16 @@ def _fmt(text: str, filename: str = "test.yml") -> FormatResult:
 
 
 class TestTabRemoval:
+    """Tests for tab removal (L040)."""
+
     def test_tabs_replaced_with_spaces(self) -> None:
+        """Tabs in YAML are replaced with spaces."""
         result = _fmt("- name: Test\n\tansible.builtin.debug:\n\t\tmsg: hello\n")
         assert "\t" not in result.formatted
         assert result.changed
 
     def test_no_tabs_unchanged(self) -> None:
+        """Content without tabs is unchanged."""
         text = "- name: Test\n  ansible.builtin.debug:\n    msg: hello\n"
         result = format_content(text)
         assert "\t" not in result.formatted
@@ -45,7 +58,10 @@ class TestTabRemoval:
 
 
 class TestKeyReorder:
+    """Tests for key reorder (L041)."""
+
     def test_name_moved_before_module(self) -> None:
+        """Name key is moved before module key in tasks."""
         text = textwrap.dedent("""\
         - ansible.builtin.debug:
             msg: hello
@@ -59,6 +75,7 @@ class TestKeyReorder:
         assert result.changed
 
     def test_already_ordered_unchanged(self) -> None:
+        """Already-ordered keys remain stable."""
         text = textwrap.dedent("""\
         - name: Say hello
           ansible.builtin.debug:
@@ -72,6 +89,7 @@ class TestKeyReorder:
         assert name_line < debug_line
 
     def test_play_level_key_order(self) -> None:
+        """Play-level keys are reordered correctly."""
         text = textwrap.dedent("""\
         - tasks:
             - ansible.builtin.debug:
@@ -93,23 +111,29 @@ class TestKeyReorder:
 
 
 class TestJinjaSpacing:
+    """Tests for Jinja spacing (L051)."""
+
     def test_no_space_gets_space(self) -> None:
+        """Jinja without spaces gets normalized spacing."""
         text = '- name: Test\n  ansible.builtin.debug:\n    msg: "{{foo}}"\n'
         result = format_content(text)
         assert "{{ foo }}" in result.formatted
         assert result.changed
 
     def test_extra_spaces_normalized(self) -> None:
+        """Extra spaces in Jinja are normalized."""
         text = '- name: Test\n  ansible.builtin.debug:\n    msg: "{{  foo  }}"\n'
         result = format_content(text)
         assert "{{ foo }}" in result.formatted
 
     def test_already_correct_unchanged(self) -> None:
+        """Already-correct Jinja spacing is unchanged."""
         text = '- name: Test\n  ansible.builtin.debug:\n    msg: "{{ foo }}"\n'
         result = format_content(text)
         assert "{{ foo }}" in result.formatted
 
     def test_complex_expression(self) -> None:
+        """Complex Jinja expressions are formatted correctly."""
         text = "- name: Test\n  ansible.builtin.debug:\n    msg: \"{{item.name | default('none')}}\"\n"
         result = format_content(text)
         assert "{{ item.name | default('none') }}" in result.formatted
@@ -121,7 +145,10 @@ class TestJinjaSpacing:
 
 
 class TestIndentation:
+    """Tests for indentation normalization."""
+
     def test_mixed_indent_normalized(self) -> None:
+        """Mixed indentation is normalized to 2-space increments."""
         text = "- name: Test\n    ansible.builtin.debug:\n        msg: hello\n"
         result = format_content(text)
         lines = result.formatted.splitlines()
@@ -138,17 +165,22 @@ class TestIndentation:
 
 
 class TestComments:
+    """Tests for comment preservation."""
+
     def test_inline_comment_preserved(self) -> None:
+        """Inline comments are preserved after formatting."""
         text = "- name: Test  # important\n  ansible.builtin.debug:\n    msg: hello\n"
         result = format_content(text)
         assert "# important" in result.formatted
 
     def test_full_line_comment_preserved(self) -> None:
+        """Full-line comments are preserved."""
         text = "# This is a play\n- name: Test\n  ansible.builtin.debug:\n    msg: hello\n"
         result = format_content(text)
         assert "# This is a play" in result.formatted
 
     def test_preamble_comment_preserved(self) -> None:
+        """Preamble comments before --- are preserved."""
         text = "# Header comment\n---\n- name: Test\n  ansible.builtin.debug:\n    msg: hello\n"
         result = format_content(text)
         assert "# Header comment" in result.formatted
@@ -160,7 +192,10 @@ class TestComments:
 
 
 class TestOctal:
+    """Tests for octal mode preservation."""
+
     def test_octal_mode_preserved(self) -> None:
+        """Octal mode strings like 0644 are preserved."""
         text = textwrap.dedent("""\
         - name: Set perms
           ansible.builtin.file:
@@ -177,24 +212,31 @@ class TestOctal:
 
 
 class TestEdgeCases:
+    """Tests for edge cases."""
+
     def test_empty_file(self) -> None:
+        """Empty file produces no changes."""
         result = format_content("")
         assert not result.changed
 
     def test_non_yaml_content(self) -> None:
+        """Non-YAML content produces no changes."""
         result = format_content("this is not yaml: [[[invalid")
         assert not result.changed
 
     def test_scalar_document_returned_unchanged(self) -> None:
+        """Scalar-only document is returned unchanged."""
         result = format_content("hello\n")
         assert not result.changed
         assert result.formatted == "hello\n"
 
     def test_empty_document_marker(self) -> None:
+        """Empty document marker (---) is handled."""
         result = format_content("---\n")
         assert not result.changed or result.formatted.strip() == "---"
 
     def test_already_formatted_no_change(self) -> None:
+        """Already-formatted content produces no changes on second pass."""
         text = textwrap.dedent("""\
         - name: Already clean
           ansible.builtin.debug:
@@ -212,6 +254,8 @@ class TestEdgeCases:
 
 
 class TestIdempotency:
+    """Tests for formatter idempotency."""
+
     @pytest.mark.parametrize(
         "text,desc",
         [
@@ -223,10 +267,18 @@ class TestIdempotency:
         ],
     )  # type: ignore[untyped-decorator]
     def test_format_twice_no_diff(self, text: str, desc: str) -> None:
+        """Formatting twice produces no diff for various inputs.
+
+        Args:
+            text: Parametrized YAML content to format.
+            desc: Human-readable description of the test case.
+
+        """
         first = format_content(text, filename=f"test_{desc}.yml")
         assert check_idempotent(first), f"Formatter is not idempotent for: {desc}"
 
     def test_idempotent_complex_playbook(self) -> None:
+        """Complex playbook is idempotent after formatting."""
         text = textwrap.dedent("""\
         # Playbook header
         ---
@@ -263,7 +315,15 @@ class TestIdempotency:
 
 
 class TestFormatFile:
+    """Tests for format_file (filesystem)."""
+
     def test_format_file_reads_and_formats(self, tmp_path: Path) -> None:
+        """format_file reads file and returns formatted result.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+
+        """
         p = tmp_path / "test.yml"
         p.write_text("- ansible.builtin.debug:\n    msg: hi\n  name: Test\n")
         result = format_file(p)
@@ -281,7 +341,15 @@ class TestFormatFile:
 
 
 class TestFormatDirectory:
+    """Tests for format_directory (recursive YAML formatting)."""
+
     def test_discovers_yaml_files(self, tmp_path: Path) -> None:
+        """format_directory discovers .yml and .yaml files.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+
+        """
         (tmp_path / "a.yml").write_text("- name: A\n  ansible.builtin.debug:\n    msg: a\n")
         (tmp_path / "b.yaml").write_text("- name: B\n  ansible.builtin.debug:\n    msg: b\n")
         (tmp_path / "c.txt").write_text("not yaml")
@@ -292,6 +360,12 @@ class TestFormatDirectory:
         assert "c.txt" not in paths
 
     def test_skips_git_dir(self, tmp_path: Path) -> None:
+        """format_directory skips .git directory.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+
+        """
         git_dir = tmp_path / ".git"
         git_dir.mkdir()
         (git_dir / "config.yml").write_text("- name: Git\n  debug: msg=hi\n")
@@ -302,7 +376,12 @@ class TestFormatDirectory:
         assert "play.yml" in paths
 
     def test_multidepth_workspace(self, tmp_path: Path) -> None:
-        """Formatter recurses into nested role/playbook directory structures."""
+        """Formatter recurses into nested role/playbook directory structures.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+
+        """
         (tmp_path / "site.yml").write_text("- ansible.builtin.debug:\n    msg: hi\n  name: Top\n")
         roles = tmp_path / "roles" / "web" / "tasks"
         roles.mkdir(parents=True)
@@ -326,6 +405,12 @@ class TestFormatDirectory:
             assert check_idempotent(r), f"Not idempotent: {r.path}"
 
     def test_exclude_pattern(self, tmp_path: Path) -> None:
+        """exclude_patterns skips matching paths.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+
+        """
         vendor = tmp_path / "vendor"
         vendor.mkdir()
         (vendor / "lib.yml").write_text("- name: Vendor\n  debug: msg=hi\n")
@@ -342,7 +427,10 @@ class TestFormatDirectory:
 
 
 class TestDiffOutput:
+    """Tests for FormatResult.diff content."""
+
     def test_diff_contains_file_paths(self) -> None:
+        """Diff output contains a/ and b/ file paths."""
         text = "- ansible.builtin.debug:\n    msg: hi\n  name: Test\n"
         result = format_content(text, filename="playbook.yml")
         assert result.changed
@@ -350,6 +438,7 @@ class TestDiffOutput:
         assert "b/playbook.yml" in result.diff
 
     def test_no_diff_when_unchanged(self) -> None:
+        """Unchanged content produces empty diff."""
         text = "- name: Test\n  ansible.builtin.debug:\n    msg: hi\n"
         result = format_content(text)
         if not result.changed:

@@ -1,3 +1,5 @@
+"""Risk Assessment Model (RAM) client for loading, searching, and caching scan findings."""
+
 from __future__ import annotations
 
 import json
@@ -40,19 +42,51 @@ from .utils import (
 
 
 def _safe_str(v: YAMLValue, default: str = "") -> str:
+    """Convert value to string, or return default if None.
+
+    Args:
+        v: Value to convert.
+        default: Default string when v is None.
+
+    Returns:
+        str(v) or default.
+    """
     return str(v) if v is not None else default
 
 
 def _safe_dict(v: YAMLValue) -> YAMLDict:
+    """Return v as dict, or empty dict if not a dict.
+
+    Args:
+        v: Value to coerce.
+
+    Returns:
+        v if dict, else {}.
+    """
     return v if isinstance(v, dict) else {}
 
 
 def _safe_list(v: YAMLValue) -> list[YAMLValue]:
+    """Return v as list, or empty list if not a list.
+
+    Args:
+        v: Value to coerce.
+
+    Returns:
+        list(v) if list, else [].
+    """
     return list(v) if isinstance(v, list) else []
 
 
 def _get_modules_list(defs: YAMLDict) -> list[object]:
-    """Get modules from definitions - can be ObjectList or list."""
+    """Get modules from definitions - can be ObjectList or list.
+
+    Args:
+        defs: Definitions dict with "modules" key.
+
+    Returns:
+        List of module objects.
+    """
     raw = defs.get("modules", [])
     if isinstance(raw, ObjectList):
         return raw.items
@@ -60,7 +94,14 @@ def _get_modules_list(defs: YAMLDict) -> list[object]:
 
 
 def _get_roles_list(defs: YAMLDict) -> list[object]:
-    """Get roles from definitions - can be ObjectList or list."""
+    """Get roles from definitions - can be ObjectList or list.
+
+    Args:
+        defs: Definitions dict with "roles" key.
+
+    Returns:
+        List of role objects.
+    """
     raw = defs.get("roles", [])
     if isinstance(raw, ObjectList):
         return raw.items
@@ -68,7 +109,14 @@ def _get_roles_list(defs: YAMLDict) -> list[object]:
 
 
 def _get_taskfiles_list(defs: YAMLDict) -> list[object]:
-    """Get taskfiles from definitions - can be ObjectList or list."""
+    """Get taskfiles from definitions - can be ObjectList or list.
+
+    Args:
+        defs: Definitions dict with "taskfiles" key.
+
+    Returns:
+        List of taskfile objects.
+    """
     raw = defs.get("taskfiles", [])
     if isinstance(raw, ObjectList):
         return raw.items
@@ -76,7 +124,14 @@ def _get_taskfiles_list(defs: YAMLDict) -> list[object]:
 
 
 def _get_tasks_list(defs: YAMLDict) -> list[object]:
-    """Get tasks from definitions - can be ObjectList or list."""
+    """Get tasks from definitions - can be ObjectList or list.
+
+    Args:
+        defs: Definitions dict with "tasks" key.
+
+    Returns:
+        List of task objects.
+    """
     raw = defs.get("tasks", [])
     if isinstance(raw, ObjectList):
         return raw.items
@@ -84,7 +139,12 @@ def _get_tasks_list(defs: YAMLDict) -> list[object]:
 
 
 def _collect_offspring_objects(search_results: list[YAMLDict], offspring_objects: list[YAMLDict]) -> None:
-    """Append unique offspring objects from search_results[0] to offspring_objects."""
+    """Append unique offspring objects from search_results[0] to offspring_objects.
+
+    Args:
+        search_results: List of search result dicts; uses first element.
+        offspring_objects: List to append unique offspring objects to.
+    """
     if not search_results:
         return
     first = search_results[0]
@@ -111,6 +171,26 @@ action_group_index_name = "action_group_index.json"
 
 @dataclass
 class RAMClient:
+    """Risk Assessment Model client for loading and searching findings, modules, roles, taskfiles.
+
+    Attributes:
+        root_dir: Root directory for RAM data files.
+        findings_json_list_cache: Cached JSON strings of findings.
+        findings_cache: Cached findings by key.
+        findings_search_cache: Cached findings search results.
+        module_search_cache: Cached module search results.
+        role_search_cache: Cached role search results.
+        taskfile_search_cache: Cached taskfile search results.
+        task_search_cache: Cached task search results.
+        builtin_modules_cache: Cached built-in module metadata.
+        module_index: Index mapping module names to RAM paths.
+        role_index: Index mapping role names to RAM paths.
+        taskfile_index: Index mapping taskfile names to RAM paths.
+        action_group_index: Index mapping action group names to modules.
+        max_cache_size: Maximum number of entries in search caches.
+
+    """
+
     root_dir: str = ""
 
     findings_json_list_cache: list[str] = field(default_factory=list)
@@ -135,6 +215,7 @@ class RAMClient:
     max_cache_size: int = 200
 
     def __post_init__(self) -> None:
+        """Load module, role, taskfile, and action group indices from disk if present."""
         module_index_path = os.path.join(self.root_dir, "indices", module_index_name)
         if os.path.exists(module_index_path):
             with open(module_index_path) as file:
@@ -156,6 +237,7 @@ class RAMClient:
                 self.action_group_index = json.load(file)
 
     def clear_old_cache(self) -> None:
+        """Evict oldest entries from all caches when they exceed max_cache_size."""
         size = self.max_cache_size
         self._remove_old_item(self.findings_cache, size)
         self._remove_old_item(self.findings_search_cache, size)
@@ -166,6 +248,12 @@ class RAMClient:
         return
 
     def _remove_old_item(self, data: YAMLDict, size: int) -> None:
+        """Remove oldest entries from data until len <= size.
+
+        Args:
+            data: Dict to evict from (modified in place).
+            size: Target max size.
+        """
         if len(data) <= size:
             return
         num = len(data) - size
@@ -175,6 +263,11 @@ class RAMClient:
         return
 
     def register(self, findings: Findings) -> None:
+        """Save findings to disk and evict old cache entries.
+
+        Args:
+            findings: Findings to register.
+        """
         metadata = findings.metadata
 
         type_str = _safe_str(metadata.get("type", ""))
@@ -188,12 +281,24 @@ class RAMClient:
         self.clear_old_cache()
 
     def register_indices_to_ram(self, findings: Findings, include_test_contents: bool = False) -> None:
+        """Register module, role, taskfile, and action group indices from findings.
+
+        Args:
+            findings: Findings containing definitions to index.
+            include_test_contents: If True, skip test content when indexing.
+        """
         self.register_module_index_to_ram(findings=findings, include_test_contents=include_test_contents)
         self.register_role_index_to_ram(findings=findings, include_test_contents=include_test_contents)
         self.register_taskfile_index_to_ram(findings=findings, include_test_contents=include_test_contents)
         self.register_action_group_index_to_ram(findings=findings)
 
     def register_module_index_to_ram(self, findings: Findings, include_test_contents: bool = False) -> None:
+        """Update module index with modules and plugin routing from findings.
+
+        Args:
+            findings: Findings containing modules and collections.
+            include_test_contents: If True, skip modules in test paths.
+        """
         new_data_found = False
         modules = self.load_module_index()
         definitions = _safe_dict(findings.root_definitions.get("definitions", {}))
@@ -257,6 +362,12 @@ class RAMClient:
         return
 
     def register_role_index_to_ram(self, findings: Findings, include_test_contents: bool = False) -> None:
+        """Update role index with roles from findings.
+
+        Args:
+            findings: Findings containing roles.
+            include_test_contents: If True, skip roles in test paths.
+        """
         new_data_found = False
         roles = self.load_role_index()
         definitions = _safe_dict(findings.root_definitions.get("definitions", {}))
@@ -290,6 +401,12 @@ class RAMClient:
         return
 
     def register_taskfile_index_to_ram(self, findings: Findings, include_test_contents: bool = False) -> None:
+        """Update taskfile index with taskfiles from findings.
+
+        Args:
+            findings: Findings containing taskfiles.
+            include_test_contents: If True, skip taskfiles in test paths.
+        """
         new_data_found = False
         taskfiles = self.load_taskfile_index()
         definitions = _safe_dict(findings.root_definitions.get("definitions", {}))
@@ -323,6 +440,12 @@ class RAMClient:
         return
 
     def register_action_group_index_to_ram(self, findings: Findings, include_test_contents: bool = False) -> None:
+        """Update action group index with action groups from collection meta_runtime.
+
+        Args:
+            findings: Findings containing collections with action_groups.
+            include_test_contents: Unused; kept for API consistency.
+        """
         new_data_found = False
         action_groups = self.load_action_group_index()
         definitions = _safe_dict(findings.root_definitions.get("definitions", {}))
@@ -381,6 +504,17 @@ class RAMClient:
         return
 
     def make_findings_dir_path(self, type: str, name: str, version: str, hash: str) -> str:
+        """Build the directory path where findings for a target are stored.
+
+        Args:
+            type: Load type (collection, role, playbook, etc.).
+            name: Target name.
+            version: Target version.
+            hash: Target content hash.
+
+        Returns:
+            Path like root_dir/{type}s/findings/{name}/{version}/{hash}.
+        """
         type_root = type + "s"
         dir_name = name
         if type in [LoadType.PROJECT, LoadType.PLAYBOOK, LoadType.TASKFILE]:
@@ -393,6 +527,17 @@ class RAMClient:
     def load_metadata_from_findings(
         self, type: str, name: str, version: str, hash: str = "*"
     ) -> tuple[bool, YAMLDict | None, list[YAMLDict] | None]:
+        """Load metadata and dependencies from findings for a target.
+
+        Args:
+            type: Load type (collection, role, etc.).
+            name: Target name.
+            version: Target version.
+            hash: Target hash; "*" to match any.
+
+        Returns:
+            Tuple of (loaded, metadata, dependencies). metadata/dependencies are None if not found.
+        """
         findings = self.search_findings(name, version, type)
         if not findings:
             return False, None, None
@@ -403,6 +548,18 @@ class RAMClient:
     def load_definitions_from_findings(
         self, type: str, name: str, version: str, hash: str, allow_unresolved: bool = False
     ) -> tuple[bool, YAMLDict, YAMLDict]:
+        """Load definitions and mappings from findings for a target.
+
+        Args:
+            type: Load type (collection, role, etc.).
+            name: Target name.
+            version: Target version.
+            hash: Target content hash.
+            allow_unresolved: If True, allow findings with extra_requirements.
+
+        Returns:
+            Tuple of (loaded, definitions dict, mappings dict).
+        """
         findings_dir = self.make_findings_dir_path(type, name, version, hash)
         findings_path = os.path.join(findings_dir, "findings.json")
         loaded = False
@@ -420,6 +577,15 @@ class RAMClient:
         return loaded, definitions, mappings
 
     def search_builtin_module(self, name: str, used_in: str = "") -> list[YAMLDict]:
+        """Search for a builtin Ansible module by name.
+
+        Args:
+            name: Module name (short or FQCN).
+            used_in: Path where module is used (for context).
+
+        Returns:
+            List of match dicts with type, name, object, defined_in, used_in.
+        """
         builtin_modules: dict[str, Module]
         if self.builtin_modules_cache:
             builtin_modules = cast(dict[str, Module], self.builtin_modules_cache)
@@ -452,6 +618,16 @@ class RAMClient:
         return matched_modules
 
     def load_from_indice(self, short_name: str, meta: YAMLDict, used_in: str = "") -> YAMLDict:
+        """Build a module wrapper dict from index metadata.
+
+        Args:
+            short_name: Short module name.
+            meta: Index metadata dict (type, name, fqcn, version, hash).
+            used_in: Path where module is used.
+
+        Returns:
+            Dict with type, name, object (Module), defined_in, used_in.
+        """
         _type = _safe_str(meta.get("type", ""))
         _name = _safe_str(meta.get("name", ""))
         collection = ""
@@ -491,6 +667,19 @@ class RAMClient:
         collection_version: str = "",
         used_in: str = "",
     ) -> list[YAMLDict]:
+        """Search for modules by name in builtin or RAM indices.
+
+        Args:
+            name: Module name (short or FQCN).
+            exact_match: If True, require exact FQCN match.
+            max_match: Max results to return; -1 for unlimited.
+            collection_name: Filter by collection.
+            collection_version: Filter by collection version.
+            used_in: Path where module is used.
+
+        Returns:
+            List of match dicts with type, name, object, defined_in, used_in.
+        """
         if max_match == 0:
             return []
         args_str = json.dumps([name, exact_match, max_match, collection_name, collection_version])
@@ -601,6 +790,17 @@ class RAMClient:
     def search_role(
         self, name: str, exact_match: bool = False, max_match: int = -1, used_in: str = ""
     ) -> list[YAMLDict]:
+        """Search for roles by name in RAM indices.
+
+        Args:
+            name: Role name or FQCN.
+            exact_match: If True, require exact FQCN match.
+            max_match: Max results to return; -1 for unlimited.
+            used_in: Path where role is used.
+
+        Returns:
+            List of match dicts with type, name, object, offspring_objects, defined_in, used_in.
+        """
         if max_match == 0:
             return []
         args_str = json.dumps([name, exact_match, max_match])
@@ -689,6 +889,16 @@ class RAMClient:
         return cast(list[YAMLDict], matched_roles)
 
     def make_taskfile_key_candidates(self, name: str, from_path: str, from_key: str) -> list[str]:
+        """Build candidate taskfile keys for a reference from a given path.
+
+        Args:
+            name: Taskfile reference (path or name).
+            from_path: Path of the file containing the reference.
+            from_key: Key of the parent (role/taskfile).
+
+        Returns:
+            List of candidate keys to search in taskfile index.
+        """
         key_candidates = []
         taskfile_ref = name
         if from_path:
@@ -713,6 +923,19 @@ class RAMClient:
         is_key: bool = False,
         used_in: str = "",
     ) -> list[YAMLDict]:
+        """Search for taskfiles by name or key in RAM indices.
+
+        Args:
+            name: Taskfile reference or key.
+            from_path: Path of file containing reference (required if not is_key).
+            from_key: Parent key for path resolution.
+            max_match: Max results; -1 for unlimited.
+            is_key: If True, name is already a taskfile key.
+            used_in: Path where taskfile is used.
+
+        Returns:
+            List of match dicts with type, name, object, offspring_objects, defined_in, used_in.
+        """
         if max_match == 0:
             return []
 
@@ -823,6 +1046,19 @@ class RAMClient:
         content_info: YAMLDict | None = None,
         used_in: str = "",
     ) -> list[YAMLDict]:
+        """Search for tasks by name or key within a specific content (collection/role).
+
+        Args:
+            name: Task name or key.
+            exact_match: If True, require exact name match.
+            max_match: Max results; -1 for unlimited.
+            is_key: If True, name is a task key.
+            content_info: Dict with type, name, version, hash of the content to search.
+            used_in: Path where task is used.
+
+        Returns:
+            List of match dicts with type, name, object, offspring_objects, defined_in, used_in.
+        """
         if max_match == 0:
             return []
         # search task in RAM must be done for a specific content (collection/role)
@@ -912,6 +1148,15 @@ class RAMClient:
         return cast(list[YAMLDict], matched_tasks)
 
     def search_action_group(self, name: str, max_match: int = -1) -> list[YAMLDict]:
+        """Search for action groups by name in action_group_index.
+
+        Args:
+            name: Action group name (e.g., group/aws).
+            max_match: Max results; -1 for unlimited.
+
+        Returns:
+            List of action group match dicts.
+        """
         if max_match == 0:
             return []
 
@@ -921,6 +1166,14 @@ class RAMClient:
         return cast(list[YAMLDict], found_groups)
 
     def get_object_by_key(self, obj_key: str) -> YAMLDict | None:
+        """Find an object (module, role, taskfile, task) by its key in RAM.
+
+        Args:
+            obj_key: Object key to search for.
+
+        Returns:
+            Dict with object and defined_in, or None if not found.
+        """
         obj_info = get_obj_info_by_key(obj_key)
         obj_type = str(obj_info.get("type", ""))
         parent_name = str(obj_info.get("parent_name", ""))
@@ -956,6 +1209,7 @@ class RAMClient:
         return cast(YAMLDict | None, matched_obj)
 
     def init_findings_json_list_cache(self) -> None:
+        """Populate findings_json_list_cache with all findings.json paths (collections + roles)."""
         search_patterns = os.path.join(self.root_dir, "collections", "findings", "*", "*", "*", "findings.json")
         findings_json_list_coll = safe_glob(search_patterns)
         findings_json_list_coll = sort_by_version(findings_json_list_coll)
@@ -966,6 +1220,11 @@ class RAMClient:
         self.findings_json_list_cache = findings_json_list
 
     def list_all_ram_metadata(self) -> list[dict[str, str]]:
+        """List metadata (type, name, version, hash) for all findings in RAM.
+
+        Returns:
+            List of metadata dicts.
+        """
         if not self.findings_json_list_cache:
             self.init_findings_json_list_cache()
         findings_json_list = self.findings_json_list_cache
@@ -990,6 +1249,19 @@ class RAMClient:
         target_version: str,
         target_type: str | None = None,
     ) -> Findings | None:
+        """Search for findings by name, version, and optional type.
+
+        Args:
+            target_name: Target name to match.
+            target_version: Target version; "*" matches any.
+            target_type: Optional type filter (collection, role, etc.).
+
+        Returns:
+            Most recent matching Findings, or None.
+
+        Raises:
+            ValueError: If target_name is empty.
+        """
         if not self.findings_json_list_cache:
             self.init_findings_json_list_cache()
         args_str = json.dumps([target_name, target_version, target_type])
@@ -1034,6 +1306,14 @@ class RAMClient:
         return findings
 
     def load_findings(self, path: str) -> Findings | None:
+        """Load Findings from a path (file or directory containing findings.json).
+
+        Args:
+            path: Path to findings.json or its directory.
+
+        Returns:
+            Loaded Findings, or None if load fails.
+        """
         basename = os.path.basename(path)
         dir_path = path
         if basename == "findings.json":
@@ -1043,6 +1323,15 @@ class RAMClient:
         return findings
 
     def save_findings(self, findings: Findings, out_dir: str) -> None:
+        """Save findings to findings.json in out_dir.
+
+        Args:
+            findings: Findings to save.
+            out_dir: Output directory.
+
+        Raises:
+            ValueError: If out_dir is empty.
+        """
         if out_dir == "":
             raise ValueError("output dir must be a non-empty value")
 
@@ -1052,6 +1341,12 @@ class RAMClient:
         findings.dump(fpath=os.path.join(out_dir, "findings.json"))
 
     def save_index(self, index_objects: YAMLValue, filename: str) -> None:
+        """Save index to JSON file in indices dir with file locking.
+
+        Args:
+            index_objects: Index data to serialize.
+            filename: Filename (e.g., module_index.json).
+        """
         out_dir = os.path.join(self.root_dir, "indices")
         if not os.path.exists(out_dir):
             os.makedirs(out_dir, exist_ok=True)
@@ -1066,6 +1361,14 @@ class RAMClient:
             remove_lock_file(lock)
 
     def load_index(self, filename: str = "") -> YAMLDict:
+        """Load index from JSON file in indices dir.
+
+        Args:
+            filename: Filename (e.g., module_index.json).
+
+        Returns:
+            Loaded index dict, or empty dict if file does not exist.
+        """
         path = os.path.join(self.root_dir, "indices", filename)
         index_objects = {}
         if os.path.exists(path):
@@ -1074,30 +1377,79 @@ class RAMClient:
         return index_objects
 
     def save_module_index(self, modules: YAMLDict) -> None:
+        """Save module index to module_index.json.
+
+        Args:
+            modules: Module index dict to save.
+        """
         return self.save_index(modules, module_index_name)
 
     def load_module_index(self) -> YAMLDict:
+        """Load module index from module_index.json.
+
+        Returns:
+            Loaded module index dict.
+        """
         return self.load_index(module_index_name)
 
     def save_role_index(self, roles: YAMLDict) -> None:
+        """Save role index to role_index.json.
+
+        Args:
+            roles: Role index dict to save.
+        """
         return self.save_index(roles, role_index_name)
 
     def load_role_index(self) -> YAMLDict:
+        """Load role index from role_index.json.
+
+        Returns:
+            Loaded role index dict.
+        """
         return self.load_index(role_index_name)
 
     def save_taskfile_index(self, taskfiles: YAMLDict) -> None:
+        """Save taskfile index to taskfile_index.json.
+
+        Args:
+            taskfiles: Taskfile index dict to save.
+        """
         return self.save_index(taskfiles, taskfile_index_name)
 
     def load_taskfile_index(self) -> YAMLDict:
+        """Load taskfile index from taskfile_index.json.
+
+        Returns:
+            Loaded taskfile index dict.
+        """
         return self.load_index(taskfile_index_name)
 
     def save_action_group_index(self, action_groups: YAMLDict) -> None:
+        """Save action group index to action_group_index.json.
+
+        Args:
+            action_groups: Action group index dict to save.
+        """
         return self.save_index(action_groups, action_group_index_name)
 
     def load_action_group_index(self) -> YAMLDict:
+        """Load action group index from action_group_index.json.
+
+        Returns:
+            Loaded action group index dict.
+        """
         return self.load_index(action_group_index_name)
 
     def save_error(self, error: str, out_dir: str) -> None:
+        """Save error message to error.log in out_dir.
+
+        Args:
+            error: Error message to save.
+            out_dir: Output directory.
+
+        Raises:
+            ValueError: If out_dir is empty.
+        """
         if out_dir == "":
             raise ValueError("output dir must be a non-empty value")
 
@@ -1108,6 +1460,19 @@ class RAMClient:
             file.write(error)
 
     def diff(self, target_name: str, version1: str, version2: str) -> list[dict[str, str]]:
+        """Diff file data between two versions of a target.
+
+        Args:
+            target_name: Target name (e.g., collection FQCN).
+            version1: First version.
+            version2: Second version.
+
+        Returns:
+            List of diff result dicts (e.g., added, removed, changed files).
+
+        Raises:
+            ValueError: If either version is not found or has no file data.
+        """
         findings1 = self.search_findings(target_name=target_name, target_version=version1)
         if not findings1:
             raise ValueError(f"{target_name}:{version1} is not found in RAM")
@@ -1138,6 +1503,11 @@ class RAMClient:
         return result
 
     def release(self, outfile: str) -> None:
+        """Create a tar.gz archive of indices and findings.
+
+        Args:
+            outfile: Path for the output tar.gz file.
+        """
         indices = os.path.join(self.root_dir, "indices")
         collection_findings = os.path.join(self.root_dir, "collections", "findings")
         role_findings = os.path.join(self.root_dir, "roles", "findings")
@@ -1152,11 +1522,27 @@ class RAMClient:
 
 # newer version comes earlier, so version num should be sorted in a reversed order
 def _path_to_reversed_version_num(path: str) -> float:
+    """Extract version from path and return negated version number for sort order.
+
+    Args:
+        path: Path like .../findings/{name}/{version}/{hash}/...
+
+    Returns:
+        Negated version number (higher versions sort first).
+    """
     version = path.split("/findings/")[-1].split("/")[1]
     return float(-1 * version_to_num(version))
 
 
 def _path_to_collection_name(path: str) -> str:
+    """Extract collection/role name from findings path.
+
+    Args:
+        path: Path like .../findings/{name}/{version}/{hash}/...
+
+    Returns:
+        Name (first path segment after findings/).
+    """
     collection = path.split("/findings/")[-1].split("/")[0]
     return collection
 
@@ -1164,4 +1550,12 @@ def _path_to_collection_name(path: str) -> str:
 # the latest known version comes first
 # `unknown` is the last
 def sort_by_version(path_list: list[str]) -> list[str]:
+    """Sort paths by collection name and version (newest first).
+
+    Args:
+        path_list: List of findings paths.
+
+    Returns:
+        Sorted list with same collection grouped, newest version first.
+    """
     return sorted(path_list, key=lambda x: (_path_to_collection_name(x), _path_to_reversed_version_num(x)))

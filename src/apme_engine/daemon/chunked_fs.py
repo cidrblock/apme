@@ -33,6 +33,15 @@ TEXT_EXTENSIONS = {
 
 
 def _should_include(path: Path, root: Path) -> bool:
+    """Determine if a file should be included in the scan based on size, dirs, extensions.
+
+    Args:
+        path: Absolute path to the file.
+        root: Project root path for relative path checks.
+
+    Returns:
+        True if the file should be included, False otherwise.
+    """
     if not path.is_file():
         return False
     try:
@@ -64,9 +73,22 @@ def build_scan_request(
     ansible_core_version: str | None = None,
     collection_specs: list[str] | None = None,
 ) -> ScanRequest:
-    """
-    Walk target_path (file or directory) and build a ScanRequest with chunked files.
+    """Walk target_path (file or directory) and build a ScanRequest with chunked files.
+
     Paths in File messages are relative to the project root (target_path if dir, else parent).
+
+    Args:
+        target_path: File or directory to scan.
+        scan_id: Optional scan identifier.
+        project_root_name: Name for project root in the request.
+        ansible_core_version: Optional Ansible core version.
+        collection_specs: Optional list of collection specifiers.
+
+    Returns:
+        ScanRequest with files and options populated.
+
+    Raises:
+        FileNotFoundError: If target_path does not exist.
     """
     target = Path(target_path).resolve()
     if not target.exists():

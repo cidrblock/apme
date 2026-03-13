@@ -12,6 +12,14 @@ RULES_REQUIRING_ANSIBLE: tuple[str, ...] = ("P001", "P002", "P003", "P004")
 
 @dataclass
 class NativeRuleTiming:
+    """Per-rule timing for native validator.
+
+    Attributes:
+        rule_id: Rule identifier.
+        elapsed_ms: Elapsed time in milliseconds.
+        violations: Number of violations found.
+    """
+
     rule_id: str = ""
     elapsed_ms: float = 0.0
     violations: int = 0
@@ -19,16 +27,35 @@ class NativeRuleTiming:
 
 @dataclass
 class NativeRunResult:
+    """Result of native validator run.
+
+    Attributes:
+        violations: List of violation dicts.
+        rule_timings: Per-rule timing data.
+    """
+
     violations: list[dict[str, object]] = field(default_factory=list)
     rule_timings: list[NativeRuleTiming] = field(default_factory=list)
 
 
 def _default_rules_dir() -> str:
+    """Return default path to native rules directory.
+
+    Returns:
+        Path to rules directory.
+    """
     return os.path.join(os.path.dirname(__file__), "rules")
 
 
 def _extract_results(data_report: dict[str, object]) -> NativeRunResult:
-    """Convert ARI detect() report to violations + per-rule timing."""
+    """Convert ARI detect() report to violations + per-rule timing.
+
+    Args:
+        data_report: Report from ARI detect().
+
+    Returns:
+        NativeRunResult with violations and rule timings.
+    """
     violations: list[dict[str, object]] = []
     timing_accum: dict[str, dict[str, float | int]] = defaultdict(lambda: {"elapsed_ms": 0.0, "violations": 0})
 
@@ -91,18 +118,38 @@ class NativeValidator:
     """Validator that runs in-tree native (Python) rules on context.scandata (no second parse)."""
 
     def __init__(self, rules_dir: str = "", exclude_rule_ids: tuple[str, ...] | None = None) -> None:
+        """Initialize the native validator.
+
+        Args:
+            rules_dir: Path to rules directory (defaults to package rules).
+            exclude_rule_ids: Rule IDs to exclude (defaults to P001-P004).
+        """
         self._rules_dir = rules_dir or _default_rules_dir()
         self._exclude_rule_ids = (
             list(exclude_rule_ids) if exclude_rule_ids is not None else list(RULES_REQUIRING_ANSIBLE)
         )
 
     def run(self, context: ScanContext) -> list[dict[str, object]]:
-        """Run native rules on context.scandata; return list of violation dicts."""
+        """Run native rules on context.scandata; return list of violation dicts.
+
+        Args:
+            context: Scan context with scandata.
+
+        Returns:
+            List of violation dicts.
+        """
         result = self.run_with_timing(context)
         return result.violations
 
     def run_with_timing(self, context: ScanContext) -> NativeRunResult:
-        """Run native rules and return violations + per-rule timing."""
+        """Run native rules and return violations + per-rule timing.
+
+        Args:
+            context: Scan context with scandata.
+
+        Returns:
+            NativeRunResult with violations and rule timings.
+        """
         scandata = context.scandata
         if not scandata:
             return NativeRunResult()

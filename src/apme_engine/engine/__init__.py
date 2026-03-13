@@ -1,3 +1,5 @@
+"""Engine package: scanner, CLI entrypoints, and models."""
+
 from __future__ import annotations
 
 import sys
@@ -15,6 +17,7 @@ all_actions = ari_actions + ram_actions
 
 
 def main() -> None:
+    """Entry point for the ARI CLI; dispatches to playbook/collection/role/project/taskfile or ram."""
     if len(sys.argv) == 1:
         print("Please specify one of the following operations of ari.")
         print("[operations]")

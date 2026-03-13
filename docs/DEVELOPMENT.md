@@ -10,7 +10,7 @@ pip install -e ".[dev]"
 
 ## Pre-commit hooks (prek)
 
-The project uses [prek](https://github.com/j178/prek) to run [ruff](https://docs.astral.sh/ruff/) lint and format checks as pre-commit hooks.
+The project uses [prek](https://github.com/j178/prek) to run [ruff](https://docs.astral.sh/ruff/) (lint + format + docstring D rules), [pydoclint](https://github.com/jsh9/pydoclint) (Google-style docstrings), and mypy as pre-commit hooks.
 
 ### Install prek
 
@@ -37,10 +37,12 @@ prek run --all-files
 
 | Hook | What it does |
 |------|--------------|
-| `ruff` | Lint check (rules: E, F, W, I, UP, B, SIM) with `--fix` |
+| `ruff` | Lint check (rules: E, F, W, I, UP, B, SIM, D) with `--fix`; D = pydocstyle (Google convention) |
 | `ruff-format` | Code formatting |
+| `mypy` | Strict type check on `src/`, `tests/`, `scripts/` |
+| `pydoclint` | Docstring consistency (Google style, Args/Returns/Raises, no type hints in docstrings) on `src/`, `tests/`, `scripts/` |
 
-Configuration is in `pyproject.toml` under `[tool.ruff]`. Generated gRPC stubs (`src/apme/v1/*_pb2*.py`) are excluded.
+Configuration: `[tool.ruff]` and `[tool.ruff.lint.pydocstyle]` (convention = google) in `pyproject.toml`; `[tool.pydoclint]` for style and options. Generated gRPC stubs (`src/apme/v1/*_pb2*.py`) are excluded from ruff.
 
 ### CI
 

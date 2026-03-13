@@ -8,6 +8,10 @@ from apme_engine.daemon.cache_maintainer_server import serve
 
 
 def main() -> None:
+    """Entry point: run Cache maintainer gRPC server until interrupted.
+
+    Uses APME_CACHE_MAINTAINER_LISTEN for bind address. Exits with code 1 on failure.
+    """
     listen = os.environ.get("APME_CACHE_MAINTAINER_LISTEN", "0.0.0.0:50052")
     try:
         server = serve(listen)

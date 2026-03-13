@@ -1,4 +1,4 @@
-# Colocated tests for L039 (UndefinedVariableRule / R306).
+"""Tests for native rule L039."""
 
 from typing import cast
 
@@ -12,6 +12,7 @@ from apme_engine.validators.native.rules.L039_undefined_variable import Undefine
 
 
 def test_L039_does_not_fire_when_no_variable_use() -> None:
+    """Verify L039 does not fire when no variable use."""
     spec = make_task_spec(module="ansible.builtin.copy")
     task = make_task_call(spec)
     ctx = make_context(task)
@@ -24,6 +25,7 @@ def test_L039_does_not_fire_when_no_variable_use() -> None:
 
 
 def test_L039_fires_when_variable_use_has_unknown() -> None:
+    """Verify L039 fires when variable use has unknown type."""
     spec = make_task_spec(module="ansible.builtin.copy")
     task = make_task_call(spec)
     v = Variable(name="unknown_var", value="", type=VariableType.Unknown)

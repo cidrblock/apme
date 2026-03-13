@@ -1,3 +1,5 @@
+"""Native rule L053: detect role meta with invalid structure."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -16,6 +18,18 @@ from apme_engine.engine.models import (
 
 @dataclass
 class MetaIncorrectRule(Rule):
+    """Rule for role meta to have valid structure (galaxy_info, dependencies).
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "L053"
     description: str = "Role meta should have valid structure (galaxy_info, dependencies)"
     enabled: bool = True
@@ -25,11 +39,27 @@ class MetaIncorrectRule(Rule):
     tags: tuple[str, ...] = (Tag.DEPENDENCY,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a role target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a role.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Role)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check role meta structure and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with message detail, or None.
+        """
         role = ctx.current
         if role is None:
             return None

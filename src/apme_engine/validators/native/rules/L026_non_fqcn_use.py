@@ -1,3 +1,5 @@
+"""Native rule L026: detect tasks using short module names instead of FQCN."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -19,6 +21,18 @@ from apme_engine.engine.models import (
 
 @dataclass
 class NonFQCNUseRule(Rule):
+    """Rule for tasks using short module names instead of FQCN.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "L026"
     description: str = "A task with a short module name is found"
     enabled: bool = True
@@ -28,11 +42,29 @@ class NonFQCNUseRule(Rule):
     tags: tuple[str, ...] = (Tag.DEPENDENCY,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Return True if the current target is a task.
+
+        Args:
+            ctx: Current Ansible run context.
+
+        Returns:
+            True if the current target is a task.
+
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check for short module names and return FQCN detail if found.
+
+        Args:
+            ctx: Current Ansible run context.
+
+        Returns:
+            RuleResult with verdict and FQCN detail if short module found, None otherwise.
+
+        """
         task = ctx.current
         if task is None:
             return None

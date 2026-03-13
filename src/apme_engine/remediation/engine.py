@@ -15,6 +15,16 @@ from apme_engine.remediation.registry import TransformRegistry
 
 @dataclass
 class FilePatch:
+    """A single file patch with diff and applied rule IDs.
+
+    Attributes:
+        path: File path that was patched.
+        original: Original file content before patching.
+        patched: Content after applying transforms.
+        diff: Unified diff string (original -> patched).
+        rule_ids: List of rule IDs applied to this file.
+    """
+
     path: str
     original: str
     patched: str
@@ -24,6 +34,18 @@ class FilePatch:
 
 @dataclass
 class FixReport:
+    """Summary of remediation run with patches and remaining violations.
+
+    Attributes:
+        passes: Number of convergence passes executed.
+        fixed: Count of violations fixed.
+        applied_patches: List of file patches applied.
+        remaining_ai: Violations with no transform but ai_proposable.
+        remaining_manual: Violations requiring manual fix.
+        ai_proposed: Violations proposed by AI (unused in Tier 1).
+        oscillation_detected: True if oscillation was detected and loop bailed.
+    """
+
     passes: int
     fixed: int
     applied_patches: list[FilePatch]
@@ -53,17 +75,35 @@ class RemediationEngine:
         max_passes: int = 5,
         verbose: bool = False,
     ) -> None:
+        """Initialize the remediation engine.
+
+        Args:
+            registry: Transform registry mapping rule IDs to fix functions.
+            scan_fn: Callable that scans file paths and returns violations.
+            max_passes: Maximum convergence passes (default 5).
+            verbose: If True, log progress to stderr.
+        """
         self._registry = registry
         self._scan_fn = scan_fn
         self._max_passes = max_passes
         self._verbose = verbose
 
     def _log(self, msg: str) -> None:
+        """Write message to stderr if verbose mode is enabled.
+
+        Args:
+            msg: Message to log.
+        """
         if self._verbose:
             sys.stderr.write(msg + "\n")
             sys.stderr.flush()
 
     def _write_files(self, file_contents: dict[str, str]) -> None:
+        """Write file contents to disk.
+
+        Args:
+            file_contents: Map of file path to content string.
+        """
         for fp, content in file_contents.items():
             Path(fp).write_text(content, encoding="utf-8")
 
@@ -79,6 +119,13 @@ class RemediationEngine:
         If ``apply`` is False, content is written temporarily for each
         scan pass and originals are restored at the end; the returned
         ``FixReport`` carries diffs for review.
+
+        Args:
+            file_paths: List of file paths to remediate.
+            apply: If True, write fixes in place; if False, restore originals.
+
+        Returns:
+            FixReport with passes, patches, and remaining violations.
         """
         file_contents: dict[str, str] = {}
         for fp in file_paths:

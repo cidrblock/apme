@@ -1,4 +1,4 @@
-# Colocated tests for L032 (ChangedDataDependenceRule / R201).
+"""Tests for native rule L032."""
 
 from typing import cast
 
@@ -12,6 +12,7 @@ from apme_engine.validators.native.rules.L032_changed_data_dependence import Cha
 
 
 def test_L032_does_not_fire_when_no_defined_vars() -> None:
+    """Verify L032 does not fire when no defined vars."""
     spec = make_task_spec(module="ansible.builtin.copy")
     task = make_task_call(spec)
     ctx = make_context(task)
@@ -24,6 +25,7 @@ def test_L032_does_not_fire_when_no_defined_vars() -> None:
 
 
 def test_L032_fires_when_variable_redefined() -> None:
+    """Verify L032 fires when variable is redefined."""
     spec = make_task_spec(module="ansible.builtin.set_fact")
     spec.set_facts = {"my_var": "x"}
     task = make_task_call(spec)

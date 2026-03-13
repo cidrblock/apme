@@ -9,7 +9,15 @@ from apme_engine.remediation.transforms._helpers import find_task_at_line, renam
 
 
 def fix_bare_include(content: str, violation: ViolationDict) -> TransformResult:
-    """Replace ``include:`` with ``ansible.builtin.include_tasks:``."""
+    """Replace ``include:`` with ``ansible.builtin.include_tasks:``.
+
+    Args:
+        content: YAML file content.
+        violation: Violation dict with line.
+
+    Returns:
+        TransformResult with modified content if applied.
+    """
     yaml = FormattedYAML(typ="rt", pure=True, version=(1, 1))
 
     try:

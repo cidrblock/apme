@@ -1,3 +1,5 @@
+"""Risk annotator loader and task analysis for Ansible run contexts."""
+
 from __future__ import annotations
 
 import argparse
@@ -14,6 +16,20 @@ annotator_cache: list[RiskAnnotator] = []
 
 
 def load_annotators(ctx: AnsibleRunContext | None = None) -> list[RiskAnnotator]:
+    """Load and cache risk annotator instances from the annotators directory.
+
+    Discovers RiskAnnotator subclasses in the annotators package, instantiates
+    each with the provided context, and caches the result for reuse.
+
+    Args:
+        ctx: Optional Ansible run context passed to annotator constructors.
+
+    Returns:
+        List of instantiated RiskAnnotator instances.
+
+    Raises:
+        ValueError: If any annotator fails to instantiate.
+    """
     global annotator_cache
 
     if annotator_cache:
@@ -32,6 +48,17 @@ def load_annotators(ctx: AnsibleRunContext | None = None) -> list[RiskAnnotator]
 
 
 def load_taskcalls_in_trees(path: str) -> list[TaskCallsInTree]:
+    """Load TaskCallsInTree objects from a newline-delimited JSON file.
+
+    Args:
+        path: Path to the JSON file.
+
+    Returns:
+        List of TaskCallsInTree instances.
+
+    Raises:
+        ValueError: If file cannot be read or parsed.
+    """
     taskcalls_in_trees: list[TaskCallsInTree] = []
     try:
         with open(path) as file:
@@ -44,6 +71,17 @@ def load_taskcalls_in_trees(path: str) -> list[TaskCallsInTree]:
 
 
 def analyze(contexts: list[AnsibleRunContext]) -> list[AnsibleRunContext]:
+    """Run risk annotators on all tasks in the given run contexts.
+
+    For each task in each context, finds a matching enabled annotator, runs it,
+    and appends its annotations to the task. Modifies contexts in place.
+
+    Args:
+        contexts: List of AnsibleRunContext objects containing tasks.
+
+    Returns:
+        The same contexts with annotations added to tasks.
+    """
     num = len(contexts)
     for i, ctx in enumerate(contexts):
         if not isinstance(ctx, AnsibleRunContext):
@@ -71,6 +109,7 @@ def analyze(contexts: list[AnsibleRunContext]) -> list[AnsibleRunContext]:
 
 
 def main() -> None:
+    """CLI entry point: load taskcalls, run analysis, and write results to JSON."""
     parser = argparse.ArgumentParser(
         prog="analyze.py",
         description="analyze tasks",
