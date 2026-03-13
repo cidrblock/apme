@@ -1,7 +1,6 @@
 import argparse
 import json
 import os
-from typing import Any
 
 from .. import logger
 from ..finder import get_yml_list, list_scan_target, update_the_yaml_target
@@ -141,14 +140,18 @@ class ARICLI:
 
         if is_local and not collection_name and not role_name:
             coll_meta = get_collection_metadata(target_name)
-            if coll_meta:
-                _namespace = coll_meta.get("collection_info", {}).get("namespace", "")
-                _name = coll_meta.get("collection_info", {}).get("name", "")
-                collection_name = f"{_namespace}.{_name}"
+            if coll_meta and isinstance(coll_meta, dict):
+                coll_info = coll_meta.get("collection_info") or {}
+                if isinstance(coll_info, dict):
+                    _namespace = str(coll_info.get("namespace", ""))
+                    _name = str(coll_info.get("name", ""))
+                    collection_name = f"{_namespace}.{_name}"
 
             role_meta = get_role_metadata(target_name)
-            if role_meta:
-                role_name = role_meta.get("galaxy_info", {}).get("role_name", "")
+            if role_meta and isinstance(role_meta, dict):
+                galaxy_info = role_meta.get("galaxy_info") or {}
+                if isinstance(galaxy_info, dict):
+                    role_name = str(galaxy_info.get("role_name", ""))
 
         rules_dir = config.rules_dir
         if args.rules_dir_without_default:
@@ -212,10 +215,10 @@ class ARICLI:
             total = len(targets)
             file_list: dict[str, list[str]] = {"playbook": [], "role": [], "taskfile": []}
             for i, target_info in enumerate(targets):
-                fpath = target_info["filepath"]
-                fpath_from_root = target_info["path_from_root"]
-                scan_type = target_info["scan_type"]
-                count_in_type = len(file_list[scan_type])
+                fpath = str(target_info.get("filepath", ""))
+                fpath_from_root = str(target_info.get("path_from_root", ""))
+                scan_type = str(target_info.get("scan_type", ""))
+                count_in_type = len(file_list.get(scan_type, []))
                 print(f"\r[{i + 1}/{total}] {scan_type} {fpath_from_root}                 ", end="")
                 out_dir = os.path.join(args.out_dir, f"{scan_type}s", str(count_in_type))
                 c.evaluate(
@@ -236,7 +239,8 @@ class ARICLI:
                     objects=args.objects,
                     out_dir=out_dir,
                 )
-                file_list[scan_type].append(fpath_from_root)
+                if scan_type in file_list:
+                    file_list[scan_type].append(fpath_from_root)
             print("")
             for scan_type, list_per_type in file_list.items():
                 index_data = {}
@@ -261,7 +265,7 @@ class ARICLI:
                                 logger.debug("Nodes dir number: %s", i)
                                 nodes = targets[i]["nodes"]
                                 line_number_list: list[str] = []
-                                mutated_yaml_list: list[Any] = []
+                                mutated_yaml_list: list[str] = []
                                 target_file_path = ""
                                 temp_file_path = ""
                                 for j in range(1, len(nodes)):
@@ -336,7 +340,7 @@ class ARICLI:
                 include_test_contents=args.include_tests,
                 load_all_taskfiles=load_all_taskfiles,
                 save_only_rule_result=save_only_rule_result,
-                yaml_label_list=yaml_label_list,
+                yaml_label_list=yaml_label_list,  # type: ignore[arg-type]
                 objects=args.objects,
                 out_dir=args.out_dir,
             )

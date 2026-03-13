@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import cast
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
@@ -6,6 +7,7 @@ from apme_engine.engine.models import (
     RuleResult,
     RunTargetType,
     Severity,
+    YAMLDict,
 )
 from apme_engine.engine.models import (
     RuleTag as Tag,
@@ -32,27 +34,28 @@ class MetaIncorrectRule(Rule):
         if role is None:
             return None
         metadata = getattr(role.spec, "metadata", None) or {}
+        file_info = cast("tuple[str | int, ...] | None", role.file_info())
         if not isinstance(metadata, dict):
             return RuleResult(
                 verdict=True,
-                detail={"message": "metadata must be a dict"},
-                file=role.file_info(),
+                detail=cast(YAMLDict | None, {"message": "metadata must be a dict"}),
+                file=file_info,
                 rule=self.get_metadata(),
             )
         galaxy_info = metadata.get("galaxy_info")
         if galaxy_info is not None and not isinstance(galaxy_info, dict):
             return RuleResult(
                 verdict=True,
-                detail={"message": "galaxy_info must be a dict"},
-                file=role.file_info(),
+                detail=cast(YAMLDict | None, {"message": "galaxy_info must be a dict"}),
+                file=file_info,
                 rule=self.get_metadata(),
             )
         deps = metadata.get("dependencies")
         if deps is not None and not isinstance(deps, list):
             return RuleResult(
                 verdict=True,
-                detail={"message": "dependencies must be a list"},
-                file=role.file_info(),
+                detail=cast(YAMLDict | None, {"message": "dependencies must be a list"}),
+                file=file_info,
                 rule=self.get_metadata(),
             )
-        return RuleResult(verdict=False, file=role.file_info(), rule=self.get_metadata())
+        return RuleResult(verdict=False, file=file_info, rule=self.get_metadata())

@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass
+from typing import cast
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
@@ -7,6 +8,7 @@ from apme_engine.engine.models import (
     RuleResult,
     RunTargetType,
     Severity,
+    YAMLDict,
 )
 from apme_engine.engine.models import (
     RuleTag as Tag,
@@ -39,17 +41,26 @@ class MetaVideoLinksRule(Rule):
         galaxy_info = gi if isinstance(gi, dict) else {}
         video_links = galaxy_info.get("video_links") if galaxy_info else None
         if not video_links:
-            return RuleResult(verdict=False, file=role.file_info(), rule=self.get_metadata())
+            return RuleResult(
+                verdict=False,
+                file=cast("tuple[str | int, ...] | None", role.file_info()),
+                rule=self.get_metadata(),
+            )
         if not isinstance(video_links, list):
             return RuleResult(
                 verdict=True,
                 detail={"message": "video_links must be a list"},
-                file=role.file_info(),
+                file=cast("tuple[str | int, ...] | None", role.file_info()),
                 rule=self.get_metadata(),
             )
         invalid = [u for u in video_links if not (isinstance(u, str) and URL_PATTERN.match(u.strip()))]
         verdict = len(invalid) > 0
-        detail = {}
+        detail: dict[str, str | list[str]] = {}
         if invalid:
-            detail["invalid_links"] = invalid[:10]
-        return RuleResult(verdict=verdict, detail=detail, file=role.file_info(), rule=self.get_metadata())
+            detail["invalid_links"] = [str(u) for u in invalid[:10]]
+        return RuleResult(
+            verdict=verdict,
+            detail=cast(YAMLDict | None, detail),
+            file=cast("tuple[str | int, ...] | None", role.file_info()),
+            rule=self.get_metadata(),
+        )

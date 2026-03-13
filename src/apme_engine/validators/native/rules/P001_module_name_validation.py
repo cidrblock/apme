@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import cast
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
@@ -9,6 +10,7 @@ from apme_engine.engine.models import (
     Severity,
     Task,
     TaskCall,
+    YAMLValue,
 )
 from apme_engine.engine.models import RuleTag as Tag
 
@@ -82,8 +84,8 @@ class ModuleNameValidationRule(Rule):
         if task.module:
             module_examples = task.module.examples
 
-        task.set_annotation("module.suggested_fqcn", suggested_fqcns, rule_id=self.rule_id)
-        task.set_annotation("module.suggested_dependency", suggested_dependency, rule_id=self.rule_id)
+        task.set_annotation("module.suggested_fqcn", cast(YAMLValue, suggested_fqcns), rule_id=self.rule_id)
+        task.set_annotation("module.suggested_dependency", cast(YAMLValue, suggested_dependency), rule_id=self.rule_id)
         task.set_annotation("module.resolved_fqcn", resolved_fqcn, rule_id=self.rule_id)
         task.set_annotation("module.wrong_module_name", wrong_module_name, rule_id=self.rule_id)
         task.set_annotation("module.not_exist", not_exist, rule_id=self.rule_id)

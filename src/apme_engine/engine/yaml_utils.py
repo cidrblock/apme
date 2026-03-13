@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 from io import StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, cast
 
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from ruamel.yaml.composer import ComposerError
@@ -20,6 +20,7 @@ from ruamel.yaml.parser import ParserError
 from ruamel.yaml.scalarint import HexInt, ScalarInt
 
 from . import logger
+from .models import YAMLValue
 
 if TYPE_CHECKING:
     # noinspection PyProtectedMember
@@ -32,15 +33,15 @@ class OctalIntYAML11(ScalarInt):  # type: ignore[misc]
     """OctalInt representation for YAML 1.1."""
 
     # tell mypy that ScalarInt has these attributes
-    _width: Any
-    _underscore: Any
+    _width: object
+    _underscore: object
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> Any:
+    def __new__(cls: type[OctalIntYAML11], *args: object, **kwargs: object) -> OctalIntYAML11:
         """Create a new int with ScalarInt-defined attributes."""
-        return ScalarInt.__new__(cls, *args, **kwargs)
+        return cast("OctalIntYAML11", ScalarInt.__new__(cls, *args, **kwargs))
 
     @staticmethod
-    def represent_octal(representer: RoundTripRepresenter, data: OctalIntYAML11) -> Any:
+    def represent_octal(representer: RoundTripRepresenter, data: OctalIntYAML11) -> object:
         """Return a YAML 1.1 octal representation.
 
         Based on ruamel.yaml.representer.RoundTripRepresenter.represent_octal_int()
@@ -60,7 +61,7 @@ class OctalIntYAML11(ScalarInt):  # type: ignore[misc]
 class CustomConstructor(RoundTripConstructor):  # type: ignore[misc]
     """Custom YAML constructor that preserves Octal formatting in YAML 1.1."""
 
-    def construct_yaml_int(self, node: ScalarNode) -> Any:
+    def construct_yaml_int(self, node: ScalarNode) -> int | HexInt | OctalIntYAML11:
         """Construct int while preserving Octal formatting in YAML 1.1.
 
         ruamel.yaml only preserves the octal format for YAML 1.2.
@@ -77,7 +78,7 @@ class CustomConstructor(RoundTripConstructor):  # type: ignore[misc]
             value_su = self.construct_scalar(node)
             try:
                 v = value_su.rstrip("_")
-                underscore = [len(v) - v.rindex("_") - 1, False, False]  # type: Any
+                underscore: list[int | bool] | None = [len(v) - v.rindex("_") - 1, False, False]
             except ValueError:
                 underscore = None
             except IndexError:
@@ -150,7 +151,7 @@ class FormattedYAML(YAML):  # type: ignore[misc]
         *,
         typ: str | None = None,
         pure: bool = False,
-        output: Any = None,
+        output: object | None = None,
         plug_ins: list[str] | None = None,
         version: tuple[int, int] | None = None,
     ):
@@ -299,7 +300,7 @@ class FormattedYAML(YAML):  # type: ignore[misc]
             self._yaml_version = self._yaml_version_default
         # We do nothing if the object did not have a previous default version defined
 
-    def load(self, stream: Path | StreamTextType) -> Any:
+    def load(self, stream: Path | StreamTextType) -> YAMLValue | None:
         """Load YAML content from a string while avoiding known ruamel.yaml issues."""
         if not isinstance(stream, str):
             msg = f"expected a str but got {type(stream)}"
@@ -326,16 +327,16 @@ class FormattedYAML(YAML):  # type: ignore[misc]
         # Because data can validly also be None for empty documents, we cannot
         # really annotate the return type here, so we need to remember to
         # never save None or scalar data types when reformatting.
-        return data
+        return cast(YAMLValue | None, data)
 
     @staticmethod
-    def _prevent_wrapping_flow_style(data: Any) -> None:
+    def _prevent_wrapping_flow_style(data: YAMLValue) -> None:
         """Walk data and set flow style width hints so short mappings stay on one line."""
         if isinstance(data, (CommentedMap, CommentedSeq)):
             for item in data.values() if isinstance(data, CommentedMap) else data:
                 FormattedYAML._prevent_wrapping_flow_style(item)
 
-    def dumps(self, data: Any) -> str:
+    def dumps(self, data: YAMLValue) -> str:
         """Dump YAML document to string (including its preamble_comment)."""
         preamble_comment: str | None = getattr(data, "preamble_comment", None)
         self._prevent_wrapping_flow_style(data)

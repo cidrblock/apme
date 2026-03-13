@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import cast
 
 from apme_engine.engine.models import (
     AnnotationCondition,
@@ -40,4 +41,8 @@ class FilePermissionRule(Rule):
         ac = AnnotationCondition().risk_type(RiskType.FILE_CHANGE).attr("is_insecure_permissions", True)
         verdict = task.has_annotation_by_condition(ac)
 
-        return RuleResult(verdict=verdict, file=task.file_info(), rule=self.get_metadata())
+        return RuleResult(
+            verdict=verdict,
+            file=cast("tuple[str | int, ...] | None", task.file_info()),
+            rule=self.get_metadata(),
+        )

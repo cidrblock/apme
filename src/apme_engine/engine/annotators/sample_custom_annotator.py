@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import cast
 
 from apme_engine.engine.annotators.module_annotator_base import ModuleAnnotatorResult
 from apme_engine.engine.annotators.risk_annotator_base import RiskAnnotator
-from apme_engine.engine.models import DefaultRiskType, RiskAnnotation, TaskCall, VariableAnnotation
+from apme_engine.engine.models import DefaultRiskType, RiskAnnotation, TaskCall, VariableAnnotation, YAMLDict
 
 
 class SampleCustomAnnotator(RiskAnnotator):
@@ -32,15 +32,15 @@ class SampleCustomAnnotator(RiskAnnotator):
         if resolved_name == "sample.custom.homebrew":
             res = RiskAnnotation(type=self.type, risk_type=DefaultRiskType.PACKAGE_INSTALL)
             res.data = self.homebrew(options)  # type: ignore[attr-defined]
-            resolved_data: list[dict[str, Any]] = []
+            resolved_data: list[dict[str, object]] = []
             for ro in resolved_options:
-                resolved_data.append(self.homebrew(ro))
+                resolved_data.append(cast(dict[str, object], self.homebrew(ro)))
             res.resolved_data = resolved_data  # type: ignore[attr-defined]
             annotations.append(res)
         return ModuleAnnotatorResult(annotations=annotations)
 
-    def homebrew(self, options: Any) -> dict[str, Any]:
-        data: dict[str, Any] = {}
+    def homebrew(self, options: YAMLDict) -> YAMLDict:
+        data: YAMLDict = {}
         if type(options) is not dict:
             return data
         if "name" in options:

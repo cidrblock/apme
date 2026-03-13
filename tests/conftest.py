@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pytest
 
+from apme_engine.engine.models import YAMLDict
+
 
 @pytest.fixture  # type: ignore[untyped-decorator]
 def repo_root() -> Path:
@@ -18,7 +20,7 @@ def opa_bundle_path(repo_root: Path) -> Path:
 
 
 @pytest.fixture  # type: ignore[untyped-decorator]
-def sample_hierarchy_payload() -> dict[str, object]:
+def sample_hierarchy_payload() -> YAMLDict:
     """Minimal valid OPA input (hierarchy payload)."""
     return {
         "scan_id": "test-scan-1",
@@ -57,7 +59,7 @@ def sample_hierarchy_payload() -> dict[str, object]:
 
 
 @pytest.fixture  # type: ignore[untyped-decorator]
-def opa_eval_result_with_violations() -> dict[str, object]:
+def opa_eval_result_with_violations() -> YAMLDict:
     """OPA eval JSON output format with a list of violations."""
     return {
         "result": [
@@ -82,6 +84,6 @@ def opa_eval_result_with_violations() -> dict[str, object]:
 
 
 @pytest.fixture  # type: ignore[untyped-decorator]
-def opa_eval_result_empty() -> dict[str, object]:
+def opa_eval_result_empty() -> YAMLDict:
     """OPA eval JSON with empty violations."""
     return {"result": [{"expressions": [{"value": []}]}]}

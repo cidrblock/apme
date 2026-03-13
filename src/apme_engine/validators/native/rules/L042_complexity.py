@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import cast
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
@@ -6,6 +7,7 @@ from apme_engine.engine.models import (
     RuleResult,
     RunTargetType,
     Severity,
+    YAMLDict,
 )
 from apme_engine.engine.models import (
     RuleTag as Tag,
@@ -42,4 +44,9 @@ class ComplexityRule(Rule):
         if verdict:
             detail["task_count"] = task_count
             detail["threshold"] = threshold
-        return RuleResult(verdict=verdict, detail=detail, file=task.file_info(), rule=self.get_metadata())
+        return RuleResult(
+            verdict=verdict,
+            detail=cast("YAMLDict | None", detail),
+            file=cast("tuple[str | int, ...] | None", task.file_info()),
+            rule=self.get_metadata(),
+        )

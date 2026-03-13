@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import cast
 
 from apme_engine.engine.models import (
     AnnotationCondition,
@@ -8,6 +9,7 @@ from apme_engine.engine.models import (
     RunTargetType,
     Severity,
     TaskCall,
+    YAMLDict,
 )
 from apme_engine.engine.models import DefaultRiskType as RiskType
 from apme_engine.engine.models import RuleTag as Tag
@@ -43,4 +45,9 @@ class FileDeletionRule(Rule):
             if anno is not None and hasattr(anno, "path") and anno.path is not None:
                 detail["path"] = anno.path.value
 
-        return RuleResult(verdict=verdict, detail=detail, file=task.file_info(), rule=self.get_metadata())
+        return RuleResult(
+            verdict=verdict,
+            detail=cast("YAMLDict | None", detail),
+            file=cast("tuple[str | int, ...] | None", task.file_info()),
+            rule=self.get_metadata(),
+        )

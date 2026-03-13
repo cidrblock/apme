@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any
+from typing import cast
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
@@ -7,6 +7,7 @@ from apme_engine.engine.models import (
     RuleResult,
     RunTargetType,
     Severity,
+    YAMLDict,
 )
 from apme_engine.engine.models import (
     RuleTag as Tag,
@@ -34,14 +35,14 @@ class ChangedDataDependenceRule(Rule):
             return None
 
         verdict = False
-        detail: dict[str, Any] = {"variables": []}
+        variables_list: list[dict[str, object]] = []
         defined_vars = getattr(task.spec, "defined_vars", None) or []
         variable_set = getattr(task, "variable_set", {}) or {}
         if defined_vars:
             for v in defined_vars:
                 all_definitions = variable_set.get(v, [])
                 if len(all_definitions) > 1:
-                    detail["variables"].append(
+                    variables_list.append(
                         {
                             "name": v,
                             "defined_by": [d.setter for d in all_definitions],
@@ -49,4 +50,10 @@ class ChangedDataDependenceRule(Rule):
                     )
                     verdict = True
 
-        return RuleResult(verdict=verdict, detail=detail, file=task.file_info(), rule=self.get_metadata())
+        detail: dict[str, object] = {"variables": variables_list}
+        return RuleResult(
+            verdict=verdict,
+            detail=cast("YAMLDict | None", detail),
+            file=cast("tuple[str | int, ...] | None", task.file_info()),
+            rule=self.get_metadata(),
+        )

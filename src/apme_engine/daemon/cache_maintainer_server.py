@@ -3,12 +3,18 @@
 import os
 from concurrent import futures
 from pathlib import Path
-from typing import Any
 
 import grpc
 
-from apme.v1 import cache_pb2_grpc
-from apme.v1.cache_pb2 import CloneOrgResponse, PullGalaxyResponse, PullRequirementsResponse
+from apme.v1 import cache_pb2_grpc, common_pb2
+from apme.v1.cache_pb2 import (
+    CloneOrgRequest,
+    CloneOrgResponse,
+    PullGalaxyRequest,
+    PullGalaxyResponse,
+    PullRequirementsRequest,
+    PullRequirementsResponse,
+)
 from apme.v1.common_pb2 import HealthResponse
 from apme_engine.collection_cache.config import get_cache_root
 from apme_engine.collection_cache.manager import (
@@ -30,7 +36,7 @@ def _cache_root() -> Path:
 class CacheMaintainerServicer(cache_pb2_grpc.CacheMaintainerServicer):
     """Implements CacheMaintainer RPCs using collection_cache manager."""
 
-    def PullGalaxy(self, request: Any, context: Any) -> PullGalaxyResponse:
+    def PullGalaxy(self, request: PullGalaxyRequest, context: grpc.ServicerContext) -> PullGalaxyResponse:
         try:
             path = pull_galaxy_collection(
                 spec=request.spec or "",
@@ -41,7 +47,9 @@ class CacheMaintainerServicer(cache_pb2_grpc.CacheMaintainerServicer):
         except Exception as e:
             return PullGalaxyResponse(success=False, error_message=str(e))
 
-    def PullRequirements(self, request: Any, context: Any) -> PullRequirementsResponse:
+    def PullRequirements(
+        self, request: PullRequirementsRequest, context: grpc.ServicerContext
+    ) -> PullRequirementsResponse:
         try:
             req_path = (request.requirements_path or "").strip()
             if not req_path:
@@ -55,7 +63,7 @@ class CacheMaintainerServicer(cache_pb2_grpc.CacheMaintainerServicer):
         except Exception as e:
             return PullRequirementsResponse(success=False, error_message=str(e))
 
-    def CloneOrg(self, request: Any, context: Any) -> CloneOrgResponse:
+    def CloneOrg(self, request: CloneOrgRequest, context: grpc.ServicerContext) -> CloneOrgResponse:
         try:
             org = (request.org or "").strip()
             if not org:
@@ -88,11 +96,11 @@ class CacheMaintainerServicer(cache_pb2_grpc.CacheMaintainerServicer):
         except Exception as e:
             return CloneOrgResponse(success=False, error_message=str(e))
 
-    def Health(self, request: Any, context: Any) -> HealthResponse:
+    def Health(self, request: common_pb2.HealthRequest, context: grpc.ServicerContext) -> HealthResponse:
         return HealthResponse(status="ok")
 
 
-def serve(listen: str = "0.0.0.0:50052") -> Any:
+def serve(listen: str = "0.0.0.0:50052") -> grpc.Server:
     """Create and return a gRPC server with CacheMaintainer servicer (caller must start it)."""
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
     cache_pb2_grpc.add_CacheMaintainerServicer_to_server(CacheMaintainerServicer(), server)  # type: ignore[no-untyped-call]

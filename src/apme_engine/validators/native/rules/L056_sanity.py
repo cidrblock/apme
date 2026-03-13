@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass
+from typing import cast
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
@@ -7,6 +8,7 @@ from apme_engine.engine.models import (
     RuleResult,
     RunTargetType,
     Severity,
+    YAMLDict,
 )
 from apme_engine.engine.models import (
     RuleTag as Tag,
@@ -44,4 +46,9 @@ class SanityRule(Rule):
         if verdict:
             detail["path"] = defined_in
             detail["message"] = "path matches common ignore pattern; consider excluding from scan"
-        return RuleResult(verdict=verdict, detail=detail, file=target.file_info(), rule=self.get_metadata())
+        return RuleResult(
+            verdict=verdict,
+            detail=cast(YAMLDict | None, detail),
+            file=cast("tuple[str | int, ...] | None", target.file_info()),
+            rule=self.get_metadata(),
+        )

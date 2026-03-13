@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any
+from typing import cast
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
@@ -8,6 +8,7 @@ from apme_engine.engine.models import (
     RunTargetType,
     Severity,
     VariableType,
+    YAMLDict,
 )
 from apme_engine.engine.models import (
     RuleTag as Tag,
@@ -35,14 +36,20 @@ class UndefinedVariableRule(Rule):
             return None
 
         verdict = False
-        detail: dict[str, Any] = {}
+        detail: dict[str, object] = {}
         variable_use = getattr(task, "variable_use", {}) or {}
         for v_name in variable_use:
             v = variable_use[v_name]
             if v and v[-1].type == VariableType.Unknown:
                 verdict = True
-                current: list[str] = list(detail.get("undefined_variables", []))
+                uv = detail.get("undefined_variables", [])
+                current: list[str] = list(uv) if isinstance(uv, list) else []
                 current.append(v_name)
                 detail["undefined_variables"] = current
 
-        return RuleResult(verdict=verdict, detail=detail, file=task.file_info(), rule=self.get_metadata())
+        return RuleResult(
+            verdict=verdict,
+            detail=cast(YAMLDict | None, detail),
+            file=cast("tuple[str | int, ...] | None", task.file_info()),
+            rule=self.get_metadata(),
+        )

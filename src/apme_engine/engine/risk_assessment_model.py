@@ -4,7 +4,7 @@ import json
 import os
 import tarfile
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import cast
 
 import jsonpickle
 
@@ -21,8 +21,11 @@ from .models import (
     ObjectList,
     Role,
     RoleMetadata,
+    Task,
     TaskFile,
     TaskFileMetadata,
+    YAMLDict,
+    YAMLValue,
 )
 from .safe_glob import safe_glob
 from .utils import (
@@ -34,6 +37,71 @@ from .utils import (
     unlock_file,
     version_to_num,
 )
+
+
+def _safe_str(v: YAMLValue, default: str = "") -> str:
+    return str(v) if v is not None else default
+
+
+def _safe_dict(v: YAMLValue) -> YAMLDict:
+    return v if isinstance(v, dict) else {}
+
+
+def _safe_list(v: YAMLValue) -> list[YAMLValue]:
+    return list(v) if isinstance(v, list) else []
+
+
+def _get_modules_list(defs: YAMLDict) -> list[object]:
+    """Get modules from definitions - can be ObjectList or list."""
+    raw = defs.get("modules", [])
+    if isinstance(raw, ObjectList):
+        return raw.items
+    return list(raw) if isinstance(raw, list) else []
+
+
+def _get_roles_list(defs: YAMLDict) -> list[object]:
+    """Get roles from definitions - can be ObjectList or list."""
+    raw = defs.get("roles", [])
+    if isinstance(raw, ObjectList):
+        return raw.items
+    return list(raw) if isinstance(raw, list) else []
+
+
+def _get_taskfiles_list(defs: YAMLDict) -> list[object]:
+    """Get taskfiles from definitions - can be ObjectList or list."""
+    raw = defs.get("taskfiles", [])
+    if isinstance(raw, ObjectList):
+        return raw.items
+    return list(raw) if isinstance(raw, list) else []
+
+
+def _get_tasks_list(defs: YAMLDict) -> list[object]:
+    """Get tasks from definitions - can be ObjectList or list."""
+    raw = defs.get("tasks", [])
+    if isinstance(raw, ObjectList):
+        return raw.items
+    return list(raw) if isinstance(raw, list) else []
+
+
+def _collect_offspring_objects(search_results: list[YAMLDict], offspring_objects: list[YAMLDict]) -> None:
+    """Append unique offspring objects from search_results[0] to offspring_objects."""
+    if not search_results:
+        return
+    first = search_results[0]
+    if not isinstance(first, dict):
+        return
+    offspr_objs = _safe_list(first.get("offspring_objects", []))
+    seen_keys: set[str] = set()
+    for offspr_obj in offspr_objs:
+        if not isinstance(offspr_obj, dict):
+            continue
+        obj_instance = offspr_obj.get("object", None)
+        if obj_instance is None or not hasattr(obj_instance, "key"):
+            continue
+        if obj_instance.key not in seen_keys:
+            offspring_objects.append(offspr_obj)
+            seen_keys.add(obj_instance.key)
+
 
 module_index_name = "module_index.json"
 role_index_name = "role_index.json"
@@ -47,22 +115,22 @@ class RAMClient:
 
     findings_json_list_cache: list[str] = field(default_factory=list)
 
-    findings_cache: dict[str, Any] = field(default_factory=dict)
-    findings_search_cache: dict[str, Any] = field(default_factory=dict)
+    findings_cache: YAMLDict = field(default_factory=dict)
+    findings_search_cache: YAMLDict = field(default_factory=dict)
 
-    module_search_cache: dict[str, Any] = field(default_factory=dict)
-    role_search_cache: dict[str, Any] = field(default_factory=dict)
-    taskfile_search_cache: dict[str, Any] = field(default_factory=dict)
-    task_search_cache: dict[str, Any] = field(default_factory=dict)
+    module_search_cache: YAMLDict = field(default_factory=dict)
+    role_search_cache: YAMLDict = field(default_factory=dict)
+    taskfile_search_cache: YAMLDict = field(default_factory=dict)
+    task_search_cache: YAMLDict = field(default_factory=dict)
 
-    builtin_modules_cache: dict[str, Any] = field(default_factory=dict)
+    builtin_modules_cache: YAMLDict = field(default_factory=dict)
 
-    module_index: dict[str, Any] = field(default_factory=dict)
-    role_index: dict[str, Any] = field(default_factory=dict)
-    taskfile_index: dict[str, Any] = field(default_factory=dict)
+    module_index: YAMLDict = field(default_factory=dict)
+    role_index: YAMLDict = field(default_factory=dict)
+    taskfile_index: YAMLDict = field(default_factory=dict)
 
     # used for grouped module_defaults such as `group/aws`
-    action_group_index: dict[str, Any] = field(default_factory=dict)
+    action_group_index: YAMLDict = field(default_factory=dict)
 
     max_cache_size: int = 200
 
@@ -97,7 +165,7 @@ class RAMClient:
         self._remove_old_item(self.task_search_cache, size)
         return
 
-    def _remove_old_item(self, data: dict[str, Any], size: int) -> None:
+    def _remove_old_item(self, data: YAMLDict, size: int) -> None:
         if len(data) <= size:
             return
         num = len(data) - size
@@ -109,12 +177,12 @@ class RAMClient:
     def register(self, findings: Findings) -> None:
         metadata = findings.metadata
 
-        type = metadata.get("type", "")
-        name = metadata.get("name", "")
-        version = metadata.get("version", "")
-        hash = metadata.get("hash", "")
+        type_str = _safe_str(metadata.get("type", ""))
+        name_str = _safe_str(metadata.get("name", ""))
+        version_str = _safe_str(metadata.get("version", ""))
+        hash_str = _safe_str(metadata.get("hash", ""))
 
-        out_dir = self.make_findings_dir_path(type, name, version, hash)
+        out_dir = self.make_findings_dir_path(type_str, name_str, version_str, hash_str)
         self.save_findings(findings, out_dir)
 
         self.clear_old_cache()
@@ -128,13 +196,16 @@ class RAMClient:
     def register_module_index_to_ram(self, findings: Findings, include_test_contents: bool = False) -> None:
         new_data_found = False
         modules = self.load_module_index()
-        for module in findings.root_definitions.get("definitions", {}).get("modules", []):
+        definitions = _safe_dict(findings.root_definitions.get("definitions", {}))
+        module_list = _safe_list(definitions.get("modules", []))
+        for module in module_list:
             if not isinstance(module, Module):
                 continue
             if include_test_contents and is_test_object(module.defined_in):
                 continue
             m_meta = ModuleMetadata.from_module(module, findings.metadata)
-            current = modules.get(module.name, [])
+            raw_current = modules.get(module.name, [])
+            current = cast(list[YAMLValue], _safe_list(raw_current))
             exists = False
             for m_dict in current:
                 m = None
@@ -151,16 +222,20 @@ class RAMClient:
                 current.append(m_meta)
                 new_data_found = True
             modules.update({module.name: current})
-        for collection in findings.root_definitions.get("definitions", {}).get("collections", []):
+        collection_list = _safe_list(definitions.get("collections", []))
+        for collection in collection_list:
             if not isinstance(collection, Collection):
                 continue
             if collection.meta_runtime and isinstance(collection.meta_runtime, dict):
-                for short_name, routing in collection.meta_runtime.get("plugin_routing", {}).get("modules", {}).items():
-                    redirect_to = routing.get("redirect", "")
+                plugin_routing = _safe_dict(collection.meta_runtime.get("plugin_routing", {}))
+                modules_routing = _safe_dict(plugin_routing.get("modules", {}))
+                for short_name, routing in modules_routing.items():
+                    redirect_to = _safe_str(_safe_dict(routing).get("redirect", ""))
                     if not redirect_to:
                         continue
                     m_meta = ModuleMetadata.from_routing(redirect_to, findings.metadata)
-                    current = modules.get(short_name, [])
+                    raw_current = modules.get(short_name, [])
+                    current = cast(list[YAMLValue], _safe_list(raw_current))
                     exists = False
                     for m_dict in current:
                         m = None
@@ -184,13 +259,16 @@ class RAMClient:
     def register_role_index_to_ram(self, findings: Findings, include_test_contents: bool = False) -> None:
         new_data_found = False
         roles = self.load_role_index()
-        for role in findings.root_definitions.get("definitions", {}).get("roles", []):
+        definitions = _safe_dict(findings.root_definitions.get("definitions", {}))
+        role_list = _safe_list(definitions.get("roles", []))
+        for role in role_list:
             if not isinstance(role, Role):
                 continue
             if include_test_contents and is_test_object(role.defined_in):
                 continue
             r_meta = RoleMetadata.from_role(role, findings.metadata)
-            current = roles.get(r_meta.fqcn, [])
+            raw_current = roles.get(r_meta.fqcn, [])
+            current = cast(list[YAMLValue], _safe_list(raw_current))
             exists = False
             for r_dict in current:
                 r = None
@@ -214,13 +292,16 @@ class RAMClient:
     def register_taskfile_index_to_ram(self, findings: Findings, include_test_contents: bool = False) -> None:
         new_data_found = False
         taskfiles = self.load_taskfile_index()
-        for taskfile in findings.root_definitions.get("definitions", {}).get("taskfiles", []):
+        definitions = _safe_dict(findings.root_definitions.get("definitions", {}))
+        taskfile_list = _safe_list(definitions.get("taskfiles", []))
+        for taskfile in taskfile_list:
             if not isinstance(taskfile, TaskFile):
                 continue
             if include_test_contents and is_test_object(taskfile.defined_in):
                 continue
             tf_meta = TaskFileMetadata.from_taskfile(taskfile, findings.metadata)
-            current = taskfiles.get(tf_meta.key, [])
+            raw_current = taskfiles.get(tf_meta.key, [])
+            current = cast(list[YAMLValue], _safe_list(raw_current))
             exists = False
             for tf_dict in current:
                 tf = None
@@ -244,17 +325,21 @@ class RAMClient:
     def register_action_group_index_to_ram(self, findings: Findings, include_test_contents: bool = False) -> None:
         new_data_found = False
         action_groups = self.load_action_group_index()
+        definitions = _safe_dict(findings.root_definitions.get("definitions", {}))
+        collection_list = _safe_list(definitions.get("collections", []))
 
-        for collection in findings.root_definitions.get("definitions", {}).get("collections", []):
+        for collection in collection_list:
             if not isinstance(collection, Collection):
                 continue
             if collection.meta_runtime and isinstance(collection.meta_runtime, dict):
-                for group_name, group_modules in collection.meta_runtime.get("action_groups", {}).items():
+                action_groups_data = _safe_dict(collection.meta_runtime.get("action_groups", {}))
+                for group_name, group_modules in action_groups_data.items():
                     short_group_name = f"group/{group_name}"
                     fq_group_name = f"group/{collection.name}.{group_name}"
 
                     agm1 = ActionGroupMetadata.from_action_group(short_group_name, group_modules, findings.metadata)
-                    current1 = action_groups.get(short_group_name, [])
+                    raw_current1 = action_groups.get(short_group_name, [])
+                    current1 = cast(list[YAMLValue], _safe_list(raw_current1))
                     exists = False
                     for ag_dict in current1:
                         ag = None
@@ -273,7 +358,8 @@ class RAMClient:
                     action_groups.update({short_group_name: current1})
 
                     agm2 = ActionGroupMetadata.from_action_group(fq_group_name, group_modules, findings.metadata)
-                    current2 = action_groups.get(fq_group_name, [])
+                    raw_current2 = action_groups.get(fq_group_name, [])
+                    current2 = cast(list[YAMLValue], _safe_list(raw_current2))
                     exists = False
                     for ag_dict in current2:
                         ag = None
@@ -306,17 +392,17 @@ class RAMClient:
 
     def load_metadata_from_findings(
         self, type: str, name: str, version: str, hash: str = "*"
-    ) -> tuple[bool, dict[str, Any] | None, list[Any] | None]:
+    ) -> tuple[bool, YAMLDict | None, list[YAMLDict] | None]:
         findings = self.search_findings(name, version, type)
         if not findings:
             return False, None, None
         if not isinstance(findings, Findings):
             return False, None, None
-        return True, findings.metadata, findings.dependencies
+        return True, findings.metadata, cast(list[YAMLDict], findings.dependencies)
 
     def load_definitions_from_findings(
         self, type: str, name: str, version: str, hash: str, allow_unresolved: bool = False
-    ) -> tuple[bool, dict[str, Any], dict[str, Any]]:
+    ) -> tuple[bool, YAMLDict, YAMLDict]:
         findings_dir = self.make_findings_dir_path(type, name, version, hash)
         findings_path = os.path.join(findings_dir, "findings.json")
         loaded = False
@@ -327,55 +413,58 @@ class RAMClient:
             # use RAM only if no unresolved dependency
             # (RAM should be fully-resolved specs as much as possible)
             if findings and (len(findings.extra_requirements) == 0 or allow_unresolved):
-                definitions = findings.root_definitions.get("definitions", {})
-                mappings = findings.root_definitions.get("mappings", {})
+                definitions = _safe_dict(findings.root_definitions.get("definitions", {}))
+                mappings = _safe_dict(findings.root_definitions.get("mappings", {}))
                 if mappings:
                     loaded = True
         return loaded, definitions, mappings
 
-    def search_builtin_module(self, name: str, used_in: str = "") -> list[dict[str, Any]]:
-        builtin_modules = {}
+    def search_builtin_module(self, name: str, used_in: str = "") -> list[YAMLDict]:
+        builtin_modules: dict[str, Module]
         if self.builtin_modules_cache:
-            builtin_modules = self.builtin_modules_cache
+            builtin_modules = cast(dict[str, Module], self.builtin_modules_cache)
         else:
             builtin_modules = load_builtin_modules()
-            self.builtin_modules_cache = builtin_modules
+            self.builtin_modules_cache = cast(YAMLDict, builtin_modules)
         short_name = name
         if "ansible.builtin." in name:
             short_name = name.split(".")[-1]
-        matched_modules = []
+        matched_modules: list[YAMLDict] = []
         if short_name in builtin_modules:
             m = builtin_modules[short_name]
             matched_modules.append(
-                {
-                    "type": "module",
-                    "name": m.fqcn,
-                    "object": m,
-                    "defined_in": {
-                        "type": "collection",
-                        "name": m.collection,
-                        "version": "unknown",
-                        "hash": "unknown",
+                cast(
+                    YAMLDict,
+                    {
+                        "type": "module",
+                        "name": m.fqcn,
+                        "object": m,
+                        "defined_in": {
+                            "type": "collection",
+                            "name": m.collection,
+                            "version": "unknown",
+                            "hash": "unknown",
+                        },
+                        "used_in": used_in,
                     },
-                    "used_in": used_in,
-                }
+                )
             )
         return matched_modules
 
-    def load_from_indice(self, short_name: str, meta: dict[str, Any], used_in: str = "") -> dict[str, Any]:
-        _type = meta.get("type", "")
-        _name = meta.get("name", "")
+    def load_from_indice(self, short_name: str, meta: YAMLDict, used_in: str = "") -> YAMLDict:
+        _type = _safe_str(meta.get("type", ""))
+        _name = _safe_str(meta.get("name", ""))
         collection = ""
         role = ""
         if _type == "collection":
             collection = _name
         elif _type == "role":
             role = _name
-        _version = meta.get("version", "")
-        _hash = meta.get("hash", "")
+        _version = _safe_str(meta.get("version", ""))
+        _hash = _safe_str(meta.get("hash", ""))
         m = Module(
             name=short_name,
-            fqcn=meta.get("fqcn", ""),
+            fqcn=_safe_str(meta.get("fqcn", "")),
             collection=collection,
             role=role,
         )
@@ -391,7 +480,7 @@ class RAMClient:
             },
             "used_in": used_in,
         }
-        return m_wrapper
+        return cast(YAMLDict, m_wrapper)
 
     def search_module(
         self,
@@ -401,17 +490,17 @@ class RAMClient:
         collection_name: str = "",
         collection_version: str = "",
         used_in: str = "",
-    ) -> list[dict[str, Any]]:
+    ) -> list[YAMLDict]:
         if max_match == 0:
             return []
         args_str = json.dumps([name, exact_match, max_match, collection_name, collection_version])
         if args_str in self.module_search_cache:
-            return cast(list[dict[str, Any]], self.module_search_cache[args_str])
+            return cast(list[YAMLDict], self.module_search_cache[args_str])
 
         # check if the module is builtin
         matched_builtin_modules = self.search_builtin_module(name, used_in)
         if len(matched_builtin_modules) > 0:
-            self.module_search_cache[args_str] = matched_builtin_modules
+            self.module_search_cache[args_str] = cast(YAMLValue, matched_builtin_modules)
             return matched_builtin_modules
 
         short_name = name
@@ -420,37 +509,43 @@ class RAMClient:
             short_name = name.split(".")[-1]
 
         from_indices = False
-        found_index = None
-        if short_name in self.module_index and self.module_index[short_name]:
+        found_index: YAMLDict | None = None
+        index_list = _safe_list(self.module_index.get(short_name, []))
+        if short_name in self.module_index and index_list:
             from_indices = True
             # look for the module index with FQCN (only when `name` is FQCN)
             if "." in name:
-                for possible_index in self.module_index[short_name]:
+                for possible_index in index_list:
+                    if not isinstance(possible_index, dict):
+                        continue
                     # use the first one normally
-                    if not found_index and possible_index["fqcn"] == name:
+                    if not found_index and _safe_str(possible_index.get("fqcn", "")) == name:
                         found_index = possible_index
 
                     # but if a non-deprecated one is found, use it
-                    if possible_index["fqcn"] == name and not possible_index["deprecated"]:
+                    if _safe_str(possible_index.get("fqcn", "")) == name and not possible_index.get("deprecated"):
                         found_index = possible_index
 
             # if any candidates don't match with FQCN, use the first index
             if not found_index:
-                non_deprecated_cands = [idx for idx in self.module_index[short_name] if not idx["deprecated"]]
-                found_index = non_deprecated_cands[0] if non_deprecated_cands else self.module_index[short_name][0]
+                non_deprecated_cands = [
+                    idx for idx in index_list if isinstance(idx, dict) and not idx.get("deprecated")
+                ]
+                first_idx = non_deprecated_cands[0] if non_deprecated_cands else index_list[0]
+                found_index = first_idx if isinstance(first_idx, dict) else None
 
         modules_json_list: list[str] = []
         if from_indices and found_index is not None:
-            _type = found_index.get("type", "")
-            _name = found_index.get("name", "")
-            _version = found_index.get("version", "")
-            _hash = found_index.get("hash", "")
+            _type = _safe_str(found_index.get("type", ""))
+            _name = _safe_str(found_index.get("name", ""))
+            _version = _safe_str(found_index.get("version", ""))
+            _hash = _safe_str(found_index.get("hash", ""))
             findings_path = os.path.join(
                 self.root_dir, _type + "s", "findings", _name, _version, _hash, "findings.json"
             )
             if os.path.exists(findings_path):
                 modules_json_list.append(findings_path)
-            search_name = found_index.get("fqcn", "")
+            search_name = _safe_str(found_index.get("fqcn", ""))
         else:
             # Do not search a module from all findings
             # when it is not found in the module index.
@@ -459,17 +554,18 @@ class RAMClient:
         matched_modules = []
         search_end = False
         for findings_json in modules_json_list:
-            modules = ObjectList()
             if findings_json in self.findings_cache:
-                modules = self.findings_cache[findings_json].get("modules", [])
+                definitions = _safe_dict(self.findings_cache[findings_json])
             else:
                 f = cast(Findings | None, Findings.load(fpath=findings_json))
                 if not isinstance(f, Findings):
                     continue
-                definitions = f.root_definitions.get("definitions", {})
-                modules = definitions.get("modules", [])
+                definitions = _safe_dict(f.root_definitions.get("definitions", {}))
                 self.findings_cache[findings_json] = definitions
+            modules = _get_modules_list(definitions)
             for m in modules:
+                if not isinstance(m, Module):
+                    continue
                 matched = False
                 if exact_match:
                     if m.fqcn == search_name:
@@ -499,30 +595,32 @@ class RAMClient:
                     break
             if search_end:
                 break
-        self.module_search_cache[args_str] = matched_modules
-        return matched_modules
+        self.module_search_cache[args_str] = cast(list[YAMLValue], matched_modules)
+        return cast(list[YAMLDict], matched_modules)
 
     def search_role(
         self, name: str, exact_match: bool = False, max_match: int = -1, used_in: str = ""
-    ) -> list[dict[str, Any]]:
+    ) -> list[YAMLDict]:
         if max_match == 0:
             return []
         args_str = json.dumps([name, exact_match, max_match])
         if args_str in self.role_search_cache:
-            return cast(list[dict[str, Any]], self.role_search_cache[args_str])
+            return cast(list[YAMLDict], self.role_search_cache[args_str])
 
         from_indices = False
-        found_index = None
-        if name in self.role_index and self.role_index[name]:
+        found_index: YAMLDict | None = None
+        role_index_list = _safe_list(self.role_index.get(name, []))
+        if name in self.role_index and role_index_list:
             from_indices = True
-            found_index = self.role_index[name][0]
+            first = role_index_list[0]
+            found_index = first if isinstance(first, dict) else None
 
         roles_json_list: list[str] = []
         if from_indices and found_index is not None:
-            _type = found_index.get("type", "")
-            _name = found_index.get("name", "")
-            _version = found_index.get("version", "")
-            _hash = found_index.get("hash", "")
+            _type = _safe_str(found_index.get("type", ""))
+            _name = _safe_str(found_index.get("name", ""))
+            _version = _safe_str(found_index.get("version", ""))
+            _hash = _safe_str(found_index.get("hash", ""))
             findings_path = os.path.join(
                 self.root_dir, _type + "s", "findings", _name, _version, _hash, "findings.json"
             )
@@ -537,17 +635,18 @@ class RAMClient:
         matched_roles = []
         search_end = False
         for findings_json in roles_json_list:
-            roles = ObjectList()
             if findings_json in self.findings_cache:
-                roles = self.findings_cache[findings_json].get("roles", [])
+                definitions = _safe_dict(self.findings_cache[findings_json])
             else:
                 f = cast(Findings | None, Findings.load(fpath=findings_json))
                 if not isinstance(f, Findings):
                     continue
-                definitions = f.root_definitions.get("definitions", {})
-                roles = definitions.get("roles", [])
+                definitions = _safe_dict(f.root_definitions.get("definitions", {}))
                 self.findings_cache[findings_json] = definitions
+            roles = _get_roles_list(definitions)
             for r in roles:
+                if not isinstance(r, Role):
+                    continue
                 matched = False
                 if exact_match:
                     if r.fqcn == name:
@@ -559,21 +658,13 @@ class RAMClient:
                     parts = findings_json.split("/")
                     offspring_objects = []
                     for taskfile_key in r.taskfiles:
-                        _tmp_offspring_objects = self.search_taskfile(taskfile_key, is_key=True)
+                        tf_key = taskfile_key.key if isinstance(taskfile_key, TaskFile) else str(taskfile_key)
+                        _tmp_offspring_objects = self.search_taskfile(tf_key, is_key=True)
                         if len(_tmp_offspring_objects) > 0:
                             tf = _tmp_offspring_objects[0]
                             if tf:
                                 offspring_objects.append(tf)
-                            offspr_objs = _tmp_offspring_objects[0].get("offspring_objects", [])
-                            if offspr_objs:
-                                _offspring_obj_set = set()
-                                for offspr_obj in offspr_objs:
-                                    _offspr_obj_instance = offspr_obj.get("object", None)
-                                    if _offspr_obj_instance is None:
-                                        continue
-                                    if _offspr_obj_instance.key not in _offspring_obj_set:
-                                        offspring_objects.append(offspr_obj)
-                                        _offspring_obj_set.add(_offspr_obj_instance.key)
+                            _collect_offspring_objects(_tmp_offspring_objects, offspring_objects)
                     matched_roles.append(
                         {
                             "type": "role",
@@ -594,8 +685,8 @@ class RAMClient:
                     break
             if search_end:
                 break
-        self.role_search_cache[args_str] = matched_roles
-        return matched_roles
+        self.role_search_cache[args_str] = cast(list[YAMLValue], matched_roles)
+        return cast(list[YAMLDict], matched_roles)
 
     def make_taskfile_key_candidates(self, name: str, from_path: str, from_key: str) -> list[str]:
         key_candidates = []
@@ -621,7 +712,7 @@ class RAMClient:
         max_match: int = -1,
         is_key: bool = False,
         used_in: str = "",
-    ) -> list[dict[str, Any]]:
+    ) -> list[YAMLDict]:
         if max_match == 0:
             return []
 
@@ -631,28 +722,30 @@ class RAMClient:
 
         args_str = json.dumps([name, from_path, from_key, max_match, is_key])
         if args_str in self.taskfile_search_cache:
-            return cast(list[dict[str, Any]], self.taskfile_search_cache[args_str])
+            return cast(list[YAMLDict], self.taskfile_search_cache[args_str])
 
         from_indices = False
-        found_index: dict[str, Any] | None = None
+        found_index: YAMLDict | None = None
         found_key = ""
         taskfile_key_candidates: list[str] = (
             [name] if is_key else self.make_taskfile_key_candidates(name, from_path, from_key)
         )
         for taskfile_key in taskfile_key_candidates:
-            if taskfile_key in self.taskfile_index and self.taskfile_index[taskfile_key]:
+            tf_index_list = _safe_list(self.taskfile_index.get(taskfile_key, []))
+            if taskfile_key in self.taskfile_index and tf_index_list:
                 from_indices = True
-                found_index = self.taskfile_index[taskfile_key][0]
+                first = tf_index_list[0]
+                found_index = first if isinstance(first, dict) else None
                 found_key = taskfile_key
                 break
 
         taskfiles_json_list: list[str] = []
-        content_info: dict[str, Any] | None = None
+        content_info: YAMLDict | None = None
         if from_indices and found_index is not None:
-            _type = found_index.get("type", "")
-            _name = found_index.get("name", "")
-            _version = found_index.get("version", "")
-            _hash = found_index.get("hash", "")
+            _type = _safe_str(found_index.get("type", ""))
+            _name = _safe_str(found_index.get("name", ""))
+            _version = _safe_str(found_index.get("version", ""))
+            _hash = _safe_str(found_index.get("hash", ""))
             content_info = found_index
             findings_path = os.path.join(
                 self.root_dir, _type + "s", "findings", _name, _version, _hash, "findings.json"
@@ -668,17 +761,18 @@ class RAMClient:
         matched_taskfiles = []
         search_end = False
         for findings_json in taskfiles_json_list:
-            taskfiles = ObjectList()
             if findings_json in self.findings_cache:
-                taskfiles = self.findings_cache[findings_json].get("taskfiles", [])
+                definitions = _safe_dict(self.findings_cache[findings_json])
             else:
                 f = cast(Findings | None, Findings.load(fpath=findings_json))
                 if not isinstance(f, Findings):
                     continue
-                definitions = f.root_definitions.get("definitions", {})
-                taskfiles = definitions.get("taskfiles", [])
+                definitions = _safe_dict(f.root_definitions.get("definitions", {}))
                 self.findings_cache[findings_json] = definitions
+            taskfiles = _get_taskfiles_list(definitions)
             for tf in taskfiles:
+                if not isinstance(tf, TaskFile):
+                    continue
                 matched = False
                 if tf.key == found_key:
                     matched = True
@@ -688,23 +782,15 @@ class RAMClient:
                     parts = findings_json.split("/")
                     offspring_objects = []
                     for task_key in tf.tasks:
+                        t_key = task_key.key if isinstance(task_key, Task) else str(task_key)
                         _tmp_offspring_objects = self.search_task(
-                            task_key, is_key=True, content_info=content_info, used_in=used_in
+                            t_key, is_key=True, content_info=content_info, used_in=used_in
                         )
                         if len(_tmp_offspring_objects) > 0:
                             t = _tmp_offspring_objects[0]
                             if t:
                                 offspring_objects.append(t)
-                            offspr_objs = _tmp_offspring_objects[0].get("offspring_objects", [])
-                            if offspr_objs:
-                                _offspring_obj_set = set()
-                                for offspr_obj in offspr_objs:
-                                    _offspr_obj_instance = offspr_obj.get("object", None)
-                                    if _offspr_obj_instance is None:
-                                        continue
-                                    if _offspr_obj_instance.key not in _offspring_obj_set:
-                                        offspring_objects.append(offspr_obj)
-                                        _offspring_obj_set.add(_offspr_obj_instance.key)
+                            _collect_offspring_objects(_tmp_offspring_objects, offspring_objects)
 
                     matched_taskfiles.append(
                         {
@@ -726,7 +812,7 @@ class RAMClient:
                     break
             if search_end:
                 break
-        return matched_taskfiles
+        return cast(list[YAMLDict], matched_taskfiles)
 
     def search_task(
         self,
@@ -734,9 +820,9 @@ class RAMClient:
         exact_match: bool = False,
         max_match: int = -1,
         is_key: bool = False,
-        content_info: dict[str, Any] | None = None,
+        content_info: YAMLDict | None = None,
         used_in: str = "",
-    ) -> list[dict[str, Any]]:
+    ) -> list[YAMLDict]:
         if max_match == 0:
             return []
         # search task in RAM must be done for a specific content (collection/role)
@@ -746,15 +832,15 @@ class RAMClient:
 
         args_str = json.dumps([name, exact_match, max_match, is_key, content_info])
         if args_str in self.task_search_cache:
-            return cast(list[dict[str, Any]], self.task_search_cache[args_str])
+            return cast(list[YAMLDict], self.task_search_cache[args_str])
 
         tasks_json_list: list[str] = []
-        _type = content_info.get("type", "") if content_info else ""
+        _type = _safe_str(content_info.get("type", ""))
         if _type:
             _type = _type + "s"
-        _name = content_info.get("name", "") if content_info else ""
-        _version = content_info.get("version", "") if content_info else ""
-        _hash = content_info.get("hash", "") if content_info else ""
+        _name = _safe_str(content_info.get("name", ""))
+        _version = _safe_str(content_info.get("version", ""))
+        _hash = _safe_str(content_info.get("hash", ""))
         findings_path = os.path.join(self.root_dir, _type, "findings", _name, _version, _hash, "findings.json")
         if os.path.exists(findings_path):
             tasks_json_list.append(findings_path)
@@ -762,17 +848,18 @@ class RAMClient:
         matched_tasks = []
         search_end = False
         for findings_json in tasks_json_list:
-            tasks = ObjectList()
             if findings_json in self.findings_cache:
-                tasks = self.findings_cache[findings_json].get("tasks", [])
+                definitions = _safe_dict(self.findings_cache[findings_json])
             else:
                 f = cast(Findings | None, Findings.load(fpath=findings_json))
                 if not isinstance(f, Findings):
                     continue
-                definitions = f.root_definitions.get("definitions", {})
-                tasks = definitions.get("tasks", [])
+                definitions = _safe_dict(f.root_definitions.get("definitions", {}))
                 self.findings_cache[findings_json] = definitions
+            tasks = _get_tasks_list(definitions)
             for t in tasks:
+                if not isinstance(t, Task):
+                    continue
                 matched = False
                 if is_key:
                     if t.key == name:
@@ -782,7 +869,7 @@ class RAMClient:
                         if t.name == name:
                             matched = True
                     else:
-                        if t.name == name or name in t.name:
+                        if t.name == name or (t.name and name in t.name):
                             matched = True
                 if matched:
                     parts = findings_json.split("/")
@@ -799,16 +886,7 @@ class RAMClient:
                         child = _tmp_offspring_objects[0]
                         if child:
                             offspring_objects.append(child)
-                        offspr_objs = _tmp_offspring_objects[0].get("offspring_objects", [])
-                        if offspr_objs:
-                            _offspring_obj_set = set()
-                            for offspr_obj in offspr_objs:
-                                _offspr_obj_instance = offspr_obj.get("object", None)
-                                if _offspr_obj_instance is None:
-                                    continue
-                                if _offspr_obj_instance.key not in _offspring_obj_set:
-                                    offspring_objects.append(offspr_obj)
-                                    _offspring_obj_set.add(_offspr_obj_instance.key)
+                        _collect_offspring_objects(_tmp_offspring_objects, offspring_objects)
 
                     matched_tasks.append(
                         {
@@ -830,25 +908,22 @@ class RAMClient:
                     break
             if search_end:
                 break
-        self.task_search_cache[args_str] = matched_tasks
-        return matched_tasks
+        self.task_search_cache[args_str] = cast(list[YAMLValue], matched_tasks)
+        return cast(list[YAMLDict], matched_tasks)
 
-    def search_action_group(self, name: str, max_match: int = -1) -> list[Any]:
+    def search_action_group(self, name: str, max_match: int = -1) -> list[YAMLDict]:
         if max_match == 0:
             return []
 
-        found_groups = []
-        if name in self.action_group_index and self.action_group_index[name]:
-            found_groups = self.action_group_index[name]
-
+        found_groups = _safe_list(self.action_group_index.get(name, []))
         if max_match > 0 and len(found_groups) > max_match:
             found_groups = found_groups[:max_match]
-        return found_groups
+        return cast(list[YAMLDict], found_groups)
 
-    def get_object_by_key(self, obj_key: str) -> dict[str, Any] | None:
+    def get_object_by_key(self, obj_key: str) -> YAMLDict | None:
         obj_info = get_obj_info_by_key(obj_key)
-        obj_type = obj_info.get("type", "")
-        parent_name = obj_info.get("parent_name", "")
+        obj_type = str(obj_info.get("type", ""))
+        parent_name = str(obj_info.get("parent_name", ""))
         type_str = obj_type + "s"
 
         search_patterns = os.path.join(
@@ -878,7 +953,7 @@ class RAMClient:
                         "hash": parts[-3],
                     },
                 }
-        return matched_obj
+        return cast(YAMLDict | None, matched_obj)
 
     def init_findings_json_list_cache(self) -> None:
         search_patterns = os.path.join(self.root_dir, "collections", "findings", "*", "*", "*", "findings.json")
@@ -951,11 +1026,11 @@ class RAMClient:
                 if tmp_mtime > mtime:
                     latest_findings_path = fpath
                     mtime = tmp_mtime
-        findings = None
+        findings: Findings | None = None
         if os.path.exists(latest_findings_path):
             findings = self.load_findings(latest_findings_path)
 
-        self.findings_search_cache[args_str] = findings
+        self.findings_search_cache[args_str] = cast(YAMLValue, findings)
         return findings
 
     def load_findings(self, path: str) -> Findings | None:
@@ -976,7 +1051,7 @@ class RAMClient:
 
         findings.dump(fpath=os.path.join(out_dir, "findings.json"))
 
-    def save_index(self, index_objects: Any, filename: str) -> None:
+    def save_index(self, index_objects: YAMLValue, filename: str) -> None:
         out_dir = os.path.join(self.root_dir, "indices")
         if not os.path.exists(out_dir):
             os.makedirs(out_dir, exist_ok=True)
@@ -990,7 +1065,7 @@ class RAMClient:
             unlock_file(lock)
             remove_lock_file(lock)
 
-    def load_index(self, filename: str = "") -> dict[str, Any]:
+    def load_index(self, filename: str = "") -> YAMLDict:
         path = os.path.join(self.root_dir, "indices", filename)
         index_objects = {}
         if os.path.exists(path):
@@ -998,28 +1073,28 @@ class RAMClient:
                 index_objects = json.load(file)
         return index_objects
 
-    def save_module_index(self, modules: dict[str, Any]) -> None:
+    def save_module_index(self, modules: YAMLDict) -> None:
         return self.save_index(modules, module_index_name)
 
-    def load_module_index(self) -> dict[str, Any]:
+    def load_module_index(self) -> YAMLDict:
         return self.load_index(module_index_name)
 
-    def save_role_index(self, roles: dict[str, Any]) -> None:
+    def save_role_index(self, roles: YAMLDict) -> None:
         return self.save_index(roles, role_index_name)
 
-    def load_role_index(self) -> dict[str, Any]:
+    def load_role_index(self) -> YAMLDict:
         return self.load_index(role_index_name)
 
-    def save_taskfile_index(self, taskfiles: dict[str, Any]) -> None:
+    def save_taskfile_index(self, taskfiles: YAMLDict) -> None:
         return self.save_index(taskfiles, taskfile_index_name)
 
-    def load_taskfile_index(self) -> dict[str, Any]:
+    def load_taskfile_index(self) -> YAMLDict:
         return self.load_index(taskfile_index_name)
 
-    def save_action_group_index(self, action_groups: dict[str, Any]) -> None:
+    def save_action_group_index(self, action_groups: YAMLDict) -> None:
         return self.save_index(action_groups, action_group_index_name)
 
-    def load_action_group_index(self) -> dict[str, Any]:
+    def load_action_group_index(self) -> YAMLDict:
         return self.load_index(action_group_index_name)
 
     def save_error(self, error: str, out_dir: str) -> None:
@@ -1041,14 +1116,16 @@ class RAMClient:
         if not findings2:
             raise ValueError(f"{target_name}:{version2} is not found in RAM")
 
-        coll_defs1 = findings1.root_definitions.get("definitions", {}).get("collections", [])
-        coll_defs2 = findings2.root_definitions.get("definitions", {}).get("collections", [])
+        definitions1 = _safe_dict(findings1.root_definitions.get("definitions", {}))
+        definitions2 = _safe_dict(findings2.root_definitions.get("definitions", {}))
+        coll_defs1 = _safe_list(definitions1.get("collections", []))
+        coll_defs2 = _safe_list(definitions2.get("collections", []))
 
         files1 = None
         files2 = None
-        if len(coll_defs1) > 0:
+        if len(coll_defs1) > 0 and isinstance(coll_defs1[0], Collection):
             files1 = coll_defs1[0].files
-        if len(coll_defs2) > 0:
+        if len(coll_defs2) > 0 and isinstance(coll_defs2[0], Collection):
             files2 = coll_defs2[0].files
 
         if not files1:

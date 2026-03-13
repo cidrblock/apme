@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
-from typing import Any, cast
+from typing import cast
 
 import apme_engine.engine.logger as logger
 from apme_engine.engine.annotators.risk_annotator_base import RiskAnnotator
 
-from .models import AnsibleRunContext, TaskCall, TaskCallsInTree
+from .models import AnsibleRunContext, RunTarget, TaskCall, TaskCallsInTree
 from .utils import load_classes_in_dir
 
-annotator_cache: list[Any] = []
+annotator_cache: list[RiskAnnotator] = []
 
 
 def load_annotators(ctx: AnsibleRunContext | None = None) -> list[RiskAnnotator]:
@@ -20,10 +20,10 @@ def load_annotators(ctx: AnsibleRunContext | None = None) -> list[RiskAnnotator]
         return annotator_cache
 
     _annotator_classes, _ = load_classes_in_dir("annotators", RiskAnnotator, __file__)
-    _annotators = []
+    _annotators: list[RiskAnnotator] = []
     for a in _annotator_classes:
         try:
-            _annotator = a(context=ctx)
+            _annotator = cast(type[RiskAnnotator], a)(context=ctx)
             _annotators.append(_annotator)
         except Exception as err:
             raise ValueError(f"failed to load an annotator: {a}") from err
@@ -91,14 +91,18 @@ def main() -> None:
     taskcalls_in_trees = load_taskcalls_in_trees(args.input)
     # Convert to AnsibleRunContext for analyze, then back to TaskCallsInTree for output
     contexts = [
-        AnsibleRunContext.from_targets(targets=tct.taskcalls, root_key=tct.root_key) for tct in taskcalls_in_trees
+        AnsibleRunContext.from_targets(
+            targets=cast(list[RunTarget], tct.taskcalls),
+            root_key=tct.root_key,
+        )
+        for tct in taskcalls_in_trees
     ]
     analyzed_contexts = analyze(contexts)
     # Update taskcalls_in_trees with annotated tasks from analyzed_contexts
     for tct, ctx in zip(taskcalls_in_trees, analyzed_contexts, strict=False):
         for i, tc in enumerate(ctx.taskcalls):
             if i < len(tct.taskcalls):
-                tct.taskcalls[i] = tc
+                tct.taskcalls[i] = cast(TaskCall, tc)
 
     if args.output != "":
         lines = [json.dumps(single_tree_data) for single_tree_data in taskcalls_in_trees]

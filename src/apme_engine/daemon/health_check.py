@@ -3,11 +3,15 @@
 import os
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Protocol
 
 import grpc
 
 from apme.v1 import cache_pb2_grpc, common_pb2, primary_pb2_grpc, validate_pb2_grpc
+
+
+class _HealthStub(Protocol):
+    def Health(self, req: object, timeout: float = 5.0) -> object: ...
 
 
 def _derive_addresses(primary_addr: str) -> dict[str, str]:
@@ -25,7 +29,9 @@ def _derive_addresses(primary_addr: str) -> dict[str, str]:
     }
 
 
-def check_grpc_health(addr: str, stub_factory: Callable[..., Any], timeout: float = 5.0) -> dict[str, Any]:
+def check_grpc_health(
+    addr: str, stub_factory: Callable[[grpc.Channel], _HealthStub], timeout: float = 5.0
+) -> dict[str, str | float | bool | None]:
     """Call Health RPC on a gRPC service; return {ok, status, error, latency_ms}."""
     start = time.perf_counter()
     try:
@@ -36,8 +42,8 @@ def check_grpc_health(addr: str, stub_factory: Callable[..., Any], timeout: floa
         channel.close()
         elapsed_ms = (time.perf_counter() - start) * 1000
         return {
-            "ok": (resp.status or "").strip().lower() == "ok",
-            "status": resp.status or "ok",
+            "ok": (getattr(resp, "status", "") or "").strip().lower() == "ok",
+            "status": getattr(resp, "status", None) or "ok",
             "error": None,
             "latency_ms": round(elapsed_ms, 2),
         }
@@ -68,7 +74,7 @@ def run_health_checks(
     timeout: float = 5.0,
     # Legacy parameter kept for backward compatibility (ignored)
     opa_url: str | None = None,
-) -> dict[str, dict[str, Any]]:
+) -> dict[str, dict[str, str | float | bool | None]]:
     """Run all health checks. Addresses not provided are derived from primary_addr."""
     defaults = _derive_addresses(primary_addr)
     native_addr = native_addr or os.environ.get("NATIVE_GRPC_ADDRESS") or defaults["native"]

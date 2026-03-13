@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import Any
 
 _logger: logging.Logger | None = None
 
@@ -31,26 +30,26 @@ def set_log_level(level_str: str = "info") -> None:
         _logger.setLevel(level)
 
 
-def exception(*args: object, **kwargs: Any) -> None:
+def exception(*args: object, **kwargs: object) -> None:
     if _logger is not None:
-        _logger.exception(*args, **kwargs)
+        _logger.exception(*args, **kwargs)  # type: ignore[arg-type]
 
 
-def error(*args: object, **kwargs: Any) -> None:
+def error(*args: object, **kwargs: object) -> None:
     if _logger is not None:
-        _logger.error(*args, **kwargs)
+        _logger.error(*args, **kwargs)  # type: ignore[arg-type]
 
 
-def warning(*args: object, **kwargs: Any) -> None:
+def warning(*args: object, **kwargs: object) -> None:
     if _logger is not None:
-        _logger.warning(*args, **kwargs)
+        _logger.warning(*args, **kwargs)  # type: ignore[arg-type]
 
 
-def info(*args: object, **kwargs: Any) -> None:
+def info(*args: object, **kwargs: object) -> None:
     if _logger is not None:
-        _logger.info(*args, **kwargs)
+        _logger.info(*args, **kwargs)  # type: ignore[arg-type]
 
 
-def debug(*args: object, **kwargs: Any) -> None:
+def debug(*args: object, **kwargs: object) -> None:
     if _logger is not None:
-        _logger.debug(*args, **kwargs)
+        _logger.debug(*args, **kwargs)  # type: ignore[arg-type]

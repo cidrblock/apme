@@ -1,17 +1,22 @@
 """Stub for generated primary_pb2 (proto types)."""
 
-from typing import Any
+from apme.v1.common_pb2 import ValidatorDiagnostics
 
 class ScanOptions:
     ansible_core_version: str
     collection_specs: list[str]
-    def __init__(self, **kwargs: Any) -> None: ...
+    def __init__(self, **kwargs: object) -> None: ...
 
 class ScanRequest:
-    def __init__(self, **kwargs: Any) -> None: ...
+    scan_id: str
+    project_root: str
+    files: list[object]
+    options: ScanOptions | None
+    def __init__(self, **kwargs: object) -> None: ...
+    def HasField(self, field_name: str) -> bool: ...
 
 class ScanResponse:
-    def __init__(self, **kwargs: Any) -> None: ...
+    def __init__(self, **kwargs: object) -> None: ...
 
 class ScanDiagnostics:
     engine_parse_ms: float
@@ -20,16 +25,17 @@ class ScanDiagnostics:
     files_scanned: int
     trees_built: int
     total_violations: int
-    validators: list[Any]
+    validators: list[ValidatorDiagnostics]
     fan_out_ms: float
     total_ms: float
-    def __init__(self, **kwargs: Any) -> None: ...
+    def __init__(self, **kwargs: object) -> None: ...
 
 class FormatRequest:
-    def __init__(self, **kwargs: Any) -> None: ...
+    files: list[object]
+    def __init__(self, **kwargs: object) -> None: ...
 
 class FormatResponse:
-    def __init__(self, **kwargs: Any) -> None: ...
+    def __init__(self, **kwargs: object) -> None: ...
 
 class FileDiff:
-    def __init__(self, **kwargs: Any) -> None: ...
+    def __init__(self, **kwargs: object) -> None: ...

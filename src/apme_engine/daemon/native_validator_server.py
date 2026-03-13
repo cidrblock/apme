@@ -5,26 +5,27 @@ import json
 import os
 import sys
 import time
-from typing import Any
+from typing import cast
 
 import grpc
 import grpc.aio
 import jsonpickle
 
-from apme.v1 import validate_pb2, validate_pb2_grpc
+from apme.v1 import common_pb2, validate_pb2, validate_pb2_grpc
 from apme.v1.common_pb2 import HealthResponse, RuleTiming, ValidatorDiagnostics
 from apme.v1.validate_pb2 import ValidateResponse
 from apme_engine.daemon.violation_convert import violation_dict_to_proto
+from apme_engine.engine.models import ViolationDict, YAMLDict
 from apme_engine.validators.base import ScanContext
 from apme_engine.validators.native import NativeRunResult, NativeValidator
 
 _MAX_CONCURRENT_RPCS = int(os.environ.get("APME_NATIVE_MAX_RPCS", "32"))
 
 
-def _run_native(hierarchy_payload: dict[str, Any], scandata: Any) -> NativeRunResult:
+def _run_native(hierarchy_payload: dict[str, object], scandata: object) -> NativeRunResult:
     """Blocking function: create ScanContext and run NativeValidator with timing."""
     scan_context = ScanContext(
-        hierarchy_payload=hierarchy_payload,
+        hierarchy_payload=cast(YAMLDict, hierarchy_payload),
         scandata=scandata,
     )
     validator = NativeValidator()
@@ -34,11 +35,15 @@ def _run_native(hierarchy_payload: dict[str, Any], scandata: Any) -> NativeRunRe
 class NativeValidatorServicer(validate_pb2_grpc.ValidatorServicer):
     """Async gRPC adapter: deserializes scandata, runs native rules in executor."""
 
-    async def Validate(self, request: Any, context: Any) -> ValidateResponse:
+    async def Validate(
+        self,
+        request: validate_pb2.ValidateRequest,
+        context: grpc.aio.ServicerContext,  # type: ignore[type-arg]
+    ) -> ValidateResponse:
         req_id = request.request_id or ""
         t0 = time.monotonic()
         try:
-            hierarchy_payload: dict[str, Any] = {}
+            hierarchy_payload: dict[str, object] = {}
             if request.hierarchy_payload:
                 try:
                     hierarchy_payload = json.loads(request.hierarchy_payload)
@@ -81,7 +86,7 @@ class NativeValidatorServicer(validate_pb2_grpc.ValidatorServicer):
             )
 
             return validate_pb2.ValidateResponse(
-                violations=[violation_dict_to_proto(v) for v in result.violations],
+                violations=[violation_dict_to_proto(cast(ViolationDict, v)) for v in result.violations],
                 request_id=req_id,
                 diagnostics=diag,
             )
@@ -93,11 +98,15 @@ class NativeValidatorServicer(validate_pb2_grpc.ValidatorServicer):
             sys.stderr.flush()
             return ValidateResponse(violations=[], request_id=req_id)
 
-    async def Health(self, request: Any, context: Any) -> HealthResponse:
+    async def Health(
+        self,
+        request: common_pb2.HealthRequest,
+        context: grpc.aio.ServicerContext,  # type: ignore[type-arg]
+    ) -> HealthResponse:
         return HealthResponse(status="ok")
 
 
-async def serve(listen: str = "0.0.0.0:50055") -> Any:
+async def serve(listen: str = "0.0.0.0:50055") -> grpc.aio.Server:
     """Create, bind, and start async gRPC server with Native servicer."""
     server = grpc.aio.server(maximum_concurrent_rpcs=_MAX_CONCURRENT_RPCS)
     validate_pb2_grpc.add_ValidatorServicer_to_server(NativeValidatorServicer(), server)  # type: ignore[no-untyped-call]

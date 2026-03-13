@@ -9,7 +9,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 GITLEAKS_BIN = "gitleaks"
 
@@ -75,7 +75,7 @@ def run_gitleaks(scan_dir: str | Path, *, timeout: int = 120) -> list[dict[str, 
         raw = Path(report_path).read_text()
         if not raw.strip():
             return []
-        findings = cast(list[dict[str, Any]], json.loads(raw))
+        findings = cast(list[dict[str, object]], json.loads(raw))
     except (json.JSONDecodeError, OSError) as exc:
         sys.stderr.write(f"gitleaks report parse error: {exc}\n")
         sys.stderr.flush()
@@ -87,7 +87,9 @@ def run_gitleaks(scan_dir: str | Path, *, timeout: int = 120) -> list[dict[str, 
     return _convert_findings(findings, scan_dir)
 
 
-def _convert_findings(findings: list[dict[str, Any]], scan_dir: Path) -> list[dict[str, str | int | list[int] | None]]:
+def _convert_findings(
+    findings: list[dict[str, object]], scan_dir: Path
+) -> list[dict[str, str | int | list[int] | None]]:
     """Convert gitleaks JSON findings to APME violation dicts, filtering false positives."""
     violations: list[dict[str, str | int | list[int] | None]] = []
     for f in findings:
@@ -111,8 +113,8 @@ def _convert_findings(findings: list[dict[str, Any]], scan_dir: Path) -> list[di
 
         line_val = f.get("StartLine", 0)
         end_val = f.get("EndLine", line_val)
-        line = int(line_val) if line_val is not None else 0
-        end_line = int(end_val) if end_val is not None else line
+        line = int(line_val) if isinstance(line_val, (int, float, str)) else 0
+        end_line = int(end_val) if isinstance(end_val, (int, float, str)) else line
         gitleaks_rule = str(f.get("RuleID", "unknown"))
         desc = str(f.get("Description", f"Secret detected: {gitleaks_rule}"))
 

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import cast
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
@@ -7,6 +8,7 @@ from apme_engine.engine.models import (
     RunTargetType,
     Severity,
     TaskCall,
+    YAMLDict,
 )
 from apme_engine.engine.models import RuleTag as Tag
 
@@ -38,4 +40,9 @@ class ListAllUsedVariablesRule(Rule):
             detail["metadata"] = ctx.info
             detail["variables"] = list(task.variable_use.keys())
 
-        return RuleResult(verdict=verdict, detail=detail, file=task.file_info(), rule=self.get_metadata())
+        return RuleResult(
+            verdict=verdict,
+            detail=cast("YAMLDict | None", detail),
+            file=cast("tuple[str | int, ...] | None", task.file_info()),
+            rule=self.get_metadata(),
+        )

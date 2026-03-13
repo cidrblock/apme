@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import cast
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
@@ -9,6 +10,7 @@ from apme_engine.engine.models import (
     Severity,
     TaskCall,
     VariableType,
+    YAMLValue,
 )
 from apme_engine.engine.models import RuleTag as Tag
 
@@ -54,14 +56,15 @@ class VariableValidationRule(Rule):
         undefined_variables: list[str] = []
         unknown_name_vars: list[str] = []
         unnecessary_loop: list[dict[str, str]] = []
-        task_arg_keys = []
-        if task.args.type == ArgumentsType.DICT:
-            task_arg_keys = list(task.args.raw.keys())
+        task_arg_keys_list: list[str] = []
+        raw_args = task.args.raw
+        if task.args.type == ArgumentsType.DICT and isinstance(raw_args, dict):
+            task_arg_keys_list = list(raw_args.keys())
 
-        registered_vars = []
+        registered_vars: list[str] = []
         for v_name in task.variable_set:
             v = task.variable_set[v_name]
-            if v and v[-1].type == VariableType.RegisteredVars:
+            if isinstance(v, list) and v and getattr(v[-1], "type", None) == VariableType.RegisteredVars:
                 registered_vars.append(v_name)
 
         for v_name in task.variable_use:
@@ -71,19 +74,19 @@ class VariableValidationRule(Rule):
                 continue
 
             v = task.variable_use[v_name]
-            if v and v[-1].type == VariableType.Unknown:
+            if isinstance(v, list) and v and getattr(v[-1], "type", None) == VariableType.Unknown:
                 if v_name not in undefined_variables:
                     undefined_variables.append(v_name)
                 existing_names = [x["name"] for x in unnecessary_loop if isinstance(x, dict) and "name" in x]
-                if v_name not in unknown_name_vars and v_name not in task_arg_keys:
+                if v_name not in unknown_name_vars and v_name not in task_arg_keys_list:
                     unknown_name_vars.append(v_name)
                 if v_name not in existing_names:
                     v_str = "{{ " + v_name + " }}"
                     if not is_loop_var(v_str, task):
                         unnecessary_loop.append({"name": v_name, "suggested": v_name.replace("item.", "")})
 
-        task.set_annotation("variable.undefined_vars", undefined_variables, rule_id=self.rule_id)
-        task.set_annotation("variable.unknown_name_vars", unknown_name_vars, rule_id=self.rule_id)
-        task.set_annotation("variable.unnecessary_loop_vars", unnecessary_loop, rule_id=self.rule_id)
+        task.set_annotation("variable.undefined_vars", cast(YAMLValue, undefined_variables), rule_id=self.rule_id)
+        task.set_annotation("variable.unknown_name_vars", cast(YAMLValue, unknown_name_vars), rule_id=self.rule_id)
+        task.set_annotation("variable.unnecessary_loop_vars", cast(YAMLValue, unnecessary_loop), rule_id=self.rule_id)
 
         return None

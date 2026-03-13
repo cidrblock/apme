@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import os
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 from . import logger
 from .model_loader import (
@@ -17,9 +17,11 @@ from .model_loader import (
 )
 from .models import (
     Collection,
+    File,
     Load,
     LoadType,
     Module,
+    Object,
     Play,
     Playbook,
     PlaybookFormatError,
@@ -28,6 +30,7 @@ from .models import (
     Task,
     TaskFile,
     TaskFormatError,
+    YAMLValue,
 )
 from .utils import (
     get_module_specs_by_ansible_doc,
@@ -54,7 +57,7 @@ class Parser:
         load_data: Load | None = None,
         load_json_path: str = "",
         collection_name_of_project: str = "",
-    ) -> Any:
+    ) -> tuple[dict[str, list[Object]], Load] | None:
         ld: Load = Load()
         if load_data is not None:
             ld = load_data
@@ -65,7 +68,7 @@ class Parser:
 
         collection_name = ""
         role_name = ""
-        obj: Any = None
+        obj: Collection | Role | Repository | Playbook | TaskFile | None = None
         if ld.target_type == LoadType.COLLECTION:
             collection_name = ld.target_name
             try:
@@ -86,7 +89,7 @@ class Parser:
                     raise
             except Exception:
                 logger.exception(f"failed to load the collection {collection_name}")
-                return
+                return None
         elif ld.target_type == LoadType.ROLE:
             role_name = ld.target_name
             try:
@@ -110,7 +113,7 @@ class Parser:
                     raise
             except Exception:
                 logger.exception(f"failed to load the role {role_name}")
-                return
+                return None
         elif ld.target_type == LoadType.PROJECT:
             repo_name = ld.target_name
             try:
@@ -121,7 +124,7 @@ class Parser:
                     skip_playbook_format_error=self.skip_playbook_format_error,
                     skip_task_format_error=self.skip_task_format_error,
                     include_test_contents=ld.include_test_contents,
-                    yaml_label_list=cast("list[tuple[str, str, Any]] | None", ld.yaml_label_list),
+                    yaml_label_list=cast("list[tuple[str, str, YAMLValue]] | None", ld.yaml_label_list),
                 )
             except PlaybookFormatError:
                 if not self.skip_playbook_format_error:
@@ -131,8 +134,8 @@ class Parser:
                     raise
             except Exception:
                 logger.exception(f"failed to load the project {repo_name}")
-                return
-            if obj.my_collection_name:
+                return None
+            if isinstance(obj, Repository) and obj.my_collection_name:
                 collection_name = obj.my_collection_name
             if collection_name == "" and collection_name_of_project != "":
                 collection_name = collection_name_of_project
@@ -177,7 +180,7 @@ class Parser:
                     raise
             except Exception:
                 logger.exception(f"failed to load the playbook {playbook_name}")
-                return
+                return None
         elif ld.target_type == LoadType.TASKFILE:
             basedir = ""
             target_taskfile_path = ""
@@ -215,11 +218,11 @@ class Parser:
                     raise
             except Exception:
                 logger.exception(f"failed to load the taskfile {taskfile_name}")
-                return
+                return None
         else:
             raise ValueError(f"unsupported type: {ld.target_type}")
 
-        mappings: dict[str, list[Any]] = {
+        mappings: dict[str, list[list[str]]] = {
             "roles": [],
             "taskfiles": [],
             "modules": [],
@@ -263,11 +266,11 @@ class Parser:
                 continue
             mappings["roles"].append([role_path, r.key])
 
-        taskfiles = [tf for r in roles for tf in r.taskfiles if r.fqcn != ld.target_name]
+        taskfiles = [tf for r in roles for tf in r.taskfiles if r.fqcn != ld.target_name and isinstance(tf, TaskFile)]
         loaded_absolute_path_list = []
         for r in roles:
             for tf in r.taskfiles:
-                if r.fqcn != ld.target_name:
+                if r.fqcn != ld.target_name and isinstance(tf, TaskFile):
                     loaded_absolute_path_list.append(os.path.join(basedir, r.defined_in, tf.defined_in))
         for taskfile_path in ld.taskfiles:
             try:
@@ -288,10 +291,11 @@ class Parser:
             except Exception as e:
                 logger.debug(f"failed to load a taskfile: {e}")
                 continue
-            taskfiles.append(tf)
-            mappings["taskfiles"].append([taskfile_path, tf.key])
+            if tf is not None and isinstance(tf, TaskFile):
+                taskfiles.append(tf)
+                mappings["taskfiles"].append([taskfile_path, tf.key])
 
-        playbooks = [p for r in roles for p in r.playbooks]
+        playbooks = [p for r in roles for p in r.playbooks if isinstance(p, Playbook)]
         for playbook_path in ld.playbooks:
             p = None
             try:
@@ -317,19 +321,19 @@ class Parser:
                 playbooks.append(p)
                 mappings["playbooks"].append([playbook_path, p.key])
 
-        plays = [play for p in playbooks for play in p.plays]
+        plays = [play for p in playbooks for play in p.plays if isinstance(play, Play)]
 
-        tasks = [t for tf in taskfiles for t in tf.tasks]
-        pre_tasks_in_plays = [t for p in plays for t in p.pre_tasks]
-        tasks_in_plays = [t for p in plays for t in p.tasks]
-        post_tasks_in_plays = [t for p in plays for t in p.post_tasks]
-        handlers_in_plays = [t for p in plays for t in p.handlers]
+        tasks = [t for tf in taskfiles for t in (tf.tasks if isinstance(tf, TaskFile) else [])]
+        pre_tasks_in_plays = [t for p in plays for t in (p.pre_tasks if isinstance(p, Play) else [])]
+        tasks_in_plays = [t for p in plays for t in (p.tasks if isinstance(p, Play) else [])]
+        post_tasks_in_plays = [t for p in plays for t in (p.post_tasks if isinstance(p, Play) else [])]
+        handlers_in_plays = [t for p in plays for t in (p.handlers if isinstance(p, Play) else [])]
         tasks.extend(pre_tasks_in_plays)
         tasks.extend(tasks_in_plays)
         tasks.extend(post_tasks_in_plays)
         tasks.extend(handlers_in_plays)
 
-        modules = [m for r in roles for m in r.modules]
+        modules = [m for r in roles for m in r.modules if isinstance(m, Module)]
         module_specs = {}
         if self.use_ansible_doc:
             module_specs = get_module_specs_by_ansible_doc(
@@ -362,10 +366,13 @@ class Parser:
             try:
                 label = "others"
                 if ld.yaml_label_list:
-                    yaml_labels = cast(list[tuple[str, str, Any]], ld.yaml_label_list)
-                    for _fpath, _label, _ in yaml_labels:
-                        if _fpath == file_path:
-                            label = _label
+                    yaml_labels = ld.yaml_label_list
+                    for item in yaml_labels:
+                        if isinstance(item, (list, tuple)) and len(item) >= 2:
+                            _fpath, _label = str(item[0]), str(item[1])
+                            if _fpath == file_path:
+                                label = _label
+                                break
                 f = load_file(
                     path=file_path,
                     basedir=basedir,
@@ -406,26 +413,26 @@ class Parser:
         if len(projects) > 0 and obj is not None:
             projects = [obj.children_to_key()]
         if len(roles) > 0:
-            roles = [r.children_to_key() for r in roles]
+            roles = [r.children_to_key() for r in roles if isinstance(r, Role)]
         if len(taskfiles) > 0:
-            taskfiles = [tf.children_to_key() for tf in taskfiles]
+            taskfiles = [tf.children_to_key() for tf in taskfiles if isinstance(tf, TaskFile)]
         if len(modules) > 0:
-            modules = [m.children_to_key() for m in modules]
+            modules = [m.children_to_key() for m in modules if isinstance(m, Module)]
         if len(playbooks) > 0:
-            playbooks = [p.children_to_key() for p in playbooks]
+            playbooks = [p.children_to_key() for p in playbooks if isinstance(p, Playbook)]
         if len(plays) > 0:
-            plays = [p.children_to_key() for p in plays]
+            plays = [p.children_to_key() for p in plays if isinstance(p, Play)]
         if len(tasks) > 0:
-            tasks = [t.children_to_key() for t in tasks]
+            tasks = [t.children_to_key() for t in tasks if isinstance(t, Task)]
         if len(files) > 0:
-            files = [f.children_to_key() for f in files]
+            files = [f.children_to_key() for f in files if isinstance(f, File)]
 
-        # save mappings
-        ld.roles = mappings["roles"]
-        ld.taskfiles = mappings["taskfiles"]
-        ld.playbooks = mappings["playbooks"]
-        ld.modules = mappings["modules"]
-        ld.files = mappings["files"]
+        # save mappings (Load stores as list for JSON; structure is [path, key] pairs)
+        ld.roles = cast(list[str], mappings["roles"])
+        ld.taskfiles = cast(list[str], mappings["taskfiles"])
+        ld.playbooks = cast(list[str], mappings["playbooks"])
+        ld.modules = cast(list[str], mappings["modules"])
+        ld.files = cast(list[str], mappings["files"])
 
         definitions = {
             "collections": collections,
@@ -439,10 +446,10 @@ class Parser:
             "files": files,
         }
 
-        return definitions, ld
+        return cast(tuple[dict[str, list[Object]], Load], (definitions, ld))
 
     @classmethod
-    def restore_definition_objects(cls: type[Any], input_dir: str) -> tuple[dict[str, Any], Load]:
+    def restore_definition_objects(cls: type[Parser], input_dir: str) -> tuple[dict[str, list[Object]], Load]:
         collections = _load_object_list(Collection, os.path.join(input_dir, "collections.json"))
 
         # TODO: only repository?
@@ -478,7 +485,9 @@ class Parser:
         return definitions, ld
 
     @classmethod
-    def dump_definition_objects(cls: type[Any], output_dir: str, definitions: dict[str, Any], ld: Load) -> None:
+    def dump_definition_objects(
+        cls: type[Parser], output_dir: str, definitions: dict[str, list[Object]], ld: Load
+    ) -> None:
         collections = definitions.get("collections", [])
         if len(collections) > 0:
             _dump_object_list(collections, os.path.join(output_dir, "collections.json"))
@@ -514,7 +523,7 @@ class Parser:
         Path(mapping_path).write_text(ld.dump())
 
 
-def _dump_object_list(obj_list: list[Any], output_path: str) -> None:
+def _dump_object_list(obj_list: list[Object], output_path: str) -> None:
     tmp_obj_list = copy.deepcopy(obj_list)
     lines = []
     for i in range(len(tmp_obj_list)):
@@ -523,13 +532,13 @@ def _dump_object_list(obj_list: list[Any], output_path: str) -> None:
     return
 
 
-def _load_object_list(cls: type[Any], input_path: str) -> list[Any]:
-    obj_list = []
+def _load_object_list(cls: type[Object], input_path: str) -> list[Object]:
+    obj_list: list[Object] = []
     if os.path.exists(input_path):
         with open(input_path) as f:
             for line in f:
                 obj = cls.from_json(line)
-                obj_list.append(obj)
+                obj_list.append(cast(Object, obj))
     return obj_list
 
 

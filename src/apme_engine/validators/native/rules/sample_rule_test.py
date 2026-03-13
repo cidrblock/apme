@@ -1,6 +1,6 @@
 # Colocated tests for sample_rule (SampleRule).
 
-from apme_engine.engine.models import MutableContent
+from apme_engine.engine.models import MutableContent, YAMLValue
 from apme_engine.validators.native.rules._test_helpers import (
     make_context,
     make_task_call,
@@ -21,5 +21,6 @@ def test_sample_rule_matches_task_and_process_returns_task_block() -> None:
     assert result.verdict is True
     assert result.rule is not None and result.rule.rule_id == "Sample101"
     assert result.detail is not None
-    assert "task_block" in result.detail
-    assert "copy:" in result.detail["task_block"]
+    task_block: YAMLValue = result.detail["task_block"]
+    assert isinstance(task_block, str)
+    assert "copy:" in task_block

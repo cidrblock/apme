@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from typing import Any
 
 from apme_engine.opa_client import run_opa
 from apme_engine.validators.base import ScanContext
@@ -24,7 +23,7 @@ class OpaValidator:
         self.bundle_path = bundle_path or _default_bundle_path()
         self.entrypoint = entrypoint
 
-    def run(self, context: ScanContext) -> list[dict[str, Any]]:
+    def run(self, context: ScanContext) -> list[dict[str, str | int | list[int] | bool | None]]:
         """Run OPA on hierarchy_payload; return list of violation dicts."""
         return run_opa(
             context.hierarchy_payload,

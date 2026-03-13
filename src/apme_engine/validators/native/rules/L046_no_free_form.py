@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import cast
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
@@ -6,6 +7,7 @@ from apme_engine.engine.models import (
     RuleResult,
     RunTargetType,
     Severity,
+    YAMLDict,
 )
 from apme_engine.engine.models import (
     ExecutableType as ActionType,
@@ -46,10 +48,18 @@ class NoFreeFormRule(Rule):
         if task is None:
             return None
         if getattr(task, "action_type", "") != ActionType.MODULE_TYPE:
-            return RuleResult(verdict=False, file=task.file_info(), rule=self.get_metadata())
+            return RuleResult(
+                verdict=False,
+                file=cast("tuple[str | int, ...] | None", task.file_info()),
+                rule=self.get_metadata(),
+            )
         resolved = getattr(task.spec, "resolved_name", "") or ""
         if resolved not in FREE_FORM_ACTIONS:
-            return RuleResult(verdict=False, file=task.file_info(), rule=self.get_metadata())
+            return RuleResult(
+                verdict=False,
+                file=cast("tuple[str | int, ...] | None", task.file_info()),
+                rule=self.get_metadata(),
+            )
         args = getattr(task, "args", None)
         raw = getattr(args, "raw", None) if args is not None else None
         # Free-form: args passed as a single string (no structured key)
@@ -59,4 +69,9 @@ class NoFreeFormRule(Rule):
         if verdict:
             detail["module"] = resolved
             detail["message"] = "use args: with a list or cmd: key instead of free-form string"
-        return RuleResult(verdict=verdict, detail=detail, file=task.file_info(), rule=self.get_metadata())
+        return RuleResult(
+            verdict=verdict,
+            detail=cast("YAMLDict | None", detail),
+            file=cast("tuple[str | int, ...] | None", task.file_info()),
+            rule=self.get_metadata(),
+        )

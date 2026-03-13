@@ -1,5 +1,8 @@
 # Colocated tests for L033 (UnconditionalOverrideRule / R202).
 
+from typing import cast
+
+from apme_engine.engine.models import YAMLValue
 from apme_engine.validators.native.rules._test_helpers import (
     make_context,
     make_task_call,
@@ -24,7 +27,7 @@ def test_L033_does_not_fire_when_task_has_tags() -> None:
     spec = make_task_spec(module="ansible.builtin.set_fact", options={"tags": ["config"]})
     spec.set_facts = {"x": "y"}
     task = make_task_call(spec)
-    task.variable_set["x"] = [object(), object()]
+    task.variable_set["x"] = cast("list[YAMLValue]", [object(), object()])
     ctx = make_context(task)
     rule = UnconditionalOverrideRule()
     assert rule.match(ctx)

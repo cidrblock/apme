@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import re
 import sys
-from typing import Any
 
 
 # glob.glob() may cause infinite loop when there is symlink loop
@@ -84,7 +83,7 @@ def safe_glob(
     return matched_files
 
 
-def pattern_match(pattern: str, fpath: str) -> Any:
+def pattern_match(pattern: str, fpath: str) -> re.Match[str] | None:
     pattern = pattern.replace("**/", "<ANY>")
     pattern = pattern.replace("*", "[^/]*")
     pattern = pattern.replace("<ANY>", ".*")

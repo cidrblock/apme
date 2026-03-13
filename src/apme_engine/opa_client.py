@@ -5,7 +5,8 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+
+from apme_engine.engine.models import ViolationDict, YAMLDict
 
 OPA_IMAGE = "docker.io/openpolicyagent/opa:latest"
 
@@ -129,8 +130,8 @@ def run_opa_test(bundle_path: str | Path, timeout: int = 120) -> tuple[bool, str
 
 
 def run_opa(
-    input_data: dict[str, Any], bundle_path: str, entrypoint: str = "data.apme.rules.violations"
-) -> list[dict[str, Any]]:
+    input_data: YAMLDict, bundle_path: str, entrypoint: str = "data.apme.rules.violations"
+) -> list[ViolationDict]:
     """
     Run OPA eval with input_data as input and bundle at bundle_path.
     Uses Podman container (openpolicyagent/opa) by default; set OPA_USE_PODMAN=0 to use a local opa binary.

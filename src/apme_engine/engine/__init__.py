@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import sys
-from typing import Any
 
 from .scanner import ARIScanner, Config
 
 # ARI CLI (ARICLI, RAMCLI) not imported by default to avoid pulling in heavy deps on scanner import.
-ARICLI: type[Any] | None = None
-RAMCLI: type[Any] | None = None
+ARICLI: type[object] | None = None
+RAMCLI: type[object] | None = None
 
 ari_actions = ["project", "playbook", "collection", "role", "taskfile"]
 ram_actions = ["ram"]

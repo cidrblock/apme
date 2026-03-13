@@ -1,13 +1,15 @@
 """Stub for generated validate_pb2 (proto types)."""
 
-from typing import Any
-
 class ValidateRequest:
     request_id: str
+    project_root: str
     hierarchy_payload: bytes
     scandata: bytes
-    files: list[Any]
-    def __init__(self, **kwargs: Any) -> None: ...
+    ansible_core_version: str
+    collection_specs: list[str]
+    files: list[object]
+    def __init__(self, **kwargs: object) -> None: ...
+    def HasField(self, field_name: str) -> bool: ...
 
 class ValidateResponse:
-    def __init__(self, **kwargs: Any) -> None: ...
+    def __init__(self, **kwargs: object) -> None: ...

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import cast
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
@@ -10,6 +11,7 @@ from apme_engine.engine.models import (
     Severity,
     TaskCall,
     VariableType,
+    YAMLValue,
 )
 from apme_engine.engine.models import RuleTag as Tag
 
@@ -61,24 +63,32 @@ class ModuleArgumentValueValidationRule(Rule):
             and task.module
             and task.module.arguments
         ):
-            wrong_values = []
-            undefined_values = []
-            unknown_type_values = []
+            wrong_values: list[dict[str, str | YAMLValue]] = []
+            undefined_values: list[dict[str, str | list[str]]] = []
+            unknown_type_values: list[dict[str, str | YAMLValue]] = []
 
-            registered_vars = []
+            registered_vars: list[str] = []
             for v_name in task.variable_set:
                 v = task.variable_set[v_name]
-                if v and v[-1].type == VariableType.RegisteredVars:
+                if (
+                    isinstance(v, list)
+                    and v
+                    and (v[-1] is not None and getattr(v[-1], "type", None) == VariableType.RegisteredVars)
+                ):
                     registered_vars.append(v_name)
 
             module_fqcn = task.module.fqcn
 
-            if task.args.type == ArgumentsType.DICT:
-                for key in task.args.raw:
-                    raw_value = task.args.raw[key]
-                    resolved_value = None
-                    if len(task.args.templated) >= 1:
-                        resolved_value = task.args.templated[0][key]
+            raw_args = task.args.raw
+            if task.args.type == ArgumentsType.DICT and isinstance(raw_args, dict):
+                for key in raw_args:
+                    raw_value = raw_args[key]
+                    resolved_value: YAMLValue | None = None
+                    templated = task.args.templated
+                    if isinstance(templated, list) and len(templated) >= 1:
+                        first = templated[0]
+                        if isinstance(first, dict) and key in first:
+                            resolved_value = first[key]
                     spec = None
                     for arg_spec in task.module.arguments:
                         if key == arg_spec.name or (arg_spec.aliases and key in arg_spec.aliases):
@@ -87,11 +97,11 @@ class ModuleArgumentValueValidationRule(Rule):
                     if not spec:
                         continue
 
-                    d = {"key": key}
+                    d: dict[str, str | YAMLValue] = {"key": str(key)}
                     wrong_val = False
                     unknown_type_val = False
                     if spec.type and not is_debug(module_fqcn):
-                        actual_type = ""
+                        actual_type: str = ""
                         # if the raw_value is not a variable
                         if not isinstance(raw_value, str) or "{{" not in raw_value:
                             actual_type = type(raw_value).__name__
@@ -100,16 +110,16 @@ class ModuleArgumentValueValidationRule(Rule):
                             # if the variable could not be resovled successfully
                             if isinstance(resolved_value, str) and "{{" in resolved_value:
                                 pass
-                            elif is_loop_var(raw_value, task):
+                            elif is_loop_var(str(raw_value), task):
                                 # if the variable is loop var, use the element type as actual type
-                                resolved_element = None
-                                if resolved_value:
+                                resolved_element: YAMLValue | None = None
+                                if isinstance(resolved_value, (list, tuple)) and resolved_value:
                                     resolved_element = resolved_value[0]
-                                if resolved_element:
+                                if resolved_element is not None:
                                     actual_type = type(resolved_element).__name__
                             else:
                                 # otherwise, use the resolved value type as actual type
-                                actual_type = type(resolved_value).__name__
+                                actual_type = type(resolved_value).__name__ if resolved_value is not None else ""
 
                         if actual_type:
                             type_wrong = False
@@ -128,12 +138,12 @@ class ModuleArgumentValueValidationRule(Rule):
                             else:
                                 no_elements = True
                             if type_wrong and (elements_type_wrong or no_elements):
-                                d["expected_type"] = spec.type
+                                d["expected_type"] = str(spec.type) if spec.type else ""
                                 d["actual_type"] = actual_type
                                 d["actual_value"] = raw_value
                                 wrong_val = True
                         else:
-                            d["expected_type"] = spec.type
+                            d["expected_type"] = str(spec.type) if spec.type else ""
                             d["unknown_type_value"] = resolved_value
                             unknown_type_val = True
 
@@ -143,26 +153,32 @@ class ModuleArgumentValueValidationRule(Rule):
                     if unknown_type_val:
                         unknown_type_values.append(d)
 
-                    sub_args = task.args.get(key)
+                    sub_args = task.args.get(str(key))
                     if sub_args:
-                        undefined_vars = []
-                        for v in sub_args.vars:
-                            first_v_name = v.name.split(".")[0]
+                        undefined_vars_list: list[str] = []
+                        for var in sub_args.vars:
+                            first_v_name = var.name.split(".")[0]
                             # skip registered vars
                             if first_v_name in registered_vars:
                                 continue
 
-                            if v and v.type == VariableType.Unknown:
-                                undefined_vars.append(v.name)
+                            if var.type == VariableType.Unknown:
+                                undefined_vars_list.append(var.name)
 
-                        if undefined_vars:
+                        if undefined_vars_list:
                             undefined_values.append(
-                                {"key": key, "value": raw_value, "undefined_variables": undefined_vars}
+                                {
+                                    "key": str(key),
+                                    "value": str(raw_value) if raw_value is not None else "",
+                                    "undefined_variables": undefined_vars_list,
+                                }
                             )
 
-            task.set_annotation("module.wrong_arg_values", wrong_values, rule_id=self.rule_id)
-            task.set_annotation("module.undefined_values", undefined_values, rule_id=self.rule_id)
-            task.set_annotation("module.unknown_type_values", unknown_type_values, rule_id=self.rule_id)
+            task.set_annotation("module.wrong_arg_values", cast(YAMLValue, wrong_values), rule_id=self.rule_id)
+            task.set_annotation("module.undefined_values", cast(YAMLValue, undefined_values), rule_id=self.rule_id)
+            task.set_annotation(
+                "module.unknown_type_values", cast(YAMLValue, unknown_type_values), rule_id=self.rule_id
+            )
 
         # TODO: find duplicate keys
 

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any
+from typing import cast
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
@@ -8,6 +8,7 @@ from apme_engine.engine.models import (
     RunTargetType,
     Severity,
     TaskCall,
+    YAMLDict,
 )
 
 
@@ -35,8 +36,13 @@ class SampleRule(Rule):
             return None
 
         verdict = True
-        detail: dict[str, Any] = {}
+        detail: YAMLDict = {}
         task_block = task.content.yaml()
         detail["task_block"] = task_block
 
-        return RuleResult(verdict=verdict, detail=detail, file=task.file_info(), rule=self.get_metadata())
+        return RuleResult(
+            verdict=verdict,
+            detail=detail,
+            file=cast("tuple[str | int, ...] | None", task.file_info()),
+            rule=self.get_metadata(),
+        )

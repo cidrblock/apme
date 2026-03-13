@@ -6,11 +6,15 @@ L002 violations are syntactic-only; we fall back to a static builtin map.
 
 from __future__ import annotations
 
-from typing import Any
-
+from apme_engine.engine.models import ViolationDict
 from apme_engine.engine.yaml_utils import FormattedYAML
 from apme_engine.remediation.registry import TransformResult
-from apme_engine.remediation.transforms._helpers import find_task_at_line, get_module_key, rename_key
+from apme_engine.remediation.transforms._helpers import (
+    find_task_at_line,
+    get_module_key,
+    rename_key,
+    violation_line_to_int,
+)
 
 _BUILTIN_FQCN: dict[str, str] = {
     "debug": "ansible.builtin.debug",
@@ -71,7 +75,7 @@ _BUILTIN_FQCN: dict[str, str] = {
 }
 
 
-def _resolve_fqcn(violation: dict[str, Any], current_key: str) -> str | None:
+def _resolve_fqcn(violation: ViolationDict, current_key: str) -> str | None:
     """Get the target FQCN from the violation or fall back to the static map."""
     fqcn = violation.get("resolved_fqcn")
     if fqcn is not None and str(fqcn) != current_key:
@@ -79,7 +83,7 @@ def _resolve_fqcn(violation: dict[str, Any], current_key: str) -> str | None:
     return _BUILTIN_FQCN.get(current_key)
 
 
-def fix_fqcn(content: str, violation: dict[str, Any]) -> TransformResult:
+def fix_fqcn(content: str, violation: ViolationDict) -> TransformResult:
     """Rename a short module name to its FQCN."""
     yaml = FormattedYAML(typ="rt", pure=True, version=(1, 1))
 
@@ -88,9 +92,7 @@ def fix_fqcn(content: str, violation: dict[str, Any]) -> TransformResult:
     except Exception:
         return TransformResult(content=content, applied=False)
 
-    line = violation.get("line", 0)
-    if isinstance(line, (list, tuple)):
-        line = line[0] if line else 0
+    line = violation_line_to_int(violation)
     task = find_task_at_line(data, line)
     if task is None:
         return TransformResult(content=content, applied=False)

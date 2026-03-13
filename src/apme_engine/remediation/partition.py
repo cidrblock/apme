@@ -2,30 +2,31 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from apme_engine.remediation.registry import TransformRegistry
+    from apme_engine.engine.models import ViolationDict
+from apme_engine.remediation.registry import TransformRegistry
 
 
-def is_finding_resolvable(violation: dict[str, Any], registry: TransformRegistry) -> bool:
+def is_finding_resolvable(violation: ViolationDict, registry: TransformRegistry) -> bool:
     """Return True if the violation has a registered deterministic transform (Tier 1)."""
-    return violation.get("rule_id", "") in registry
+    return str(violation.get("rule_id", "")) in registry
 
 
 def partition_violations(
-    violations: list[dict[str, Any]],
+    violations: list[ViolationDict],
     registry: TransformRegistry,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[list[ViolationDict], list[ViolationDict], list[ViolationDict]]:
     """Split violations into (tier1_fixable, tier2_ai, tier3_manual).
 
     Tier 1: deterministic transform exists in registry.
     Tier 2: no transform, but ai_proposable (default True if not set).
     Tier 3: no transform, ai_proposable explicitly False.
     """
-    tier1: list[dict[str, Any]] = []
-    tier2: list[dict[str, Any]] = []
-    tier3: list[dict[str, Any]] = []
+    tier1: list[ViolationDict] = []
+    tier2: list[ViolationDict] = []
+    tier3: list[ViolationDict] = []
 
     for v in violations:
         if is_finding_resolvable(v, registry):

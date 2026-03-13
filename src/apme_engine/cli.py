@@ -5,7 +5,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 import grpc
 
@@ -21,6 +21,7 @@ from apme_engine.collection_cache import (
 from apme_engine.daemon.chunked_fs import build_scan_request
 from apme_engine.daemon.health_check import run_health_checks
 from apme_engine.daemon.violation_convert import violation_proto_to_dict
+from apme_engine.engine.models import ViolationDict, YAMLDict
 from apme_engine.formatter import format_directory, format_file
 from apme_engine.remediation.engine import RemediationEngine
 from apme_engine.remediation.transforms import build_default_registry
@@ -29,30 +30,34 @@ from apme_engine.validators.native import NativeValidator
 from apme_engine.validators.opa import OpaValidator
 
 
-def _sort_violations(violations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _sort_violations(violations: list[ViolationDict]) -> list[ViolationDict]:
     """Sort by file, then line for stable output."""
 
-    def key(v: dict[str, Any]) -> tuple[str, int | float]:
-        f = v.get("file") or ""
+    def key(v: ViolationDict) -> tuple[str, int | float]:
+        f = str(v.get("file") or "")
         line = v.get("line")
-        if isinstance(line, (list, tuple)) and line:
-            line = line[0] if line else 0
-        return (f, line if isinstance(line, int) else (line or 0))
+        resolved: int | float = 0
+        if isinstance(line, (int, float)):
+            resolved = line
+        elif isinstance(line, (list, tuple)) and line:
+            first = line[0]
+            resolved = first if isinstance(first, (int, float)) else 0
+        return (f, resolved)
 
     return sorted(violations, key=key)
 
 
-def _deduplicate_violations(violations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _deduplicate_violations(violations: list[ViolationDict]) -> list[ViolationDict]:
     """Remove duplicate violations sharing the same (rule_id, file, line)."""
-    seen: set[tuple[str, str, Any]] = set()
-    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str | int | list[int] | tuple[int, ...] | bool | None]] = set()
+    out: list[ViolationDict] = []
     for v in violations:
-        line = v.get("line")
+        line: str | int | list[int] | tuple[int, ...] | bool | None = v.get("line")
         if isinstance(line, (list, tuple)):
             line = tuple(line)
-        key = (v.get("rule_id", ""), v.get("file", ""), line)
-        if key not in seen:
-            seen.add(key)
+        dedup_key = (str(v.get("rule_id", "")), str(v.get("file", "")), line)
+        if dedup_key not in seen:
+            seen.add(dedup_key)
             out.append(v)
     return out
 
@@ -148,34 +153,40 @@ def _print_diagnostics_vv(diag: ScanDiagnostics) -> None:
     w(f"  Total:        {_fmt_ms(diag.total_ms)}\n\n")
 
 
-def _diag_to_dict(diag: ScanDiagnostics) -> dict[str, Any]:
+def _diag_to_dict(diag: ScanDiagnostics) -> YAMLDict:
     """Convert ScanDiagnostics proto to a JSON-serializable dict."""
     validators = []
     for vd in diag.validators:
         validators.append(
-            {
-                "validator_name": vd.validator_name,
-                "total_ms": round(vd.total_ms, 1),
-                "files_received": vd.files_received,
-                "violations_found": vd.violations_found,
-                "rule_timings": [
-                    {"rule_id": rt.rule_id, "elapsed_ms": round(rt.elapsed_ms, 1), "violations": rt.violations}
-                    for rt in vd.rule_timings
-                ],
-                "metadata": dict(vd.metadata),
-            }
+            cast(
+                YAMLDict,
+                {
+                    "validator_name": vd.validator_name,
+                    "total_ms": round(vd.total_ms, 1),
+                    "files_received": vd.files_received,
+                    "violations_found": vd.violations_found,
+                    "rule_timings": [
+                        {"rule_id": rt.rule_id, "elapsed_ms": round(rt.elapsed_ms, 1), "violations": rt.violations}
+                        for rt in vd.rule_timings
+                    ],
+                    "metadata": dict(vd.metadata),
+                },
+            )
         )
-    return {
-        "engine_parse_ms": round(diag.engine_parse_ms, 1),
-        "engine_annotate_ms": round(diag.engine_annotate_ms, 1),
-        "engine_total_ms": round(diag.engine_total_ms, 1),
-        "files_scanned": diag.files_scanned,
-        "trees_built": diag.trees_built,
-        "total_violations": diag.total_violations,
-        "fan_out_ms": round(diag.fan_out_ms, 1),
-        "total_ms": round(diag.total_ms, 1),
-        "validators": validators,
-    }
+    return cast(
+        YAMLDict,
+        {
+            "engine_parse_ms": round(diag.engine_parse_ms, 1),
+            "engine_annotate_ms": round(diag.engine_annotate_ms, 1),
+            "engine_total_ms": round(diag.engine_total_ms, 1),
+            "files_scanned": diag.files_scanned,
+            "trees_built": diag.trees_built,
+            "total_violations": diag.total_violations,
+            "fan_out_ms": round(diag.fan_out_ms, 1),
+            "total_ms": round(diag.total_ms, 1),
+            "validators": validators,
+        },
+    )
 
 
 def _run_scan(args: argparse.Namespace) -> None:
@@ -205,11 +216,11 @@ def _run_scan(args: argparse.Namespace) -> None:
     if not args.no_native:
         validators.append(("Native", NativeValidator()))
 
-    violations: list[dict[str, Any]] = []
+    violations: list[ViolationDict] = []
     for name, v in validators:
         result = v.run(context)
         sys.stderr.write(f"{name}: {len(result)} violation(s)\n")
-        violations.extend(result)
+        violations.extend(result)  # type: ignore[arg-type]
     violations = _deduplicate_violations(_sort_violations(violations))
 
     if not validators:
@@ -223,7 +234,7 @@ def _run_scan(args: argparse.Namespace) -> None:
         print(json.dumps({"violations": violations, "count": len(violations)}, indent=2))
         return
 
-    payload: dict[str, Any] = context.hierarchy_payload or {}
+    payload: YAMLDict = context.hierarchy_payload or {}
     print(f"Scan: {payload.get('scan_id', '')} | Violations: {len(violations)}")
     for violation in violations:
         line = violation.get("line")
@@ -261,7 +272,7 @@ def _run_scan_grpc(args: argparse.Namespace, primary_addr: str) -> None:
     finally:
         channel.close()
 
-    violations = [violation_proto_to_dict(v) for v in resp.violations]
+    violations: list[ViolationDict] = [violation_proto_to_dict(v) for v in resp.violations]
     violations = _deduplicate_violations(_sort_violations(violations))
 
     has_diag = resp.HasField("diagnostics")
@@ -369,7 +380,7 @@ def _run_format(args: argparse.Namespace) -> None:
         sys.stderr.write(f"\n{len(changed)} file(s) would be reformatted (use --apply to write)\n")
 
 
-def _scan_files_local(file_paths: list[str], repo_root: str, opa_bundle: str | None) -> list[dict[str, Any]]:
+def _scan_files_local(file_paths: list[str], repo_root: str, opa_bundle: str | None) -> list[ViolationDict]:
     """In-process scan: engine + OPA + native validators. Returns violation dicts."""
     from apme_engine.runner import run_scan as _run_scan
 
@@ -377,7 +388,7 @@ def _scan_files_local(file_paths: list[str], repo_root: str, opa_bundle: str | N
     if not yaml_files:
         return []
 
-    all_violations: list[dict[str, Any]] = []
+    all_violations: list[ViolationDict] = []
     for fpath in yaml_files:
         try:
             context = _run_scan(fpath, repo_root, include_scandata=True)
@@ -392,7 +403,7 @@ def _scan_files_local(file_paths: list[str], repo_root: str, opa_bundle: str | N
             ("Native", NativeValidator()),
         ]
         for _name, v in validators:
-            all_violations.extend(v.run(context))
+            all_violations.extend(v.run(context))  # type: ignore[arg-type]
 
     return _deduplicate_violations(_sort_violations(all_violations))
 
@@ -466,7 +477,7 @@ def _run_fix(args: argparse.Namespace) -> None:
     repo_root = str(Path(__file__).resolve().parent.parent)
     opa_bundle = getattr(args, "opa_bundle", None)
 
-    def scan_fn(paths: list[str]) -> list[dict[str, Any]]:
+    def scan_fn(paths: list[str]) -> list[ViolationDict]:
         return _scan_files_local(paths, repo_root, opa_bundle)
 
     registry = build_default_registry()
@@ -515,7 +526,7 @@ def _run_health_check(args: argparse.Namespace) -> None:
     )
 
     if getattr(args, "json", False):
-        out: dict[str, dict[str, Any]] = {
+        out: dict[str, dict[str, str | float | bool | None]] = {
             name: {k: v for k, v in r.items() if v is not None} for name, r in results.items()
         }
         print(json.dumps(out, indent=2))

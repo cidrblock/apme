@@ -8,8 +8,9 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import cast
 
+from apme_engine.engine.models import YAMLDict
 from apme_engine.validators.base import ScanContext
 
 from .rules import L057_syntax, L058_argspec_doc, L059_argspec_mock, M001_M004_introspect
@@ -24,17 +25,27 @@ class AnsibleRuleTiming:
 
 @dataclass
 class AnsibleRunResult:
-    violations: list[dict[str, Any]] = field(default_factory=list)
+    violations: list[dict[str, object]] = field(default_factory=list)
     rule_timings: list[AnsibleRuleTiming] = field(default_factory=list)
 
 
-def _extract_task_nodes(hierarchy_payload: dict[str, Any]) -> list[dict[str, Any]]:
+def _extract_task_nodes(hierarchy_payload: YAMLDict | None) -> list[dict[str, object]]:
     """Extract all taskcall nodes from the hierarchy payload."""
-    nodes = []
-    for tree in hierarchy_payload.get("hierarchy", []):
-        for node in tree.get("nodes", []):
-            if node.get("type") == "taskcall":
-                nodes.append(node)
+    nodes: list[dict[str, object]] = []
+    if hierarchy_payload is None:
+        return nodes
+    hierarchy = hierarchy_payload.get("hierarchy", [])
+    if not isinstance(hierarchy, (list, tuple)):
+        return nodes
+    for tree in hierarchy:
+        if not isinstance(tree, dict):
+            continue
+        raw_nodes = tree.get("nodes", [])
+        if not isinstance(raw_nodes, (list, tuple)):
+            continue
+        for node in raw_nodes:
+            if isinstance(node, dict) and node.get("type") == "taskcall":
+                nodes.append(cast(dict[str, object], node))
     return nodes
 
 
@@ -59,13 +70,13 @@ class AnsibleValidator:
         self._venv_root = venv_root
         self._env_extra = env_extra
 
-    def run(self, context: ScanContext) -> list[dict[str, Any]]:
+    def run(self, context: ScanContext) -> list[dict[str, object]]:
         """Run all ansible checks and return violation dicts."""
         return self.run_with_timing(context).violations
 
     def run_with_timing(self, context: ScanContext) -> AnsibleRunResult:
         """Run all ansible checks and return violations + per-rule timing."""
-        violations: list[dict[str, Any]] = []
+        violations: list[dict[str, object]] = []
         rule_timings: list[AnsibleRuleTiming] = []
         root_dir = Path(context.root_dir) if context.root_dir else None
 

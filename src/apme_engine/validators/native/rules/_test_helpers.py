@@ -1,6 +1,6 @@
 # Test helpers for colocated native rule tests. Build minimal Python context/task objects.
 
-from typing import Any, cast
+from typing import cast
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
@@ -10,6 +10,7 @@ from apme_engine.engine.models import (
     RunTarget,
     Task,
     TaskCall,
+    YAMLDict,
 )
 
 
@@ -19,12 +20,12 @@ def make_task_spec(
     executable: str = "",
     executable_type: str = ExecutableType.MODULE_TYPE,
     resolved_name: str = "",
-    options: dict[str, Any] | None = None,
-    module_options: dict[str, Any] | None = None,
+    options: YAMLDict | None = None,
+    module_options: YAMLDict | None = None,
     defined_in: str = "tasks/main.yml",
     line_num_in_file: list[int] | None = None,
     key: str | None = None,
-    possible_candidates: list[Any] | None = None,
+    possible_candidates: list[tuple[str, str]] | None = None,
 ) -> Task:
     """Build a minimal Task spec for rule tests."""
     # Key must be "type rest" (space-separated) for set_call_object_key.
@@ -36,8 +37,8 @@ def make_task_spec(
         executable=executable or module or "",
         executable_type=executable_type,
         resolved_name=resolved_name or module or executable or "",
-        options=options or {},
-        module_options=module_options or {},
+        options=cast(YAMLDict, options or {}),
+        module_options=cast(YAMLDict, module_options or {}),
         defined_in=defined_in,
         line_num_in_file=line_num_in_file or [1, 2],
         key=key,
@@ -56,7 +57,7 @@ def make_role_spec(
     name: str = "",
     defined_in: str = "roles/foo/meta/main.yml",
     key: str | None = None,
-    metadata: dict[str, Any] | None = None,
+    metadata: YAMLDict | None = None,
 ) -> Role:
     """Build a minimal Role spec for rule tests."""
     # Key must be "type rest" (space-separated) for set_call_object_key.

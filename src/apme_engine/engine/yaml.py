@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import io
 from contextvars import ContextVar
-from typing import Any
+from typing import cast
 
 from ruamel.yaml import YAML
 from ruamel.yaml.emitter import EmitterError
+
+from .models import YAMLValue
 
 _yaml: ContextVar[YAML] = ContextVar("yaml")
 
@@ -20,7 +22,7 @@ def _set_yaml(force: bool = False) -> None:
         _yaml.set(yaml)
 
 
-def config(**kwargs: Any) -> None:
+def config(**kwargs: YAMLValue) -> None:
     _set_yaml()
     yaml = _yaml.get()
     for key, value in kwargs.items():
@@ -28,23 +30,24 @@ def config(**kwargs: Any) -> None:
     _yaml.set(yaml)
 
 
-def indent(**kwargs: Any) -> None:
+def indent(**kwargs: YAMLValue) -> None:
     _set_yaml()
     yaml = _yaml.get()
     yaml.indent(**kwargs)
     _yaml.set(yaml)
 
 
-def load(stream: Any) -> Any:
+def load(stream: object) -> YAMLValue | None:
     _set_yaml()
     yaml = _yaml.get()
-    return yaml.load(stream)
+    result = yaml.load(stream)
+    return cast(YAMLValue | None, result)
 
 
 # `ruamel.yaml` has a bug around multi-threading, and its YAML() instance could be broken
 # while concurrent dump() operation. So we try retrying if the specific error occurs.
 # Bug details: https://sourceforge.net/p/ruamel-yaml/tickets/367/
-def dump(data: Any) -> str:
+def dump(data: YAMLValue) -> str:
     _set_yaml()
     retry = 2
     err = None

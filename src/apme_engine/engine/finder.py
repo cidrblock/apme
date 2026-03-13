@@ -7,10 +7,11 @@ import traceback
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 import yaml
 
+from .models import YAMLDict, YAMLValue
 from .yaml_utils import FormattedYAML
 
 try:
@@ -41,12 +42,12 @@ github_workflows_dir = ".github/workflows"
 
 
 class Singleton(type):
-    _instances: dict[type[Any], Any] = {}
+    _instances: dict[type, object] = {}
 
-    def __call__(cls: type[Any], *args: Any, **kwargs: Any) -> Any:
-        if cls not in cls._instances:
-            cls._instances[cls] = super().__call__(*args, **kwargs)
-        return cls._instances[cls]
+    def __call__(cls, *args: object, **kwargs: object) -> object:
+        if cls not in Singleton._instances:
+            Singleton._instances[cls] = super().__call__(*args, **kwargs)
+        return Singleton._instances[cls]
 
 
 @dataclass(frozen=True)
@@ -71,7 +72,7 @@ def get_builtin_module_names() -> set[str]:
     return BuiltinModuleSet().builtin_modules
 
 
-def find_module_name(data_block: dict[str, Any]) -> str:
+def find_module_name(data_block: YAMLDict) -> str:
     keys = [k for k in data_block]
     task_keywords = TaskKeywordSet().task_keywords
     builtin_modules = BuiltinModuleSet().builtin_modules
@@ -99,7 +100,7 @@ def find_module_name(data_block: dict[str, Any]) -> str:
         if isinstance(local_action_value, str):
             module_name = local_action_value.split(" ")[0]
         elif isinstance(local_action_value, dict):
-            module_name = local_action_value.get("module", "")
+            module_name = str(local_action_value.get("module", "") or "")
         if module_name:
             return module_name
     return ""
@@ -108,9 +109,9 @@ def find_module_name(data_block: dict[str, Any]) -> str:
 def get_task_blocks(
     fpath: str = "",
     yaml_str: str = "",
-    task_dict_list: list[dict[str, Any]] | None = None,
+    task_dict_list: list[YAMLDict] | None = None,
     jsonpath_prefix: str = "",
-) -> tuple[list[tuple[dict[str, Any], str]] | None, str | None]:
+) -> tuple[list[tuple[YAMLDict, str]] | None, str | None]:
     d = None
     yaml_lines = ""
     if yaml_str:
@@ -157,10 +158,10 @@ def get_task_blocks(
 #         - some_module3
 #
 def flatten_block_tasks(
-    task_dict: dict[str, Any] | None,
+    task_dict: YAMLDict | None,
     jsonpath_prefix: str = "",
-    module_defaults: dict[str, Any] | None = None,
-) -> list[tuple[dict[str, Any], str]]:
+    module_defaults: YAMLDict | None = None,
+) -> list[tuple[YAMLDict, str]]:
     if module_defaults is None:
         module_defaults = {}
     if task_dict is None:
@@ -183,6 +184,8 @@ def flatten_block_tasks(
         tasks_in_block = task_dict.get("block", [])
         if isinstance(tasks_in_block, list):
             for i, t_dict in enumerate(tasks_in_block):
+                if not isinstance(t_dict, dict):
+                    continue
                 _current_prefix = task_jsonpath + f".{i}"
                 tasks_in_item = flatten_block_tasks(t_dict, _current_prefix, _module_defaults)
                 tasks.extend(tasks_in_item)
@@ -198,6 +201,8 @@ def flatten_block_tasks(
         tasks_in_rescue = task_dict.get("rescue", [])
         if isinstance(tasks_in_rescue, list):
             for i, t_dict in enumerate(tasks_in_rescue):
+                if not isinstance(t_dict, dict):
+                    continue
                 _current_prefix = task_jsonpath + f".{i}"
                 tasks_in_item = flatten_block_tasks(t_dict, _current_prefix, _module_defaults)
                 tasks.extend(tasks_in_item)
@@ -208,6 +213,8 @@ def flatten_block_tasks(
         tasks_in_always = task_dict.get("always", [])
         if isinstance(tasks_in_always, list):
             for i, t_dict in enumerate(tasks_in_always):
+                if not isinstance(t_dict, dict):
+                    continue
                 _current_prefix = task_jsonpath + f".{i}"
                 tasks_in_item = flatten_block_tasks(t_dict, _current_prefix, _module_defaults)
                 tasks.extend(tasks_in_item)
@@ -571,7 +578,7 @@ def find_all_files(root_dir: str) -> list[str]:
     return safe_glob(patterns, type=["file"])
 
 
-def _get_body_data(body: str = "", data: list[Any] | None = None, fpath: str = "") -> tuple[str, Any, str]:
+def _get_body_data(body: str = "", data: YAMLValue | None = None, fpath: str = "") -> tuple[str, YAMLValue | None, str]:
     if fpath and not body and not data:
         try:
             with open(fpath) as file:
@@ -585,7 +592,7 @@ def _get_body_data(body: str = "", data: list[Any] | None = None, fpath: str = "
     return body, data, fpath
 
 
-def could_be_playbook_detail(body: str = "", data: list[Any] | None = None, fpath: str = "") -> bool:
+def could_be_playbook_detail(body: str = "", data: YAMLValue | None = None, fpath: str = "") -> bool:
     body, data, fpath = _get_body_data(body, data, fpath)
 
     if not body:
@@ -609,7 +616,7 @@ def could_be_playbook_detail(body: str = "", data: list[Any] | None = None, fpat
     return bool("import_playbook" in data[0] or "ansible.builtin.import_playbook" in data[0])
 
 
-def could_be_taskfile(body: str = "", data: list[Any] | None = None, fpath: str = "") -> bool:
+def could_be_taskfile(body: str = "", data: YAMLValue | None = None, fpath: str = "") -> bool:
     body, data, fpath = _get_body_data(body, data, fpath)
 
     if not body:
@@ -824,7 +831,7 @@ def label_yml_file(
 
 def get_yml_label(
     file_path: str, root_path: str, task_num_threshold: int = -1
-) -> tuple[str, dict[str, Any] | None, dict[str, Any] | None]:
+) -> tuple[str, YAMLDict | None, YAMLDict | None]:
     relative_path = file_path.replace(root_path, "")
     if relative_path[-1] == "/":
         relative_path = relative_path[:-1]
@@ -844,10 +851,10 @@ def get_yml_label(
     if error:
         logger.debug(f"failed to get yml label:\n {error}")
         label = "error"
-    return label, role_info, project_info
+    return label, cast(YAMLDict | None, role_info), cast(YAMLDict | None, project_info)
 
 
-def get_yml_list(root_dir: str, task_num_threshold: int = -1) -> list[dict[str, Any]]:
+def get_yml_list(root_dir: str, task_num_threshold: int = -1) -> list[YAMLDict]:
     found_ymls = find_all_ymls(root_dir)
     all_files = []
     for yml_path in found_ymls:
@@ -857,9 +864,10 @@ def get_yml_list(root_dir: str, task_num_threshold: int = -1) -> list[dict[str, 
         if not project_info:
             project_info = {}
         if role_info:
-            if role_info.get("path") and not str(role_info.get("path", "")).startswith(root_dir):
-                role_info["path"] = os.path.join(root_dir, role_info["path"])
-            role_info["is_external_dependency"] = "." in role_info.get("name", "")
+            path_val = role_info.get("path", "")
+            if path_val and not str(path_val).startswith(root_dir):
+                role_info["path"] = os.path.join(root_dir, str(path_val))
+            role_info["is_external_dependency"] = "." in str(role_info.get("name", ""))
         in_role: bool = bool(role_info)
         in_project: bool = bool(project_info)
         all_files.append(
@@ -873,19 +881,20 @@ def get_yml_list(root_dir: str, task_num_threshold: int = -1) -> list[dict[str, 
                 "in_project": in_project,
             }
         )
-    return all_files
+    return cast(list[YAMLDict], all_files)
 
 
-def list_scan_target(root_dir: str, task_num_threshold: int = -1) -> list[dict[str, Any]]:
+def list_scan_target(root_dir: str, task_num_threshold: int = -1) -> list[YAMLDict]:
     yml_list = get_yml_list(root_dir=root_dir, task_num_threshold=task_num_threshold)
     known_roles = set()
     all_targets = []
     for yml_info in yml_list:
-        if yml_info["label"] not in ["playbook", "taskfile"]:
+        if str(yml_info.get("label", "")) not in ["playbook", "taskfile"]:
             continue
         role_path = ""
-        if yml_info["in_role"]:
-            role_path = yml_info["role_info"].get("path", None)
+        if yml_info.get("in_role"):
+            role_info = yml_info.get("role_info")
+            role_path = str(role_info.get("path", "")) if isinstance(role_info, dict) else ""
         if role_path and role_path in known_roles:
             continue
         scan_type = ""
@@ -897,17 +906,17 @@ def list_scan_target(root_dir: str, task_num_threshold: int = -1) -> list[dict[s
             path_from_root = role_path.replace(root_dir, "").lstrip("/")
             known_roles.add(role_path)
         else:
-            scan_type = yml_info["label"]
-            filepath = yml_info["filepath"]
-            path_from_root = yml_info["path_from_root"]
-        target_info = {
+            scan_type = str(yml_info.get("label", ""))
+            filepath = str(yml_info.get("filepath", ""))
+            path_from_root = str(yml_info.get("path_from_root", ""))
+        target_info: YAMLDict = {
             "filepath": filepath,
             "path_from_root": path_from_root,
             "scan_type": scan_type,
         }
         all_targets.append(target_info)
-    all_targets = sorted(all_targets, key=lambda x: x["filepath"])
-    all_targets = sorted(all_targets, key=lambda x: x["scan_type"])
+    all_targets = sorted(all_targets, key=lambda x: str(x.get("filepath", "")))
+    all_targets = sorted(all_targets, key=lambda x: str(x.get("scan_type", "")))
     return all_targets
 
 

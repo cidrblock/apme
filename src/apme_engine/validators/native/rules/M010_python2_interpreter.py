@@ -2,6 +2,7 @@
 
 import re
 from dataclasses import dataclass
+from typing import cast
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
@@ -9,6 +10,7 @@ from apme_engine.engine.models import (
     RuleResult,
     RunTargetType,
     Severity,
+    YAMLDict,
 )
 from apme_engine.engine.models import (
     RuleTag as Tag,
@@ -48,8 +50,13 @@ class Python2InterpreterRule(Rule):
         )
 
         verdict = bool(_PY2_PATH.search(interpreter))
-        detail = {}
+        detail: YAMLDict = {}
         if verdict:
             detail["message"] = f"ansible_python_interpreter set to Python 2 path: {interpreter}"
             detail["interpreter"] = interpreter
-        return RuleResult(verdict=verdict, detail=detail, file=task.file_info(), rule=self.get_metadata())
+        return RuleResult(
+            verdict=verdict,
+            detail=detail,
+            file=cast("tuple[str | int, ...] | None", task.file_info()),
+            rule=self.get_metadata(),
+        )

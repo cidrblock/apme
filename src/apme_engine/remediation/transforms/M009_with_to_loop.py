@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
-
+from apme_engine.engine.models import ViolationDict
 from apme_engine.engine.yaml_utils import FormattedYAML
 from apme_engine.remediation.registry import TransformResult
-from apme_engine.remediation.transforms._helpers import find_task_at_line
+from apme_engine.remediation.transforms._helpers import find_task_at_line, violation_line_to_int
 
 _WITH_SIMPLE = frozenset(
     {
@@ -17,7 +16,7 @@ _WITH_SIMPLE = frozenset(
 )
 
 
-def fix_with_to_loop(content: str, violation: dict[str, Any]) -> TransformResult:
+def fix_with_to_loop(content: str, violation: ViolationDict) -> TransformResult:
     """Convert simple ``with_items`` to ``loop:``.
 
     Only handles the straightforward cases (with_items, with_list,
@@ -31,9 +30,7 @@ def fix_with_to_loop(content: str, violation: dict[str, Any]) -> TransformResult
     except Exception:
         return TransformResult(content=content, applied=False)
 
-    line = violation.get("line", 0)
-    if isinstance(line, (list, tuple)):
-        line = line[0] if line else 0
+    line = violation_line_to_int(violation)
     task = find_task_at_line(data, line)
     if task is None:
         return TransformResult(content=content, applied=False)

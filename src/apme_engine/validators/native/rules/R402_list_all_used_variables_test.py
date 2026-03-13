@@ -1,5 +1,6 @@
 # Colocated tests for R402 (ListAllUsedVariablesRule).
 
+from apme_engine.engine.models import YAMLValue
 from apme_engine.validators.native.rules._test_helpers import (
     make_context,
     make_task_call,
@@ -21,7 +22,9 @@ def test_R402_fires_at_end_and_includes_variable_use_keys() -> None:
     assert result.rule is not None and result.rule.rule_id == "R402"
     assert result.detail is not None
     assert "variables" in result.detail
-    assert "my_var" in result.detail["variables"]
+    variables: YAMLValue = result.detail["variables"]
+    assert isinstance(variables, list)
+    assert "my_var" in variables
 
 
 def test_R402_does_not_fire_when_not_end() -> None:

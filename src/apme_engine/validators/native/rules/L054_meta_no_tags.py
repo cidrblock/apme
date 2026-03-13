@@ -1,6 +1,7 @@
 # L054: Role meta galaxy_info should include galaxy_tags
 
 from dataclasses import dataclass
+from typing import cast
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
@@ -8,6 +9,7 @@ from apme_engine.engine.models import (
     RuleResult,
     RunTargetType,
     Severity,
+    YAMLDict,
 )
 from apme_engine.engine.models import (
     RuleTag as Tag,
@@ -37,10 +39,19 @@ class MetaNoTagsRule(Rule):
         gi = metadata.get("galaxy_info")
         galaxy_info = gi if isinstance(gi, dict) else {}
         if not galaxy_info:
-            return RuleResult(verdict=False, file=role.file_info(), rule=self.get_metadata())
+            return RuleResult(
+                verdict=False,
+                file=cast("tuple[str | int, ...] | None", role.file_info()),
+                rule=self.get_metadata(),
+            )
         tags = galaxy_info.get("galaxy_tags") or galaxy_info.get("categories")
         verdict = not tags or (isinstance(tags, list) and len(tags) == 0)
         detail = {}
         if verdict:
             detail["message"] = "galaxy_info should include galaxy_tags or categories"
-        return RuleResult(verdict=verdict, detail=detail, file=role.file_info(), rule=self.get_metadata())
+        return RuleResult(
+            verdict=verdict,
+            detail=cast(YAMLDict | None, detail),
+            file=cast("tuple[str | int, ...] | None", role.file_info()),
+            rule=self.get_metadata(),
+        )

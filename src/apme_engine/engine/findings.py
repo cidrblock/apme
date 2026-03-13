@@ -3,10 +3,10 @@ from __future__ import annotations
 import os
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Any
 
 import jsonpickle
 
+from .models import YAMLDict, YAMLList
 from .utils import (
     lock_file,
     remove_lock_file,
@@ -16,21 +16,21 @@ from .utils import (
 
 @dataclass
 class Findings:
-    metadata: dict[str, Any] = field(default_factory=dict)
-    dependencies: list[Any] = field(default_factory=list)
+    metadata: YAMLDict = field(default_factory=dict)
+    dependencies: YAMLList = field(default_factory=list)
 
-    root_definitions: dict[str, Any] = field(default_factory=dict)
-    ext_definitions: dict[str, Any] = field(default_factory=dict)
-    extra_requirements: list[Any] = field(default_factory=list)
-    resolve_failures: dict[str, Any] = field(default_factory=dict)
+    root_definitions: YAMLDict = field(default_factory=dict)
+    ext_definitions: YAMLDict = field(default_factory=dict)
+    extra_requirements: YAMLList = field(default_factory=list)
+    resolve_failures: YAMLDict = field(default_factory=dict)
 
-    prm: dict[str, Any] = field(default_factory=dict)
-    report: dict[str, Any] = field(default_factory=dict)
+    prm: YAMLDict = field(default_factory=dict)
+    report: YAMLDict = field(default_factory=dict)
 
     summary_txt: str = ""
     scan_time: str = ""
 
-    def simple(self) -> dict[str, Any]:
+    def simple(self) -> YAMLDict:
         d = self.report.copy()
         d["metadata"] = self.metadata
         d["dependencies"] = self.dependencies

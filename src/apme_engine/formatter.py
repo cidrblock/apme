@@ -15,7 +15,6 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 
@@ -88,7 +87,7 @@ def _fix_tabs(text: str) -> str:
     return text.replace("\t", "  ")
 
 
-def _reorder_task_keys(data: Any) -> None:
+def _reorder_task_keys(data: object) -> None:
     """Reorder keys in task mappings so name comes first, then action, then meta keys."""
     if isinstance(data, CommentedSeq):
         for item in data:

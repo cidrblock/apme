@@ -5,7 +5,7 @@ import json
 import os
 import re
 import traceback
-from typing import Any, cast
+from typing import cast
 
 import yaml
 
@@ -54,6 +54,8 @@ from .models import (
     Task,
     TaskFile,
     TaskFormatError,
+    YAMLDict,
+    YAMLValue,
 )
 from .safe_glob import safe_glob
 from .utils import (
@@ -65,6 +67,19 @@ from .utils import (
     split_target_playbook_fullpath,
     split_target_taskfile_fullpath,
 )
+
+
+def _safe_int(val: object) -> int:
+    """Safely convert YAMLValue to int for task_loading counters."""
+    if isinstance(val, (int, float)):
+        return int(val)
+    if isinstance(val, str):
+        try:
+            return int(val)
+        except ValueError:
+            return 0
+    return 0
+
 
 # collection info direcotry can be something like
 #   "brightcomputing.bcm-9.1.11+41615.gitfab9053.info"
@@ -106,7 +121,7 @@ def load_repository(
     skip_playbook_format_error: bool = True,
     skip_task_format_error: bool = True,
     include_test_contents: bool = False,
-    yaml_label_list: list[tuple[str, str, Any]] | None = None,
+    yaml_label_list: list[tuple[str, str, YAMLValue]] | None = None,
     load_children: bool = True,
 ) -> Repository:
     repoObj = Repository()
@@ -194,20 +209,20 @@ def load_repository(
     )
     logger.debug(f"done ... {len(repoObj.taskfiles)} task files loaded")
     logger.debug("start loading inventory files")
-    repoObj.inventories = load_inventories(repo_path, basedir=basedir)
+    repoObj.inventories = cast(list[Inventory | str], load_inventories(repo_path, basedir=basedir))
     logger.debug(f"done ... {len(repoObj.inventories)} inventory files loaded")
     repoObj.files = load_files(
         path=repo_path, basedir=basedir, yaml_label_list=yaml_label_list, load_children=load_children
     )
     logger.debug(f"done ... {len(repoObj.files)} other files loaded")
     logger.debug("start loading installed collections")
-    repoObj.installed_collections = load_installed_collections(installed_collections_path)
+    repoObj.installed_collections = cast(list[Collection | str], load_installed_collections(installed_collections_path))
 
     logger.debug(f"done ... {len(repoObj.installed_collections)} collections loaded")
     logger.debug("start loading installed roles")
-    repoObj.installed_roles = load_installed_roles(installed_roles_path)
+    repoObj.installed_roles = cast(list[Role | str], load_installed_roles(installed_roles_path))
     logger.debug(f"done ... {len(repoObj.installed_roles)} roles loaded")
-    repoObj.requirements = load_requirements(path=repo_path)
+    repoObj.requirements = cast(YAMLDict, load_requirements(path=repo_path))
     name = os.path.basename(path)
     repoObj.name = name
     _path = name
@@ -388,7 +403,7 @@ def load_file(
 def load_files(
     path: str,
     basedir: str = "",
-    yaml_label_list: list[tuple[str, str, Any]] | None = None,
+    yaml_label_list: list[tuple[str, str, YAMLValue]] | None = None,
     role_name: str = "",
     collection_name: str = "",
     load_children: bool = True,
@@ -416,7 +431,7 @@ def load_files(
 def load_play(
     path: str,
     index: int,
-    play_block_dict: Any,
+    play_block_dict: YAMLDict,
     role_name: str = "",
     collection_name: str = "",
     parent_key: str = "",
@@ -451,8 +466,12 @@ def load_play(
     pbObj.collection = collection_name
     pbObj.jsonpath = jsonpath
     pbObj.set_key(parent_key, parent_local_key)
-    play_name = data_block.get("name", "")
-    collections_in_play = data_block.get("collections", [])
+    play_name_val = data_block.get("name", "")
+    play_name = str(play_name_val) if play_name_val is not None else ""
+    collections_in_play_raw = data_block.get("collections", [])
+    collections_in_play: list[str] = (
+        [str(x) for x in collections_in_play_raw] if isinstance(collections_in_play_raw, list) else []
+    )
     pre_tasks = []
     post_tasks = []
     tasks = []
@@ -470,7 +489,7 @@ def load_play(
     keys.extend(tasks_keys)
     task_count = 0
     task_errors: list[BaseException] = []
-    task_loading: dict[str, Any] = {
+    task_loading: dict[str, object] = {
         "total": 0,
         "success": 0,
         "failure": 0,
@@ -487,19 +506,23 @@ def load_play(
             if not isinstance(v, list):
                 continue
             jsonpath_prefix = f".plays.{index}.pre_tasks"
-            task_blocks, _ = get_task_blocks(task_dict_list=v, jsonpath_prefix=jsonpath_prefix)
+            task_dict_list = [x for x in v if isinstance(x, dict)]
+            task_blocks, _ = get_task_blocks(
+                task_dict_list=task_dict_list if task_dict_list else None,
+                jsonpath_prefix=jsonpath_prefix,
+            )
             if task_blocks is None:
                 continue
             last_task_line_num = -1
             for task_dict, task_jsonpath in task_blocks:
-                task_loading["total"] += 1
+                task_loading["total"] = _safe_int(task_loading.get("total", 0)) + 1
                 i = task_count
                 err = None
                 try:
                     t = load_task(
                         path=path,
                         index=i,
-                        task_block_dict=task_dict,
+                        task_block_dict=cast(dict[str, object], task_dict),
                         task_jsonpath=task_jsonpath,
                         role_name=role_name,
                         collection_name=collection_name,
@@ -513,7 +536,7 @@ def load_play(
                     )
                     pre_tasks.append(t)
                     if t:
-                        task_loading["success"] += 1
+                        task_loading["success"] = _safe_int(task_loading.get("success", 0)) + 1
                         if t.line_num_in_file and len(t.line_num_in_file) == 2:
                             last_task_line_num = t.line_num_in_file[1]
                 except TaskFormatError as exc:
@@ -530,25 +553,29 @@ def load_play(
                 finally:
                     task_count += 1
                     if err is not None:
-                        task_loading["failure"] += 1
-                        task_loading["errors"].append(err)
+                        task_loading["failure"] = _safe_int(task_loading.get("failure", 0)) + 1
+                        task_errors.append(err)
         elif k == "tasks":
             if not isinstance(v, list):
                 continue
             jsonpath_prefix = f".plays.{index}.tasks"
-            task_blocks, _ = get_task_blocks(task_dict_list=v, jsonpath_prefix=jsonpath_prefix)
+            task_dict_list = [x for x in v if isinstance(x, dict)]
+            task_blocks, _ = get_task_blocks(
+                task_dict_list=task_dict_list if task_dict_list else None,
+                jsonpath_prefix=jsonpath_prefix,
+            )
             if task_blocks is None:
                 continue
             last_task_line_num = -1
             for task_dict, task_jsonpath in task_blocks:
                 i = task_count
-                task_loading["total"] += 1
+                task_loading["total"] = _safe_int(task_loading.get("total", 0)) + 1
                 err = None
                 try:
                     t = load_task(
                         path=path,
                         index=i,
-                        task_block_dict=task_dict,
+                        task_block_dict=cast(dict[str, object], task_dict),
                         task_jsonpath=task_jsonpath,
                         role_name=role_name,
                         collection_name=collection_name,
@@ -562,7 +589,7 @@ def load_play(
                     )
                     tasks.append(t)
                     if t:
-                        task_loading["success"] += 1
+                        task_loading["success"] = _safe_int(task_loading.get("success", 0)) + 1
                         if t.line_num_in_file and len(t.line_num_in_file) == 2:
                             last_task_line_num = t.line_num_in_file[1]
                 except TaskFormatError as exc:
@@ -579,25 +606,29 @@ def load_play(
                 finally:
                     task_count += 1
                     if err is not None:
-                        task_loading["failure"] += 1
-                        task_loading["errors"].append(err)
+                        task_loading["failure"] = _safe_int(task_loading.get("failure", 0)) + 1
+                        task_errors.append(err)
         elif k == "post_tasks":
             if not isinstance(v, list):
                 continue
             jsonpath_prefix = f".plays.{index}.post_tasks"
-            task_blocks, _ = get_task_blocks(task_dict_list=v, jsonpath_prefix=jsonpath_prefix)
+            task_dict_list = [x for x in v if isinstance(x, dict)]
+            task_blocks, _ = get_task_blocks(
+                task_dict_list=task_dict_list if task_dict_list else None,
+                jsonpath_prefix=jsonpath_prefix,
+            )
             if task_blocks is None:
                 continue
             last_task_line_num = -1
             for task_dict, task_jsonpath in task_blocks:
                 i = task_count
-                task_loading["total"] += 1
+                task_loading["total"] = _safe_int(task_loading.get("total", 0)) + 1
                 err = None
                 try:
                     t = load_task(
                         path=path,
                         index=i,
-                        task_block_dict=task_dict,
+                        task_block_dict=cast(dict[str, object], task_dict),
                         task_jsonpath=task_jsonpath,
                         role_name=role_name,
                         collection_name=collection_name,
@@ -611,7 +642,7 @@ def load_play(
                     )
                     post_tasks.append(t)
                     if t:
-                        task_loading["success"] += 1
+                        task_loading["success"] = _safe_int(task_loading.get("success", 0)) + 1
                         if t.line_num_in_file and len(t.line_num_in_file) == 2:
                             last_task_line_num = t.line_num_in_file[1]
                 except TaskFormatError as exc:
@@ -628,25 +659,29 @@ def load_play(
                 finally:
                     task_count += 1
                     if err is not None:
-                        task_loading["failure"] += 1
-                        task_loading["errors"].append(err)
+                        task_loading["failure"] = _safe_int(task_loading.get("failure", 0)) + 1
+                        task_errors.append(err)
         elif k == "handlers":
             if not isinstance(v, list):
                 continue
             jsonpath_prefix = f".plays.{index}.handlers"
-            task_blocks, _ = get_task_blocks(task_dict_list=v, jsonpath_prefix=jsonpath_prefix)
+            task_dict_list = [x for x in v if isinstance(x, dict)]
+            task_blocks, _ = get_task_blocks(
+                task_dict_list=task_dict_list if task_dict_list else None,
+                jsonpath_prefix=jsonpath_prefix,
+            )
             if task_blocks is None:
                 continue
             last_task_line_num = -1
             for task_dict, task_jsonpath in task_blocks:
                 i = task_count
-                task_loading["total"] += 1
+                task_loading["total"] = _safe_int(task_loading.get("total", 0)) + 1
                 err = None
                 try:
                     t = load_task(
                         path=path,
                         index=i,
-                        task_block_dict=task_dict,
+                        task_block_dict=cast(dict[str, object], task_dict),
                         task_jsonpath=task_jsonpath,
                         role_name=role_name,
                         collection_name=collection_name,
@@ -660,7 +695,7 @@ def load_play(
                     )
                     handlers.append(t)
                     if t:
-                        task_loading["success"] += 1
+                        task_loading["success"] = _safe_int(task_loading.get("success", 0)) + 1
                         if t.line_num_in_file and len(t.line_num_in_file) == 2:
                             last_task_line_num = t.line_num_in_file[1]
                 except TaskFormatError as exc:
@@ -677,19 +712,18 @@ def load_play(
                 finally:
                     task_count += 1
                     if err is not None:
-                        task_loading["failure"] += 1
-                        task_loading["errors"].append(err)
+                        task_loading["failure"] = _safe_int(task_loading.get("failure", 0)) + 1
+                        task_errors.append(err)
         elif k == "roles":
             if not isinstance(v, list):
                 continue
             for i, r_block in enumerate(v):
                 r_name = ""
-                role_options: dict[str, Any] = {}
+                role_options: dict[str, object] = {}
                 if isinstance(r_block, dict):
-                    r_name = r_block.get("role", "")
-                    role_options = {}
-                    for k, v in r_block.items():
-                        role_options[k] = v
+                    role_val = r_block.get("role", "")
+                    r_name = str(role_val) if role_val is not None else ""
+                    role_options = {rk: rv for rk, rv in r_block.items()}
                 elif isinstance(r_block, str):
                     r_name = r_block
                 try:
@@ -712,15 +746,15 @@ def load_play(
         elif k == "vars":
             if not isinstance(v, dict):
                 continue
-            variables = v
+            variables = cast(dict[str, object], v)
         elif k == "vars_files":
             if not isinstance(v, list):
                 continue
-            vars_files = v
+            vars_files = [str(x) for x in v]
         elif k == "module_defaults":
             if not isinstance(v, dict):
                 continue
-            module_defaults = v
+            module_defaults = cast(dict[str, object], v)
         elif k == "import_playbook" or k == "include":
             if not isinstance(v, str):
                 continue
@@ -733,26 +767,26 @@ def load_play(
     pbObj.defined_in = path
     pbObj.import_module = import_module
     pbObj.import_playbook = import_playbook
-    pbObj.pre_tasks = pre_tasks
-    pbObj.tasks = tasks
-    pbObj.post_tasks = post_tasks
-    pbObj.handlers = handlers
-    pbObj.roles = roles
-    pbObj.variables = variables
+    pbObj.pre_tasks = cast(list[Task | str], pre_tasks)
+    pbObj.tasks = cast(list[Task | str], tasks)
+    pbObj.post_tasks = cast(list[Task | str], post_tasks)
+    pbObj.handlers = cast(list[Task | str], handlers)
+    pbObj.roles = cast(list[RoleInPlay | str], roles)
+    pbObj.variables = cast(YAMLDict, variables)
     pbObj.vars_files = vars_files
-    pbObj.module_defaults = module_defaults
+    pbObj.module_defaults = cast(YAMLDict, module_defaults)
     pbObj.options = play_options
     _become = BecomeInfo.from_options(play_options)
     pbObj.become = _become if _become is not None else BecomeInfo()
     pbObj.collections_in_play = collections_in_play
-    pbObj.task_loading = task_loading
+    pbObj.task_loading = cast(YAMLDict, task_loading)
 
     return pbObj
 
 
 def load_roleinplay(
     name: str,
-    options: dict[str, Any],
+    options: dict[str, object],
     defined_in: str,
     role_index: int,
     play_index: int,
@@ -766,10 +800,10 @@ def load_roleinplay(
         collections_in_play = []
     ripObj = RoleInPlay()
     if name == "" and "name" in options:
-        name = options["name"]
-        options.pop("name", None)
+        name_val = options.pop("name", None)
+        name = str(name_val) if name_val is not None else ""
     ripObj.name = name
-    ripObj.options = options
+    ripObj.options = cast(YAMLDict, options)
     if basedir != "" and defined_in.startswith(basedir):
         defined_in = defined_in[len(basedir) :]
         if defined_in.startswith("/"):
@@ -868,7 +902,7 @@ def load_playbook(
                 ) from err
         except Exception:
             logger.exception(f"error while loading the play at {fullpath} (index={i})")
-    pbObj.plays = plays
+    pbObj.plays = cast(list[Play | str], plays)
 
     return pbObj
 
@@ -879,7 +913,7 @@ def load_playbooks(
     skip_playbook_format_error: bool = True,
     skip_task_format_error: bool = True,
     include_test_contents: bool = False,
-    yaml_label_list: list[tuple[str, str, Any]] | None = None,
+    yaml_label_list: list[tuple[str, str, YAMLValue]] | None = None,
     load_children: bool = True,
 ) -> list[Playbook | str]:
     if path == "":
@@ -1067,7 +1101,7 @@ def load_role(
                     default_variables.update(vars_in_yaml)
                 except Exception as e:
                     logger.debug(f"failed to load this yaml file to read default variables; {e.args[0]}")
-        roleObj.default_variables = default_variables
+        roleObj.default_variables = cast(YAMLDict, default_variables)
 
     if os.path.exists(vars_dir_path):
         patterns = [vars_dir_path + "/**/*.ya?ml"]
@@ -1092,7 +1126,7 @@ def load_role(
     if not load_children:
         use_ansible_doc = False
 
-    module_specs: dict[str, Any] = {}
+    module_specs: dict[str, dict[str, object]] | None = None
     if use_ansible_doc:
         module_specs = get_module_specs_by_ansible_doc(
             module_files=module_files,
@@ -1192,7 +1226,7 @@ def load_role(
                 handlers.append(tf.defined_in)
         if not load_children:
             handlers = sorted(handlers)  # type: ignore[type-var]
-        roleObj.handlers = handlers
+        roleObj.handlers = cast(list[Task], handlers)
 
     return roleObj
 
@@ -1204,7 +1238,7 @@ def load_roles(
     skip_playbook_format_error: bool = True,
     skip_task_format_error: bool = True,
     include_test_contents: bool = False,
-    yaml_label_list: list[tuple[str, str, Any]] | None = None,
+    yaml_label_list: list[tuple[str, str, YAMLValue]] | None = None,
     load_children: bool = True,
 ) -> list[Role | str]:
     if path == "":
@@ -1271,12 +1305,13 @@ def load_roles(
     if yaml_label_list:
         for _fpath, _label, role_info in yaml_label_list:
             if role_info and isinstance(role_info, dict):
-                role_path = role_info.get("path", "")
+                role_path_val = role_info.get("path", "")
+                role_path = str(role_path_val) if role_path_val is not None else ""
                 _role_path = role_path
                 if not _role_path.startswith(path):
                     _role_path = os.path.join(path, _role_path)
                 if _role_path not in role_dirs:
-                    role_dirs.append(_role_path)
+                    role_dirs.append(str(_role_path))
 
     if not role_dirs:
         return []
@@ -1303,7 +1338,7 @@ def load_roles(
     return roles
 
 
-def load_requirements(path: str) -> dict[str, Any]:
+def load_requirements(path: str) -> dict[str, object]:
     requirements = {}
     requirements_yml_path = os.path.join(path, "requirements.yml")
     if os.path.exists(requirements_yml_path):
@@ -1355,7 +1390,7 @@ def load_module(
     role_name: str = "",
     basedir: str = "",
     use_ansible_doc: bool = True,
-    module_specs: dict[str, Any] | None = None,
+    module_specs: dict[str, dict[str, object]] | None = None,
 ) -> Module:
     if module_specs is None:
         module_specs = {}
@@ -1403,19 +1438,25 @@ def load_module(
         # running `ansible-doc` for each module causes speed problem due to overhead,
         # so use it for all modules and pick up the doc for the module here
         if module_specs:
-            doc_yaml = module_specs.get(moduleObj.fqcn, {}).get("doc", "")
-            examples = module_specs.get(moduleObj.fqcn, {}).get("examples", "")
+            spec = module_specs.get(moduleObj.fqcn, {})
+            if isinstance(spec, dict):
+                doc_val = spec.get("doc", "")
+                doc_yaml = str(doc_val) if doc_val is not None else ""
+                ex_val = spec.get("examples", "")
+                examples = str(ex_val) if ex_val is not None else ""
+            else:
+                doc_yaml = ""
+                examples = ""
     else:
         # parse the script file for a quick scan (this does not contain doc from `doc_fragments`)
         doc_yaml = get_documentation_in_module_file(fullpath)
     if doc_yaml:
-        doc_dict = {}
+        doc_dict_raw: object = None
         try:
-            doc_dict = yaml.load(doc_yaml, Loader=Loader)
+            doc_dict_raw = yaml.load(doc_yaml, Loader=Loader)
         except Exception:
             logger.debug(f"failed to load the arguments documentation of the module: {module_name}")
-        if not doc_dict:
-            doc_dict = {}
+        doc_dict = doc_dict_raw if isinstance(doc_dict_raw, dict) else {}
         arg_specs = doc_dict.get("options", {})
         if isinstance(arg_specs, dict):
             for arg_name in arg_specs:
@@ -1499,7 +1540,7 @@ def load_modules(
     if not load_children:
         use_ansible_doc = False
 
-    module_specs = {}
+    module_specs: dict[str, dict[str, object]] | None = None
     if use_ansible_doc:
         module_specs = get_module_specs_by_ansible_doc(
             module_files=module_files,
@@ -1533,7 +1574,7 @@ def load_modules(
 def load_task(
     path: str,
     index: int,
-    task_block_dict: dict[str, Any],
+    task_block_dict: dict[str, object],
     task_jsonpath: str = "",
     role_name: str = "",
     collection_name: str = "",
@@ -1568,29 +1609,34 @@ def load_task(
         )
     data_block = task_block_dict
     task_name = ""
-    module_name = find_module_name(task_block_dict)
+    module_name = find_module_name(cast(YAMLDict, task_block_dict))
     module_short_name = module_name.split(".")[-1]
-    task_options: dict[str, Any] = {}
-    module_options: dict[str, Any] | str = {}
+    task_options: YAMLDict = {}
+    module_options: YAMLDict | str = {}
     for k, v in data_block.items():
         if k == "name":
-            task_name = v
+            task_name = str(v) if v is not None else ""
         if k == module_name:
-            module_options = v
+            if isinstance(v, dict):
+                module_options = cast(YAMLDict, v)
+            elif isinstance(v, str):
+                module_options = v
+            else:
+                module_options = str(v) if v is not None else ""
         elif k == "local_action":
             _opt = data_block[k]
             if isinstance(_opt, str):
                 module_options = _opt.lstrip(module_name).lstrip(" ")
             elif isinstance(_opt, dict):
-                _mod_opts: dict[str, Any] = {}
+                _mod_opts: YAMLDict = {}
                 for mk, mv in _opt.items():
                     if mk == "module":
                         continue
                     _mod_opts[mk] = mv
                 module_options = _mod_opts
-            task_options.update({k: v})
+            task_options.update({k: cast(YAMLValue, v)})
         else:
-            task_options.update({k: v})
+            task_options.update({k: cast(YAMLValue, v)})
 
     taskObj.jsonpath = task_jsonpath
     taskObj.set_yaml_lines(
@@ -1633,7 +1679,7 @@ def load_task(
                 key = p.split("=")[0]
                 val = "=".join(p.split("=")[1:]).rstrip()
                 new_module_options[key] = val
-        module_options = new_module_options
+        module_options = cast(YAMLDict, new_module_options)
     executable = module_name
     executable_type = ExecutableType.MODULE_TYPE
     if module_short_name in ["import_role", "include_role"]:
@@ -1641,7 +1687,8 @@ def load_task(
         if isinstance(module_options, str):
             role_ref = module_options
         elif isinstance(module_options, dict):
-            role_ref = module_options.get("name", "")
+            rv = module_options.get("name", "")
+            role_ref = str(rv) if rv is not None else ""
         executable = role_ref
         executable_type = ExecutableType.ROLE_TYPE
     if module_short_name in ["import_tasks", "include_tasks", "include"]:
@@ -1649,7 +1696,7 @@ def load_task(
         if isinstance(module_options, str):
             taskfile_ref = module_options
         elif isinstance(module_options, dict):
-            taskfile_ref = module_options.get("file", "")
+            taskfile_ref = str(module_options.get("file", "") or "")
         executable = taskfile_ref
         executable_type = ExecutableType.TASKFILE_TYPE
 
@@ -1690,7 +1737,7 @@ def load_task(
     if module_short_name == "set_fact" and isinstance(module_options, dict):
         set_facts.update(module_options)
 
-    registered_variables = {}
+    registered_variables: YAMLDict = {}
     # set variables if this task register a new var
     if "register" in task_options:
         register_var_name = task_options.get("register", "")
@@ -1698,10 +1745,14 @@ def load_task(
             registered_variables.update({register_var_name: taskObj.key})
 
     # set loop variables when loop / with_xxxx are there
-    loop_info = {}
+    loop_info: YAMLDict = {}
     for k in task_options:
         if k in loop_task_option_names:
-            loop_var = task_options.get("loop_control", {}).get("loop_var", "item")
+            loop_control = task_options.get("loop_control", {})
+            loop_var = "item"
+            if isinstance(loop_control, dict):
+                lv = loop_control.get("loop_var", "item")
+                loop_var = str(lv) if lv is not None else "item"
             loop_info[loop_var] = task_options.get(k, [])
 
     taskObj.options = task_options
@@ -1761,7 +1812,7 @@ def load_taskfile(
         return tfObj
     tasks: list[Task] = []
     task_errors_tf: list[BaseException] = []
-    task_loading: dict[str, Any] = {
+    task_loading: dict[str, object] = {
         "total": 0,
         "success": 0,
         "failure": 0,
@@ -1770,13 +1821,13 @@ def load_taskfile(
     last_task_line_num: int = -1
     error: BaseException | None = None
     for i, (t_dict, t_jsonpath) in enumerate(task_dicts):
-        task_loading["total"] += 1
+        task_loading["total"] = _safe_int(task_loading.get("total", 0)) + 1
         error = None
         try:
             t = load_task(
                 fullpath,
                 i,
-                t_dict,
+                cast(dict[str, object], t_dict),
                 t_jsonpath,
                 role_name,
                 collection_name,
@@ -1788,7 +1839,7 @@ def load_taskfile(
             )
             tasks.append(t)
             if t:
-                task_loading["success"] += 1
+                task_loading["success"] = _safe_int(task_loading.get("success", 0)) + 1
                 if t.line_num_in_file and len(t.line_num_in_file) == 2:
                     last_task_line_num = t.line_num_in_file[1]
         except TaskFormatError as exc:
@@ -1803,10 +1854,10 @@ def load_taskfile(
             logger.exception(f"error while loading the task at {fullpath}, index: {i}")
         finally:
             if error is not None:
-                task_loading["failure"] += 1
-                task_loading["errors"].append(error)
-    tfObj.tasks = tasks
-    tfObj.task_loading = task_loading
+                task_loading["failure"] = _safe_int(task_loading.get("failure", 0)) + 1
+                task_errors_tf.append(error)
+    tfObj.tasks = cast(list[Task | str], tasks)
+    tfObj.task_loading = cast(YAMLDict, task_loading)
 
     return tfObj
 
@@ -1816,7 +1867,7 @@ def load_taskfile(
 def load_taskfiles(
     path: str,
     basedir: str = "",
-    yaml_label_list: list[tuple[str, str, Any]] | None = None,
+    yaml_label_list: list[tuple[str, str, YAMLValue]] | None = None,
     load_children: bool = True,
 ) -> list[TaskFile | str]:
     if not os.path.exists(path):
@@ -1886,12 +1937,14 @@ def load_collection(
             colObj.metadata = json.load(file)
 
         if colObj.metadata is not None and isinstance(colObj.metadata, dict):
-            colObj.dependency["collections"] = colObj.metadata.get("collection_info", {}).get("dependencies", {})
+            ci = colObj.metadata.get("collection_info", {})
+            deps = ci.get("dependencies", {}) if isinstance(ci, dict) else {}
+            colObj.dependency["collections"] = deps
 
     files_file_path = os.path.join(fullpath, "FILES.json")
     if os.path.exists(files_file_path):
         with open(files_file_path) as file:
-            colObj.files = json.load(file)
+            colObj.files = cast(YAMLDict, json.load(file))
 
     meta_runtime_file_path = os.path.join(fullpath, "meta", "runtime.yml")
     if os.path.exists(meta_runtime_file_path):
@@ -1910,8 +1963,9 @@ def load_collection(
                 logger.debug(f"failed to load requirements.yml; {e.args[0]}")
 
     if isinstance(colObj.metadata, dict):
-        license_filename = colObj.metadata.get("collection_info", {}).get("license_file", None)
-        if license_filename:
+        ci = colObj.metadata.get("collection_info", {})
+        license_filename = ci.get("license_file", None) if isinstance(ci, dict) else None
+        if license_filename and isinstance(license_filename, str):
             license_filepath = os.path.join(fullpath, license_filename)
             if os.path.exists(license_filepath):
                 with open(license_filepath) as file:
@@ -1919,9 +1973,10 @@ def load_collection(
                     lines = contents.splitlines()
                     if len(lines) > 10:
                         contents = "\n".join(lines[:10])
-                    colObj.metadata["_ari_added"] = {
-                        "license_file_contents_head": contents,
-                    }
+                    colObj.metadata["_ari_added"] = cast(
+                        YAMLDict,
+                        {"license_file_contents_head": contents},
+                    )
 
     playbooks = load_playbooks(
         path=fullpath,
@@ -1964,7 +2019,7 @@ def load_collection(
     if not load_children:
         use_ansible_doc = False
 
-    module_specs = {}
+    module_specs: dict[str, dict[str, object]] | None = None
     if use_ansible_doc:
         module_specs = get_module_specs_by_ansible_doc(
             module_files=module_files,
@@ -2060,7 +2115,7 @@ def load_object(loadObj: Load) -> None:
             path=path,
             basedir=path,
             include_test_contents=loadObj.include_test_contents,
-            yaml_label_list=cast(list[tuple[str, str, Any]] | None, _yaml_labels if _yaml_labels else None),
+            yaml_label_list=cast(list[tuple[str, str, YAMLValue]] | None, _yaml_labels if _yaml_labels else None),
             load_children=False,
         )
 
@@ -2089,7 +2144,9 @@ def load_object(loadObj: Load) -> None:
     loadObj.timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")
 
 
-def find_playbook_role_module(path: str, use_ansible_doc: bool = True) -> tuple[list[Any], list[Any], list[Any]]:
+def find_playbook_role_module(
+    path: str, use_ansible_doc: bool = True
+) -> tuple[list[Playbook | str], list[str | Role], list[Module | str]]:
     playbooks = load_playbooks(path, basedir=path, load_children=False)
     root_role = None
     with contextlib.suppress(Exception):

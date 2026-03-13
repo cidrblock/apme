@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import cast
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
@@ -7,7 +8,9 @@ from apme_engine.engine.models import (
     RunTargetType,
     Severity,
     TaskCall,
+    Variable,
     VariableDict,
+    YAMLDict,
 )
 from apme_engine.engine.models import RuleTag as Tag
 
@@ -33,18 +36,23 @@ class ShowVariablesRule(Rule):
             return None
 
         verdict = True
-        variables: dict[str, object] = {}
+        variables: YAMLDict = {}
         if isinstance(task, TaskCall):
             variables = task.variable_set
-        detail: dict[str, object] = {"variables": variables}
+        detail: YAMLDict = {"variables": variables}
 
-        return RuleResult(verdict=verdict, detail=detail, file=task.file_info(), rule=self.get_metadata())
+        return RuleResult(
+            verdict=verdict,
+            detail=detail,
+            file=cast("tuple[str | int, ...] | None", task.file_info()),
+            rule=self.get_metadata(),
+        )
 
     def print(self, result: RuleResult) -> str:
         variables = result.detail.get("variables") if result.detail is not None else None
         var_table: str = "None"
-        if variables:
-            var_table = "\n" + VariableDict.print_table(variables)
+        if variables and isinstance(variables, dict):
+            var_table = "\n" + VariableDict.print_table(cast(dict[str, list[Variable]], variables))
         output = f"ruleID={self.rule_id}, \
             severity={self.severity}, \
             description={self.description}, \

@@ -9,7 +9,7 @@ import traceback
 from copy import deepcopy
 from importlib.util import module_from_spec, spec_from_file_location
 from inspect import isclass
-from typing import Any
+from typing import TYPE_CHECKING, cast
 
 import requests
 import yaml
@@ -17,6 +17,10 @@ from filelock import FileLock
 from tabulate import tabulate
 
 from . import logger
+from .models import YAMLDict
+
+if TYPE_CHECKING:
+    from .findings import Findings
 
 bool_values_true = frozenset(("y", "yes", "on", "1", "true", "t", 1, 1.0, True))
 bool_values_false = frozenset(("n", "no", "off", "0", "false", "f", 0, 0.0, False))
@@ -36,7 +40,7 @@ def lock_file(fpath: str | None, timeout: int = 10) -> FileLock | None:
     return lock
 
 
-def unlock_file(lock: Any) -> None:
+def unlock_file(lock: object) -> None:
     if not lock:
         return
     if not isinstance(lock, FileLock):
@@ -154,7 +158,7 @@ def get_installed_metadata(type: str, name: str, path: str, dep_dir: str | None 
     return download_url, version
 
 
-def get_collection_metadata(path: str) -> dict[str, Any] | None:
+def get_collection_metadata(path: str) -> dict[str, object] | None:
     if not os.path.exists(path):
         return None
     manifest_json_path = os.path.join(path, "MANIFEST.json")
@@ -165,7 +169,7 @@ def get_collection_metadata(path: str) -> dict[str, Any] | None:
     return meta
 
 
-def get_role_metadata(path: str) -> dict[str, Any] | None:
+def get_role_metadata(path: str) -> dict[str, object] | None:
     if not os.path.exists(path):
         return None
     meta_main_yml_path = os.path.join(path, "meta", "main.yml")
@@ -259,10 +263,11 @@ def indent(multi_line_txt: str, level: int = 0) -> str:
     return "\n".join(lines)
 
 
-def report_to_display(data_report: dict[str, Any]) -> str:
-    playbook_num_total = data_report["summary"].get("playbooks", {}).get("total", 0)
+def report_to_display(data_report: dict[str, object]) -> str:
+    summary = cast(dict[str, object], data_report.get("summary", {}))
+    playbook_num_total = cast(int, cast(dict[str, object], summary.get("playbooks", {})).get("total", 0))
     # playbook_num_risk_found = data_report["summary"].get("playbooks", {}).get("risk_found", 0)
-    role_num_total = data_report["summary"].get("roles", {}).get("total", 0)
+    role_num_total = cast(int, cast(dict[str, object], summary.get("roles", {})).get("total", 0))
     # role_num_risk_found = data_report["summary"].get("roles", {}).get("risk_found", 0)
 
     output_txt = ""
@@ -287,14 +292,18 @@ def report_to_display(data_report: dict[str, Any]) -> str:
     output_txt += "-" * 90 + "\n"
 
     report_num = 1
-    for detail in data_report["details"]:
+    details = data_report.get("details", [])
+    if not isinstance(details, list):
+        details = []
+    for detail in details:
         output_txt_for_this_tree = ""
         do_report = False
-        # output_txt_for_this_tree += "#{} {} - {}\n".format(report_num, tree_root_type.upper(), tree_root_name)
-        results_list = detail.get("results", [])
+        if not isinstance(detail, dict):
+            continue
+        results_list = cast(list[object], detail.get("results", []))
 
         for result_info in results_list:
-            output = result_info.get("output", "")
+            output = result_info.get("output", "") if isinstance(result_info, dict) else ""
             if output == "":
                 continue
             do_report = True
@@ -307,21 +316,28 @@ def report_to_display(data_report: dict[str, Any]) -> str:
     return output_txt
 
 
-def summarize_findings(findings: Any, show_all: bool = False) -> str:
+def summarize_findings(findings: Findings, show_all: bool = False) -> str:
     metadata = findings.metadata
     dependencies = findings.dependencies
     report = findings.report
     resolve_failures = findings.resolve_failures
     extra_requirements = findings.extra_requirements
-    return summarize_findings_data(metadata, dependencies, report, resolve_failures, extra_requirements, show_all)
+    return summarize_findings_data(
+        cast("dict[str, object]", metadata),
+        cast("list[dict[str, object]]", dependencies),
+        cast("dict[str, object]", report),
+        cast("dict[str, object]", resolve_failures),
+        cast("list[dict[str, object]]", extra_requirements),
+        show_all,
+    )
 
 
 def summarize_findings_data(
-    metadata: dict[str, Any],
-    dependencies: list[Any],
-    report: dict[str, Any],
-    resolve_failures: dict[str, Any],
-    extra_requirements: list[Any],
+    metadata: dict[str, object],
+    dependencies: list[dict[str, object]],
+    report: dict[str, object],
+    resolve_failures: dict[str, object],
+    extra_requirements: list[dict[str, object]],
     show_all: bool = False,
 ) -> str:
     target_name = metadata.get("name", "")
@@ -334,12 +350,12 @@ def summarize_findings_data(
         output_lines.append("External Dependencies")
         dep_table = [("NAME", "VERSION", "HASH")]
         for dep_info in dependencies:
-            dep_meta = dep_info.get("metadata", {})
-            dep_name = dep_meta.get("name", "")
+            dep_meta = cast(dict[str, object], dep_info.get("metadata", {}))
+            dep_name = str(dep_meta.get("name", ""))
             if dep_name == target_name:
                 continue
-            dep_version = dep_meta.get("version", "")
-            dep_hash = dep_meta.get("hash", "")
+            dep_version = str(dep_meta.get("version", ""))
+            dep_hash = str(dep_meta.get("hash", ""))
             dep_table.append((dep_name, dep_version, dep_hash))
         output_lines.append(tabulate(dep_table))
 
@@ -349,9 +365,9 @@ def summarize_findings_data(
     #           f"{self.ram_client.make_findings_dir_path(self.type, self.name, self.version, self.hash)}")
     #     print("-" * 90)
 
-    module_failures = resolve_failures.get("module", {})
-    role_failures = resolve_failures.get("role", {})
-    taskfile_failures = resolve_failures.get("taskfile", {})
+    module_failures = cast(dict[str, object], resolve_failures.get("module", {}))
+    role_failures = cast(dict[str, object], resolve_failures.get("role", {}))
+    taskfile_failures = cast(dict[str, object], resolve_failures.get("taskfile", {}))
     module_fail_num = len(module_failures)
     role_fail_num = len(role_failures)
     taskfile_fail_num = len(taskfile_failures)
@@ -384,15 +400,16 @@ def summarize_findings_data(
         for ext_req in extra_requirements:
             if ext_req.get("type", "") not in ["role", "module"]:
                 continue
-            req_name = ext_req.get("defined_in", {}).get("name", None)
+            defined_in = cast(dict[str, object], ext_req.get("defined_in", {}))
+            req_name = defined_in.get("name", None)
             if req_name is None:
                 continue
             if req_name == target_name:
                 continue
             # print(f"[DEBUG] requirement: {ext_req}")
 
-            obj_type = ext_req.get("type", "")
-            obj_name = ext_req.get("name", "")
+            obj_type = str(ext_req.get("type", ""))
+            obj_name = str(ext_req.get("name", ""))
             short_name = obj_name.replace(f"{req_name}.", "")
 
             if obj_type == "module":
@@ -400,7 +417,7 @@ def summarize_findings_data(
             if obj_type == "role":
                 unresolved_roles.append(ext_req)
 
-            req_version = ext_req.get("defined_in", {}).get("version", None)
+            req_version = defined_in.get("version", None)
             req_str = json.dumps([req_name, req_version])
 
             if req_str not in suggestion:
@@ -412,10 +429,10 @@ def summarize_findings_data(
             table = [("NAME", "USED_IN")]
             thresh = 4
             for ext_req in unresolved_modules[:thresh]:
-                obj_name = ext_req.get("name", "")
-                used_in = ext_req.get("used_in", "")
-                req_name = ext_req.get("defined_in", {}).get("name", None)
-                short_name = obj_name.replace(f"{req_name}.", "")
+                obj_name = str(ext_req.get("name", ""))
+                used_in = str(ext_req.get("used_in", ""))
+                req_name = cast(dict[str, object], ext_req.get("defined_in", {})).get("name", None)
+                short_name = obj_name.replace(f"{req_name}.", "") if req_name else obj_name
                 table.append((short_name, used_in))
             if len(unresolved_modules) > thresh:
                 rest_num = len(unresolved_modules) - thresh
@@ -427,10 +444,10 @@ def summarize_findings_data(
             table = [("NAME", "USED_IN")]
             thresh = 4
             for ext_req in unresolved_roles[:thresh]:
-                obj_name = ext_req.get("name", "")
-                used_in = ext_req.get("used_in", "")
-                req_name = ext_req.get("defined_in", {}).get("name", None)
-                short_name = obj_name.replace(f"{req_name}.", "")
+                obj_name = str(ext_req.get("name", ""))
+                used_in = str(ext_req.get("used_in", ""))
+                req_name = cast(dict[str, object], ext_req.get("defined_in", {})).get("name", None)
+                short_name = obj_name.replace(f"{req_name}.", "") if req_name else obj_name
                 table.append((short_name, used_in))
             if len(unresolved_roles) > thresh:
                 rest_num = len(unresolved_roles) - thresh
@@ -480,37 +497,47 @@ def summarize_findings_data(
     return output
 
 
-def show_all_ram_metadata(ram_meta_list: list[dict[str, Any]]) -> None:
-    table = [("NAME", "VERSION", "HASH")]
+def show_all_ram_metadata(ram_meta_list: list[dict[str, str]]) -> None:
+    table: list[tuple[str, str, str]] = [("NAME", "VERSION", "HASH")]
     for meta in ram_meta_list:
-        table.append((meta["name"], meta["version"], meta["hash"]))
+        table.append((str(meta.get("name", "")), str(meta.get("version", "")), str(meta.get("hash", ""))))
     print(tabulate(table))
 
 
-def diff_files_data(files1: dict[str, Any], files2: dict[str, Any]) -> list[dict[str, str]]:
-    files_dict1 = {}
-    for finfo in files1.get("files", []):
-        ftype = finfo.get("ftype", "")
+def diff_files_data(files1: dict[str, object], files2: dict[str, object]) -> list[dict[str, str]]:
+    files_dict1: dict[str, str] = {}
+    files_list1 = files1.get("files", [])
+    if not isinstance(files_list1, list):
+        files_list1 = []
+    for finfo in files_list1:
+        if not isinstance(finfo, dict):
+            continue
+        ftype = str(finfo.get("ftype", ""))
         if ftype != "file":
             continue
-        fpath = finfo.get("name", "")
-        hash = finfo.get("chksum_sha256", "")
-        files_dict1[fpath] = hash
+        fpath = str(finfo.get("name", ""))
+        hash_val = str(finfo.get("chksum_sha256", ""))
+        files_dict1[fpath] = hash_val
 
-    files_dict2 = {}
-    for finfo in files2.get("files", []):
-        ftype = finfo.get("ftype", "")
+    files_dict2: dict[str, str] = {}
+    files_list2 = files2.get("files", [])
+    if not isinstance(files_list2, list):
+        files_list2 = []
+    for finfo in files_list2:
+        if not isinstance(finfo, dict):
+            continue
+        ftype = str(finfo.get("ftype", ""))
         if ftype != "file":
             continue
-        fpath = finfo.get("name", "")
-        hash = finfo.get("chksum_sha256", "")
-        files_dict2[fpath] = hash
+        fpath = str(finfo.get("name", ""))
+        hash_val = str(finfo.get("chksum_sha256", ""))
+        files_dict2[fpath] = hash_val
 
     # TODO: support "replaced" type
-    diffs = []
-    for fpath, hash in files_dict1.items():
+    diffs: list[dict[str, str]] = []
+    for fpath, hash_val in files_dict1.items():
         if fpath in files_dict2:
-            if files_dict2[fpath] == hash:
+            if files_dict2[fpath] == hash_val:
                 continue
             else:
                 diffs.append(
@@ -552,7 +579,7 @@ def get_module_specs_by_ansible_doc(
     module_files: list[str] | str,
     fqcn_prefix: str,
     search_path: str,
-) -> dict[str, dict[str, Any]]:
+) -> dict[str, dict[str, object]]:
     if not module_files:
         return {}
     if isinstance(module_files, str):
@@ -641,7 +668,7 @@ def get_documentation_in_module_file(fpath: str) -> str:
     return "\n".join(doc_lines)
 
 
-def get_class_by_arg_type(arg_type: str) -> type[Any] | None:
+def get_class_by_arg_type(arg_type: str) -> type[object] | None:
     if not isinstance(arg_type, str):
         return None
 
@@ -654,7 +681,7 @@ def get_class_by_arg_type(arg_type: str) -> type[Any] | None:
         "float": float,
         # ARI handles `path` as a string
         "path": str,
-        "raw": Any,
+        "raw": object,
         # TODO: check actual types of the following
         "jsonarg": str,
         "json": str,
@@ -670,11 +697,11 @@ def get_class_by_arg_type(arg_type: str) -> type[Any] | None:
 
 def load_classes_in_dir(
     dir_path: str,
-    target_class: type[Any],
+    target_class: type[object],
     base_dir: str = "",
     only_subclass: bool = True,
     fail_on_error: bool = False,
-) -> tuple[list[type[Any]], list[str]]:
+) -> tuple[list[type[object]], list[str]]:
     search_path = dir_path
     found = False
     if os.path.exists(search_path):
@@ -721,7 +748,7 @@ def load_classes_in_dir(
     return classes, errors
 
 
-def equal(a: Any, b: Any) -> bool:
+def equal(a: object, b: object) -> bool:
     type_a = type(a)
     type_b = type(b)
     if type_a != type_b:
@@ -750,7 +777,7 @@ def equal(a: Any, b: Any) -> bool:
     return True
 
 
-def recursive_copy_dict(src: dict[str, Any], dst: dict[str, Any]) -> None:
+def recursive_copy_dict(src: YAMLDict, dst: YAMLDict) -> None:
     if not isinstance(src, dict):
         raise ValueError(f"only dict input is allowed, but got {type(src)}")
 
@@ -759,8 +786,9 @@ def recursive_copy_dict(src: dict[str, Any], dst: dict[str, Any]) -> None:
 
     for k, sv in src.items():
         if isinstance(sv, dict):
-            dst[k] = {}
-            recursive_copy_dict(sv, dst[k])
+            new_dst: YAMLDict = {}
+            dst[k] = new_dst
+            recursive_copy_dict(sv, new_dst)
         else:
             dst[k] = deepcopy(sv)
     return
@@ -770,7 +798,7 @@ def is_test_object(path: str) -> bool:
     return path.startswith("tests/integration/") or path.startswith("molecule/")
 
 
-def parse_bool(value: Any) -> bool:
+def parse_bool(value: object) -> bool:
     value_str: str | None = None
     use_value_str = False
     if isinstance(value, bool):

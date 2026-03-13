@@ -1,11 +1,12 @@
 """Convert between dict violations (validator output) and proto Violation."""
 
-from typing import Any
+from collections.abc import Mapping
 
 from apme.v1.common_pb2 import LineRange, Violation
+from apme_engine.engine.models import ViolationDict
 
 
-def violation_dict_to_proto(v: dict[str, Any]) -> Violation:
+def violation_dict_to_proto(v: ViolationDict | Mapping[str, str | int | list[int] | bool | None]) -> Violation:
     """Build a proto Violation from a dict with rule_id, level, message, file, line, path."""
     out = Violation(
         rule_id=v.get("rule_id") or "",
@@ -22,7 +23,7 @@ def violation_dict_to_proto(v: dict[str, Any]) -> Violation:
     return out
 
 
-def violation_proto_to_dict(v: Violation) -> dict[str, Any]:
+def violation_proto_to_dict(v: Violation) -> ViolationDict:
     """Build a dict violation from proto (for CLI output)."""
     line: int | list[int] | None = v.line if v.HasField("line") else None
     if v.HasField("line_range"):

@@ -11,17 +11,18 @@ import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 import grpc
 import grpc.aio
 
-from apme.v1 import validate_pb2, validate_pb2_grpc
-from apme.v1.common_pb2 import HealthResponse, RuleTiming, ValidatorDiagnostics
-from apme.v1.validate_pb2 import ValidateResponse
+from apme.v1 import common_pb2, validate_pb2, validate_pb2_grpc
+from apme.v1.common_pb2 import File, HealthResponse, RuleTiming, ValidatorDiagnostics
+from apme.v1.validate_pb2 import ValidateRequest, ValidateResponse
 from apme_engine.collection_cache.config import get_cache_root
 from apme_engine.collection_cache.venv_builder import build_venv
 from apme_engine.daemon.violation_convert import violation_dict_to_proto
+from apme_engine.engine.models import ViolationDict, YAMLDict
 from apme_engine.validators.ansible import AnsibleRunResult, AnsibleValidator
 from apme_engine.validators.ansible._venv import (
     DEFAULT_VERSION,
@@ -46,7 +47,7 @@ def _cache_root() -> Path:
     return get_cache_root()
 
 
-def _write_chunked_fs(files: list[Any]) -> Path:
+def _write_chunked_fs(files: list[File]) -> Path:
     """Write request.files into a temp directory; return path to that directory."""
     tmp = Path(tempfile.mkdtemp(prefix="apme_ansible_val_"))
     for f in files:
@@ -72,10 +73,10 @@ def _build_ephemeral_venv(
 
 
 def _run_ansible_validate(
-    files: list[Any],
+    files: list[File],
     raw_version: str,
     collection_specs: list[str],
-    hierarchy_payload: dict[str, Any],
+    hierarchy_payload: YAMLDict,
     req_id: str,
 ) -> _AnsibleResult:
     """Blocking function: build ephemeral venv, run validator, return result with timing."""
@@ -94,7 +95,7 @@ def _run_ansible_validate(
             venv_build_ms = (time.monotonic() - tv) * 1000
             sys.stderr.write(f"[req={req_id}] Ansible: venv build failed for {raw_version}: {e}\n")
             sys.stderr.flush()
-            err_viol: dict[str, Any] = {
+            err_viol: ViolationDict = {
                 "rule_id": "L057",
                 "level": "error",
                 "message": f"Ephemeral venv build failed for {raw_version}: {e}",
@@ -103,7 +104,7 @@ def _run_ansible_validate(
                 "path": "",
             }
             return _AnsibleResult(
-                run_result=AnsibleRunResult(violations=[err_viol]),
+                run_result=AnsibleRunResult(violations=[err_viol]),  # type: ignore[list-item]
                 venv_build_ms=venv_build_ms,
                 ansible_core_version=raw_version,
             )
@@ -131,7 +132,7 @@ def _run_ansible_validate(
         sys.stderr.write(f"[req={req_id}] Ansible error: {e}\n")
         traceback.print_exc(file=sys.stderr)
         sys.stderr.flush()
-        err_viol_exc: dict[str, Any] = {
+        err_viol_exc: ViolationDict = {
             "rule_id": "L057",
             "level": "error",
             "message": str(e),
@@ -140,7 +141,7 @@ def _run_ansible_validate(
             "path": "",
         }
         return _AnsibleResult(
-            run_result=AnsibleRunResult(violations=[err_viol_exc]),
+            run_result=AnsibleRunResult(violations=[err_viol_exc]),  # type: ignore[list-item]
             venv_build_ms=venv_build_ms,
             ansible_core_version=raw_version,
         )
@@ -156,7 +157,7 @@ def _run_ansible_validate(
 class AnsibleValidatorServicer(validate_pb2_grpc.ValidatorServicer):
     """Async gRPC adapter: builds ephemeral venv per request, runs AnsibleValidator."""
 
-    async def Validate(self, request: Any, context: Any) -> ValidateResponse:
+    async def Validate(self, request: ValidateRequest, context: grpc.aio.ServicerContext) -> ValidateResponse:  # type: ignore[type-arg]
         req_id = request.request_id or ""
         t0 = time.monotonic()
         try:
@@ -166,10 +167,10 @@ class AnsibleValidatorServicer(validate_pb2_grpc.ValidatorServicer):
             raw_version = (request.ansible_core_version or "").strip() or DEFAULT_VERSION
             collection_specs = [s.strip() for s in (request.collection_specs or []) if s.strip()]
 
-            hierarchy_payload: dict[str, Any] = {}
+            hierarchy_payload: YAMLDict = {}
             if request.hierarchy_payload:
                 try:
-                    hierarchy_payload = json.loads(request.hierarchy_payload)
+                    hierarchy_payload = cast(YAMLDict, json.loads(request.hierarchy_payload))
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     sys.stderr.write(f"[req={req_id}] Ansible: failed to parse hierarchy_payload\n")
 
@@ -181,7 +182,7 @@ class AnsibleValidatorServicer(validate_pb2_grpc.ValidatorServicer):
 
             result = await asyncio.get_event_loop().run_in_executor(
                 None,
-                _run_ansible_validate,
+                _run_ansible_validate,  # type: ignore[arg-type]
                 list(request.files),
                 raw_version,
                 collection_specs,
@@ -217,7 +218,7 @@ class AnsibleValidatorServicer(validate_pb2_grpc.ValidatorServicer):
             )
 
             return validate_pb2.ValidateResponse(
-                violations=[violation_dict_to_proto(v) for v in result.run_result.violations],
+                violations=[violation_dict_to_proto(cast(ViolationDict, v)) for v in result.run_result.violations],
                 request_id=req_id,
                 diagnostics=diag,
             )
@@ -229,11 +230,15 @@ class AnsibleValidatorServicer(validate_pb2_grpc.ValidatorServicer):
             sys.stderr.flush()
             return ValidateResponse(violations=[], request_id=req_id)
 
-    async def Health(self, request: Any, context: Any) -> HealthResponse:
+    async def Health(
+        self,
+        request: common_pb2.HealthRequest,
+        context: grpc.aio.ServicerContext,  # type: ignore[type-arg]
+    ) -> HealthResponse:
         return HealthResponse(status="ok")
 
 
-async def serve(listen: str = "0.0.0.0:50053") -> Any:
+async def serve(listen: str = "0.0.0.0:50053") -> grpc.aio.Server:
     """Create, bind, and start async gRPC server with Ansible servicer."""
     server = grpc.aio.server(maximum_concurrent_rpcs=_MAX_CONCURRENT_RPCS)
     validate_pb2_grpc.add_ValidatorServicer_to_server(AnsibleValidatorServicer(), server)  # type: ignore[no-untyped-call]

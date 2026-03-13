@@ -2,12 +2,28 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 
+from apme_engine.engine.models import ViolationDict
 
-def find_task_at_line(data: Any, line: int) -> CommentedMap | None:
+
+def violation_line_to_int(violation: ViolationDict) -> int:
+    """Extract 1-indexed line number from violation dict. Returns 0 if missing/invalid."""
+    line = violation.get("line", 0)
+    if isinstance(line, (list, tuple)) and line:
+        val = line[0]
+        return int(val) if isinstance(val, (int, float, str)) else 0
+    if isinstance(line, (int, float)):
+        return int(line)
+    if isinstance(line, str):
+        try:
+            return int(line)
+        except ValueError:
+            return 0
+    return 0
+
+
+def find_task_at_line(data: CommentedMap | CommentedSeq, line: int) -> CommentedMap | None:
     """Walk a playbook structure and return the task mapping at the given line.
 
     ``line`` is 1-indexed (from the violation); ruamel uses 0-indexed internally.
@@ -27,7 +43,7 @@ def find_task_at_line(data: Any, line: int) -> CommentedMap | None:
     return None
 
 
-def _search_node(node: Any, target_line: int) -> CommentedMap | None:
+def _search_node(node: CommentedMap | CommentedSeq, target_line: int) -> CommentedMap | None:
     if not isinstance(node, CommentedMap):
         return None
 

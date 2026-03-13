@@ -1,6 +1,6 @@
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import cast
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
@@ -8,6 +8,7 @@ from apme_engine.engine.models import (
     RuleResult,
     RunTargetType,
     Severity,
+    YAMLDict,
 )
 from apme_engine.engine.models import (
     RuleTag as Tag,
@@ -48,8 +49,13 @@ class JinjaRule(Rule):
                         text += " " + val
         violations = JINJA_NO_SPACE.findall(text)
         verdict = len(violations) > 0
-        detail: dict[str, Any] = {}
+        detail: dict[str, object] = {}
         if violations:
             detail["bad_expressions"] = list(dict.fromkeys(violations))[:10]
             detail["message"] = "use spaces inside Jinja expressions: {{ var }}"
-        return RuleResult(verdict=verdict, detail=detail, file=task.file_info(), rule=self.get_metadata())
+        return RuleResult(
+            verdict=verdict,
+            detail=cast(YAMLDict | None, detail),
+            file=cast("tuple[str | int, ...] | None", task.file_info()),
+            rule=self.get_metadata(),
+        )

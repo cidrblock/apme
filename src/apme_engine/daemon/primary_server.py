@@ -11,17 +11,17 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 import grpc
 import grpc.aio
 import jsonpickle
 
-from apme.v1 import primary_pb2, primary_pb2_grpc, validate_pb2_grpc
-from apme.v1.common_pb2 import HealthResponse, ValidatorDiagnostics
-from apme.v1.primary_pb2 import FileDiff, FormatResponse, ScanDiagnostics, ScanResponse
+from apme.v1 import common_pb2, primary_pb2, primary_pb2_grpc, validate_pb2_grpc
+from apme.v1.common_pb2 import File, HealthResponse, ValidatorDiagnostics
+from apme.v1.primary_pb2 import FileDiff, FormatRequest, FormatResponse, ScanDiagnostics, ScanRequest, ScanResponse
 from apme.v1.validate_pb2 import ValidateRequest
 from apme_engine.daemon.violation_convert import violation_proto_to_dict
+from apme_engine.engine.models import ViolationDict
 from apme_engine.runner import run_scan
 
 _MAX_CONCURRENT_RPCS = int(os.environ.get("APME_PRIMARY_MAX_RPCS", "16"))
@@ -29,39 +29,39 @@ _MAX_CONCURRENT_RPCS = int(os.environ.get("APME_PRIMARY_MAX_RPCS", "16"))
 
 @dataclass
 class _ValidatorResult:
-    violations: list[dict[str, Any]] = field(default_factory=list)
+    violations: list[ViolationDict] = field(default_factory=list)
     diagnostics: ValidatorDiagnostics | None = None
 
 
-def _sort_violations(violations: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    def key(v: dict[str, Any]) -> tuple[str, int | float]:
-        f = v.get("file") or ""
+def _sort_violations(violations: list[ViolationDict]) -> list[ViolationDict]:
+    def key(v: ViolationDict) -> tuple[str, int | float]:
+        f = str(v.get("file") or "")
         line = v.get("line")
         if isinstance(line, (list, tuple)) and line:
             line = line[0]
         if not isinstance(line, (int, float)):
             line = 0
-        return (f, line)
+        return (f, line if isinstance(line, (int, float)) else 0)
 
     return sorted(violations, key=key)
 
 
-def _deduplicate_violations(violations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _deduplicate_violations(violations: list[ViolationDict]) -> list[ViolationDict]:
     """Remove duplicate violations sharing the same (rule_id, file, line)."""
-    seen: set[tuple[str, str, Any]] = set()
-    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str | int | list[int] | tuple[int, ...] | bool | None]] = set()
+    out: list[ViolationDict] = []
     for v in violations:
-        line = v.get("line")
+        line: str | int | list[int] | tuple[int, ...] | bool | None = v.get("line")
         if isinstance(line, (list, tuple)):
             line = tuple(line)
-        key = (v.get("rule_id", ""), v.get("file", ""), line)
-        if key not in seen:
-            seen.add(key)
+        dedup_key = (str(v.get("rule_id", "")), str(v.get("file", "")), line)
+        if dedup_key not in seen:
+            seen.add(dedup_key)
             out.append(v)
     return out
 
 
-def _write_chunked_fs(project_root: str, files: list[Any]) -> Path:
+def _write_chunked_fs(project_root: str, files: list[File]) -> Path:
     """Write request.files into a temp directory; return path to that directory."""
     tmp = Path(tempfile.mkdtemp(prefix="apme_primary_"))
     for f in files:
@@ -103,9 +103,9 @@ VALIDATOR_ENV_VARS = {
 
 
 class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
-    async def Scan(self, request: Any, context: Any) -> primary_pb2.ScanResponse:
+    async def Scan(self, request: ScanRequest, context: grpc.aio.ServicerContext) -> primary_pb2.ScanResponse:  # type: ignore[type-arg]
         scan_id = request.scan_id or str(uuid.uuid4())
-        violations: list[dict[str, Any]] = []
+        violations: list[ViolationDict] = []
         temp_dir = None
         scan_t0 = time.monotonic()
 
@@ -118,7 +118,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
 
             temp_dir = await asyncio.get_event_loop().run_in_executor(
                 None,
-                _write_chunked_fs,
+                _write_chunked_fs,  # type: ignore[arg-type]
                 request.project_root or "project",
                 list(request.files),
             )
@@ -219,13 +219,13 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                 with contextlib.suppress(OSError):
                     shutil.rmtree(temp_dir)
 
-    async def Format(self, request: Any, context: Any) -> FormatResponse:
+    async def Format(self, request: FormatRequest, context: grpc.aio.ServicerContext) -> FormatResponse:  # type: ignore[type-arg]
         from apme_engine.formatter import format_content
 
         sys.stderr.write(f"Format: received {len(request.files)} file(s)\n")
         sys.stderr.flush()
 
-        def _do_format(files: list[Any]) -> list[Any]:
+        def _do_format(files: list[File]) -> list[FileDiff]:
             diffs = []
             for f in files:
                 if not f.path.endswith((".yml", ".yaml")):
@@ -248,7 +248,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
 
         diffs = await asyncio.get_event_loop().run_in_executor(
             None,
-            _do_format,
+            _do_format,  # type: ignore[arg-type]
             list(request.files),
         )
 
@@ -256,11 +256,15 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
         sys.stderr.flush()
         return FormatResponse(diffs=diffs)
 
-    async def Health(self, request: Any, context: Any) -> HealthResponse:
+    async def Health(
+        self,
+        request: common_pb2.HealthRequest,
+        context: grpc.aio.ServicerContext,  # type: ignore[type-arg]
+    ) -> HealthResponse:
         return HealthResponse(status="ok")
 
 
-async def serve(listen_address: str = "0.0.0.0:50051") -> Any:
+async def serve(listen_address: str = "0.0.0.0:50051") -> grpc.aio.Server:
     server = grpc.aio.server(maximum_concurrent_rpcs=_MAX_CONCURRENT_RPCS)
     primary_pb2_grpc.add_PrimaryServicer_to_server(PrimaryServicer(), server)  # type: ignore[no-untyped-call]
     if ":" in listen_address:

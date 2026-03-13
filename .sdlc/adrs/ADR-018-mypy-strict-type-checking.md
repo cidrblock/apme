@@ -25,12 +25,13 @@ Python's type system, when enforced via mypy in strict mode, catches entire cate
 
 ## Decision
 
-**Adopt mypy strict mode globally.** All Python source files (src/, tests/, scripts/) must pass `mypy --strict`. The check is enforced via the prek pre-commit hook and CI.
+**Adopt mypy strict mode globally with explicit Any banned.** All Python source files (src/, tests/, scripts/) must pass `mypy --strict` with `disallow_any_explicit = true`. The check is enforced via the prek pre-commit hook and CI.
 
 ## Rationale
 
 - Strict mode catches the widest range of type errors — no-untyped-def, type-arg, union-attr, attr-defined, assignment mismatches
-- The upfront cost (~3,800 errors fixed) is a one-time investment; ongoing cost is near-zero since prek enforces compliance on every commit
+- `disallow_any_explicit = true` prevents using `Any` as a lazy escape hatch — forces proper types, isinstance guards, or domain-specific type aliases
+- The upfront cost (~3,800 strict errors + ~1,700 explicit-Any cascade errors fixed) is a one-time investment; ongoing cost is near-zero since prek enforces compliance on every commit
 - Protobuf generated files (src/apme/v1/*_pb2*.py) are excluded — they are machine-generated and not under our control
 - Third-party libraries without type stubs (ruamel.yaml, ansible, jsonpickle, etc.) use `ignore_missing_imports` overrides
 - Aligns with ADR-014 (prek hooks) and ADR-015 (CI enforcement) — mypy is another quality gate in the same pipeline
@@ -40,6 +41,7 @@ Python's type system, when enforced via mypy in strict mode, catches entire cate
 ```toml
 [tool.mypy]
 strict = true
+disallow_any_explicit = true
 python_version = "3.10"
 exclude = ["src/apme/v1/.*_pb2"]
 ```
@@ -48,18 +50,34 @@ Type stub packages added to dev dependencies: `mypy`, `types-protobuf`, `types-P
 
 The mypy hook in `.pre-commit-config.yaml` runs with `pass_filenames: false` and checks `src/ tests/ scripts/` as a whole, ensuring the pyproject.toml configuration (excludes, overrides) is respected.
 
+### YAML Type System
+
+To replace `Any` for YAML/JSON-parsed data, the codebase defines recursive type aliases in `models.py`:
+
+```python
+YAMLScalar = str | int | float | bool | None
+YAMLValue = YAMLScalar | list["YAMLValue"] | dict[str, "YAMLValue"]
+YAMLDict = dict[str, YAMLValue]
+YAMLList = list[YAMLValue]
+ViolationDict = dict[str, str | int | list[int] | bool | None]
+```
+
+These types are used wherever data originates from YAML parsing, JSON loading, or gRPC/API payloads. Code that consumes `YAMLValue` must narrow with `isinstance()` checks or `cast()` before accessing type-specific operations.
+
 ## Consequences
 
 ### Positive
 - All functions have explicit parameter and return types
-- Generic collections are parameterized (`dict[str, Any]`, `list[str]`, etc.)
+- Generic collections use domain-specific types (`YAMLDict`, `ViolationDict`, `list[Module]`, etc.) instead of `Any`
 - Optional/nullable values are explicitly typed and checked before access
 - New code must be fully typed to pass prek — no regression possible
 - IDE support (autocomplete, refactoring) is significantly improved
+- `isinstance()` guards at YAML boundaries catch type mismatches early
 
 ### Negative
-- Some genuinely dynamic code (e.g., protobuf attribute access, sample annotators) requires targeted `# type: ignore` comments
+- Some genuinely dynamic code (e.g., protobuf attribute access, gRPC ServicerContext, sample annotators) requires targeted `# type: ignore` comments
 - Third-party libraries without stubs need `ignore_missing_imports` overrides, reducing coverage at module boundaries
+- `cast()` is used at some boundaries where mypy cannot infer types (e.g., dict invariance, model objects in YAML containers) — these are runtime-unchecked
 
 ## Related Decisions
 

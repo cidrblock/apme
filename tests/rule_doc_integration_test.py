@@ -1,7 +1,7 @@
 """Integration tests: run engine + validators on YAML from rule .md examples and assert expected violation/pass."""
 
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 import pytest
 
@@ -23,10 +23,10 @@ def _opa_bundle_dir() -> Path:
     return _repo_root() / "src" / "apme_engine" / "validators" / "opa" / "bundle"
 
 
-def _violation_ids_for_rule(violations: list[dict[str, Any]], rule_id: str, validator: str) -> list[str]:
+def _violation_ids_for_rule(violations: list[dict[str, object]], rule_id: str, validator: str) -> list[str]:
     """Return violation rule_id values that match this doc rule (for assertion)."""
     expected = f"native:{rule_id}" if validator == "native" else rule_id
-    return [v["rule_id"] for v in violations if v.get("rule_id") == expected]
+    return [str(v["rule_id"]) for v in violations if v.get("rule_id") == expected]
 
 
 def _ensure_playbook(yaml_content: str) -> str:
@@ -62,7 +62,7 @@ def _ensure_playbook(yaml_content: str) -> str:
 
 
 @pytest.fixture(scope="module")  # type: ignore[untyped-decorator]
-def validators() -> dict[str, Any]:
+def validators() -> dict[str, NativeValidator | OpaValidator]:
     """OPA and Native validators. Native with no exclusions so all rules can run."""
     opa_bundle = str(_opa_bundle_dir())
     return {
@@ -71,7 +71,9 @@ def validators() -> dict[str, Any]:
     }
 
 
-def _collect_violations(yaml_content: str, validators: dict[str, Any]) -> list[dict[str, Any]]:
+def _collect_violations(
+    yaml_content: str, validators: dict[str, NativeValidator | OpaValidator]
+) -> list[dict[str, object]]:
     """Run scan on YAML and return combined violations from both validators."""
     content = _ensure_playbook(yaml_content)
     try:
@@ -80,13 +82,13 @@ def _collect_violations(yaml_content: str, validators: dict[str, Any]) -> list[d
         pytest.skip(f"Scan failed (engine may need fixes): {e}")
     if not context.hierarchy_payload:
         return []
-    violations = []
+    violations: list[dict[str, object]] = []
     for v in validators.values():
-        violations.extend(v.run(context))
+        violations.extend(cast(list[dict[str, object]], v.run(context)))
     return violations
 
 
-def _rule_doc_params() -> tuple[list[tuple[str, dict[str, Any]]], list[str]]:
+def _rule_doc_params() -> tuple[list[tuple[str, dict[str, object]]], list[str]]:
     """List of (md_path, doc) and corresponding ids for parametrize."""
     pairs = discover_rule_docs(_native_rules_dir(), _opa_bundle_dir())
     if not pairs:
@@ -102,17 +104,20 @@ _param_tuples, _param_ids = _rule_doc_params()
     _param_tuples if _param_tuples else [("", {})],
     ids=_param_ids if _param_ids else ["no_docs"],
 )  # type: ignore[untyped-decorator]
-def test_rule_doc_examples(md_path: str, doc: dict[str, Any], validators: dict[str, Any]) -> None:
+def test_rule_doc_examples(
+    md_path: str, doc: dict[str, object], validators: dict[str, NativeValidator | OpaValidator]
+) -> None:
     """For each rule .md with frontmatter and examples, run YAML and assert violation/pass."""
     if not doc.get("examples"):
         pytest.skip(f"No examples in {md_path}")
-    rule_id = doc["rule_id"]
-    validator = doc["validator"]
+    rule_id = str(doc["rule_id"])
+    validator = str(doc["validator"])
     if validator == "ansible":
         pytest.skip("Ansible validator docs require a venv; tested separately")
-    for i, ex in enumerate(doc["examples"]):
-        expect_violation = ex["expect_violation"]
-        yaml_content = ex["yaml"]
+    examples = cast(list[dict[str, object]], doc["examples"])
+    for i, ex in enumerate(examples):
+        expect_violation = bool(ex["expect_violation"])
+        yaml_content = str(ex["yaml"])
         violations = _collect_violations(yaml_content, validators)
         matching = _violation_ids_for_rule(violations, rule_id, validator)
         if expect_violation:

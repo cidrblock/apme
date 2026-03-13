@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import re
-from typing import Any
 
+from apme_engine.engine.models import ViolationDict
 from apme_engine.engine.yaml_utils import FormattedYAML
 from apme_engine.remediation.registry import TransformResult
-from apme_engine.remediation.transforms._helpers import find_task_at_line
+from apme_engine.remediation.transforms._helpers import find_task_at_line, violation_line_to_int
 
 _PATTERNS = [
     (re.compile(r'\b(\w+)\s*==\s*""'), r"\1 | length == 0"),
@@ -17,7 +17,7 @@ _PATTERNS = [
 ]
 
 
-def fix_empty_string(content: str, violation: dict[str, Any]) -> TransformResult:
+def fix_empty_string(content: str, violation: ViolationDict) -> TransformResult:
     """Replace `var == ""` with `var | length == 0` and similar."""
     yaml = FormattedYAML(typ="rt", pure=True, version=(1, 1))
 
@@ -26,9 +26,7 @@ def fix_empty_string(content: str, violation: dict[str, Any]) -> TransformResult
     except Exception:
         return TransformResult(content=content, applied=False)
 
-    line = violation.get("line", 0)
-    if isinstance(line, (list, tuple)):
-        line = line[0] if line else 0
+    line = violation_line_to_int(violation)
     task = find_task_at_line(data, line)
     if task is None:
         return TransformResult(content=content, applied=False)

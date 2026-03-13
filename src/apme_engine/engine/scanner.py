@@ -8,7 +8,7 @@ import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 import jsonpickle
 import yaml
@@ -26,14 +26,22 @@ from .loader import (
 )
 from .model_loader import load_object
 from .models import (
+    Annotation,
     AnsibleRunContext,
     ARIResult,
     Load,
     LoadType,
+    Location,
     Object,
     ObjectList,
+    RiskAnnotation,
+    Rule,
+    RunTarget,
     TaskCall,
     TaskCallsInTree,
+    YAMLDict,
+    YAMLList,
+    YAMLValue,
 )
 from .parser import Parser
 from .risk_assessment_model import RAMClient
@@ -54,7 +62,7 @@ default_config_path = ARI_CONFIG_PATH or os.path.expanduser("~/.ari/config")
 default_data_dir = os.path.join("/tmp", "ari-data")
 default_rules_dir = os.path.join(os.path.dirname(__file__), "rules")
 default_log_level = "info"
-default_rules: list[Any] = []
+default_rules: list[str] = []
 default_disable_default_rules = False
 default_logger_key = "ari"
 
@@ -67,10 +75,10 @@ class Config:
     rules_dir: str = ""
     logger_key: str = ""
     log_level: str = ""
-    rules: list[Any] = field(default_factory=list)
+    rules: list[str] = field(default_factory=list)
     disable_default_rules: bool = False
 
-    _data: dict[str, Any] = field(default_factory=dict)
+    _data: YAMLDict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.path:
@@ -86,44 +94,51 @@ class Config:
             self._data = config_data
 
         if not self.data_dir:
-            self.data_dir = self._get_single_config("ARI_DATA_DIR", "data_dir", default_data_dir)
+            val = self._get_single_config("ARI_DATA_DIR", "data_dir", default_data_dir)
+            self.data_dir = val if isinstance(val, str) else default_data_dir
         if not self.disable_default_rules:
-            self.disable_default_rules = self._get_single_config(
+            val = self._get_single_config(
                 "ARI_DISABLE_DEFAULT_RULES", "disable_default_rules", default_disable_default_rules
             )
+            self.disable_default_rules = val if isinstance(val, bool) else default_disable_default_rules
         if not self.rules_dir:
             if self.disable_default_rules:
-                self.rules_dir = self._get_single_config("ARI_RULES_DIR", "rules_dir", "")
+                val = self._get_single_config("ARI_RULES_DIR", "rules_dir", "")
+                self.rules_dir = val if isinstance(val, str) else ""
             else:
-                self.rules_dir = self._get_single_config("ARI_RULES_DIR", "rules_dir", default_rules_dir)
+                val = self._get_single_config("ARI_RULES_DIR", "rules_dir", default_rules_dir)
+                self.rules_dir = val if isinstance(val, str) else default_rules_dir
         # automatically add the default rules dir unless it is disabled
         if not self.rules_dir.endswith(default_rules_dir) and not self.disable_default_rules:
             self.rules_dir += ":" + default_rules_dir
         if not self.logger_key:
-            self.logger_key = self._get_single_config("ARI_LOGGER_KEY", "logger_key", default_logger_key)
+            val = self._get_single_config("ARI_LOGGER_KEY", "logger_key", default_logger_key)
+            self.logger_key = val if isinstance(val, str) else default_logger_key
         if not self.log_level:
-            self.log_level = self._get_single_config("ARI_LOG_LEVEL", "log_level", default_log_level)
+            val = self._get_single_config("ARI_LOG_LEVEL", "log_level", default_log_level)
+            self.log_level = val if isinstance(val, str) else default_log_level
         if not self.rules:
-            self.rules = self._get_single_config("ARI_RULES", "rules", default_rules, "list", ",")
+            val = self._get_single_config("ARI_RULES", "rules", default_rules, "list", ",")
+            self.rules = val if isinstance(val, list) else default_rules
 
     def _get_single_config(
         self,
         env_key: str = "",
         yaml_key: str = "",
-        __default: Any = None,
-        __type: Any = None,
+        __default: str | list[str] | bool | None = None,
+        __type: str | None = None,
         separator: str = "",
-    ) -> Any:
+    ) -> str | list[str] | bool:
         if env_key in os.environ:
-            _from_env: Any = os.environ.get(env_key, None)
+            _from_env: str | list[str] | bool | None = os.environ.get(env_key, None)
             if _from_env and __type and __type == "list":
                 _from_env = _from_env.split(separator) if isinstance(_from_env, str) else _from_env
-            return _from_env
+            return cast(str | list[str] | bool, _from_env if _from_env is not None else __default)
         elif yaml_key in self._data:
             _from_file = self._data.get(yaml_key, None)
-            return _from_file
+            return cast(str | list[str] | bool, _from_file if _from_file is not None else __default)
         else:
-            return __default
+            return cast(str | list[str] | bool, __default)
 
 
 collection_manifest_json = "MANIFEST.json"
@@ -161,25 +176,25 @@ class SingleScan:
     skip_task_format_error: bool = True
 
     install_log: str = ""
-    tmp_install_dir: tempfile.TemporaryDirectory[Any] | None = None
+    tmp_install_dir: tempfile.TemporaryDirectory[str] | None = None
 
-    index: dict[str, Any] = field(default_factory=dict)
+    index: YAMLDict = field(default_factory=dict)
 
-    root_definitions: dict[str, Any] = field(default_factory=dict)
-    ext_definitions: dict[str, Any] = field(default_factory=dict)
+    root_definitions: YAMLDict = field(default_factory=dict)
+    ext_definitions: YAMLDict = field(default_factory=dict)
 
     target_object: Object = field(default_factory=Object)
 
-    trees: list[Any] = field(default_factory=list)
+    trees: list[ObjectList] = field(default_factory=list)
     # for inventory object
     additional: ObjectList = field(default_factory=ObjectList)
 
-    taskcalls_in_trees: list[Any] = field(default_factory=list)
-    contexts: list[Any] = field(default_factory=list)
+    taskcalls_in_trees: list[TaskCallsInTree] = field(default_factory=list)
+    contexts: list[AnsibleRunContext] = field(default_factory=list)
 
-    data_report: dict[str, Any] = field(default_factory=dict)
+    data_report: YAMLDict = field(default_factory=dict)
 
-    __path_mappings: dict[str, Any] = field(default_factory=dict)
+    __path_mappings: YAMLDict = field(default_factory=dict)
 
     install_dependencies: bool = False
     use_ansible_path: bool = False
@@ -187,10 +202,10 @@ class SingleScan:
     dependency_dir: str = ""
     base_dir: str = ""
     target_path: str = ""
-    loaded_dependency_dirs: Any = field(default_factory=list)
+    loaded_dependency_dirs: list[YAMLDict] = field(default_factory=list)
     use_src_cache: bool = True
 
-    prm: dict[str, Any] = field(default_factory=dict)
+    prm: YAMLDict = field(default_factory=dict)
 
     download_url: str = ""
     version: str = ""
@@ -201,27 +216,27 @@ class SingleScan:
 
     include_test_contents: bool = False
     load_all_taskfiles: bool = False
-    yaml_label_list: list[Any] = field(default_factory=list)
+    yaml_label_list: list[str] = field(default_factory=list)
 
     save_only_rule_result: bool = False
 
-    extra_requirements: list[Any] = field(default_factory=list)
-    resolve_failures: dict[str, Any] = field(default_factory=dict)
+    extra_requirements: YAMLList = field(default_factory=list)
+    resolve_failures: YAMLDict = field(default_factory=dict)
 
     findings: Findings | None = None
     result: ARIResult | None = None
 
     # OPA input: hierarchy + annotations (set by build_hierarchy_payload when native rules are disabled)
-    hierarchy_payload: dict[str, Any] = field(default_factory=dict)
+    hierarchy_payload: YAMLDict = field(default_factory=dict)
 
     # the following are set by ARIScanner
     root_dir: str = ""
     rules_dir: str = ""
-    rules: list[Any] = field(default_factory=list)
-    rules_cache: list[Any] = field(default_factory=list)
+    rules: list[str] = field(default_factory=list)
+    rules_cache: list[Rule] = field(default_factory=list)
     persist_dependency_cache: bool = False
-    spec_mutations_from_previous_scan: dict[str, Any] = field(default_factory=dict)
-    spec_mutations: dict[str, Any] = field(default_factory=dict)
+    spec_mutations_from_previous_scan: YAMLDict = field(default_factory=dict)
+    spec_mutations: YAMLDict = field(default_factory=dict)
     use_ansible_doc: bool = True
     do_save: bool = False
     silent: bool = False
@@ -366,13 +381,14 @@ class SingleScan:
         return target_path
 
     def get_src_root(self) -> str:
-        return str(self.__path_mappings["src"])
+        src_val = self.__path_mappings.get("src")
+        return str(src_val) if src_val is not None else ""
 
     def is_src_installed(self) -> bool:
-        index_location = self.__path_mappings["index"]
-        return os.path.exists(index_location)
+        index_location = self.__path_mappings.get("index")
+        return isinstance(index_location, str) and os.path.exists(index_location)
 
-    def _prepare_dependencies(self, root_install: bool = True) -> tuple[str, Any]:
+    def _prepare_dependencies(self, root_install: bool = True) -> tuple[str, list[dict[str, object]]]:
         # Install the target if needed
         target_path = self.make_target_path(self.type, self.name)
 
@@ -405,7 +421,7 @@ class SingleScan:
         self.download_url = ddp.metadata.download_url
         self.loaded_dependency_dirs = dep_dirs
 
-        return target_path, dep_dirs
+        return target_path, cast(list[dict[str, object]], dep_dirs)
 
     def create_load_file(self, target_type: str, target_name: str, target_path: str) -> Load:
         loader_version = get_loader_version()
@@ -435,16 +451,14 @@ class SingleScan:
 
     def get_definition_path(self, ext_type: str, ext_name: str) -> str:
         target_path = ""
-        if ext_type == LoadType.ROLE:
-            target_path = os.path.join(
-                self.__path_mappings["ext_definitions"][LoadType.ROLE],
-                ext_name,
-            )
-        elif ext_type == LoadType.COLLECTION:
-            target_path = os.path.join(
-                self.__path_mappings["ext_definitions"][LoadType.COLLECTION],
-                ext_name,
-            )
+        ext_defs = self.__path_mappings.get("ext_definitions")
+        if isinstance(ext_defs, dict):
+            if ext_type == LoadType.ROLE:
+                base = ext_defs.get(LoadType.ROLE)
+                target_path = os.path.join(str(base), ext_name) if isinstance(base, str) else ""
+            elif ext_type == LoadType.COLLECTION:
+                base = ext_defs.get(LoadType.COLLECTION)
+                target_path = os.path.join(str(base), ext_name) if isinstance(base, str) else ""
         else:
             raise ValueError("Invalid ext_type")
         return target_path
@@ -460,7 +474,10 @@ class SingleScan:
         else:
             if self._parser is None:
                 raise ValueError("Parser not initialized")
-            definitions, mappings = self._parser.run(load_data=ld)
+            run_result = self._parser.run(load_data=ld)
+            if run_result is None:
+                raise ValueError("Parser run failed")
+            definitions, mappings = run_result
             if self.do_save:
                 if output_dir == "":
                     raise ValueError("Invalid output_dir")
@@ -469,9 +486,10 @@ class SingleScan:
                 Parser.dump_definition_objects(output_dir, definitions, mappings)
 
         key = f"{target_type}-{target_name}"
+        # mixed model/YAML dict: definitions has Object lists, mappings has Load
         self.ext_definitions[key] = {
-            "definitions": definitions,
-            "mappings": mappings,
+            "definitions": definitions,  # type: ignore[dict-item]
+            "mappings": mappings,  # type: ignore[dict-item]
         }
         return
 
@@ -493,7 +511,8 @@ class SingleScan:
     def get_source_path(self, ext_type: str, ext_name: str, is_ext_for_project: bool = False) -> str:
         base_dir = ""
         if is_ext_for_project:
-            base_dir = self.__path_mappings["dependencies"]
+            dep_val = self.__path_mappings.get("dependencies")
+            base_dir = str(dep_val) if isinstance(dep_val, str) else ""
         else:
             if ext_type == LoadType.ROLE:
                 base_dir = os.path.join(self.root_dir, "roles", "src")
@@ -516,12 +535,18 @@ class SingleScan:
         return target_path
 
     def load_definitions_root(self, target_path: str = "") -> None:
-        output_dir = self.__path_mappings["root_definitions"]
+        output_dir_val = self.__path_mappings.get("root_definitions")
+        output_dir = str(output_dir_val) if isinstance(output_dir_val, str) else ""
         root_load = self._set_load_root(target_path=target_path)
+        if root_load is None:
+            raise ValueError("Root load data is None")
 
         if self._parser is None:
             raise ValueError("Parser not initialized")
-        definitions, mappings = self._parser.run(load_data=root_load, collection_name_of_project=self.collection_name)
+        run_result = self._parser.run(load_data=root_load, collection_name_of_project=self.collection_name)
+        if run_result is None:
+            raise ValueError("Parser run failed")
+        definitions, mappings = run_result
         if self.do_save:
             if output_dir == "":
                 raise ValueError("Invalid output_dir")
@@ -529,44 +554,58 @@ class SingleScan:
                 os.makedirs(output_dir, exist_ok=True)
             Parser.dump_definition_objects(output_dir, definitions, mappings)
 
+        # mixed model/YAML dict: definitions has Object lists, mappings has Load
         self.root_definitions = {
-            "definitions": definitions,
-            "mappings": mappings,
+            "definitions": definitions,  # type: ignore[dict-item]
+            "mappings": mappings,  # type: ignore[dict-item]
         }
 
     def apply_spec_mutations(self) -> None:
         if not self.spec_mutations_from_previous_scan:
             return
         # overwrite the loaded object with the mutated object in spec mutations
-        for type_name in self.root_definitions["definitions"]:
-            obj_list = self.root_definitions["definitions"][type_name]
+        definitions = self.root_definitions.get("definitions", {})
+        if not isinstance(definitions, dict):
+            return
+        for type_name in definitions:
+            obj_list = definitions.get(type_name, [])
+            if not isinstance(obj_list, list):
+                continue
             for i, obj in enumerate(obj_list):
-                key = obj.key
+                if not hasattr(obj, "key"):
+                    continue
+                key = getattr(obj, "key", "")
                 if key in self.spec_mutations_from_previous_scan:
-                    mutated_spec = self.spec_mutations_from_previous_scan[key].object
-                    self.root_definitions["definitions"][type_name][i] = mutated_spec
+                    m = self.spec_mutations_from_previous_scan[key]
+                    if m is not None and hasattr(m, "object"):
+                        mutated_spec = m.object
+                        new_list = obj_list[:i] + [cast(Object, mutated_spec)] + obj_list[i + 1 :]
+                        definitions[type_name] = new_list  # type: ignore[assignment]
         return
 
     def set_target_object(self) -> None:
         type_name = self.type + "s"
-        obj_list = self.root_definitions.get("definitions", {}).get(type_name, [])
-        if len(obj_list) == 0:
+        definitions = self.root_definitions.get("definitions", {})
+        if not isinstance(definitions, dict):
+            return
+        obj_list = definitions.get(type_name, [])
+        if not isinstance(obj_list, list) or len(obj_list) == 0:
             return
         elif len(obj_list) == 1:
-            self.target_object = obj_list[0]
+            self.target_object = cast(Object, obj_list[0])
         else:
             # only for playbook / taskfile not in `--xxxx-only` mode
             for obj in obj_list:
-                obj_path = obj.defined_in
-                if self.name in obj_path:
-                    self.target_object = obj
+                obj_path = getattr(obj, "defined_in", None)
+                if obj_path is not None and self.name in str(obj_path):
+                    self.target_object = cast(Object, obj)
                     break
         return
 
     def construct_trees(self, ram_client: RAMClient | None = None) -> None:
         trees, additional, extra_requirements, resolve_failures = tree(
-            self.root_definitions,
-            self.ext_definitions,
+            cast(dict[str, object], self.root_definitions),
+            cast(dict[str, object], self.ext_definitions),
             ram_client,
             self.target_playbook_name,
             self.target_taskfile_name,
@@ -583,20 +622,22 @@ class SingleScan:
                     obj_key = callobj.spec.key
                     if obj_key in spec_mutations:
                         m = spec_mutations[obj_key]
-                        rule_id = m.rule.rule_id
-                        value = {
-                            "rule_id": rule_id,
-                            "changes": m.changes,
-                        }
-                        callobj.set_annotation(key="spec.mutations", value=value, rule_id=rule_id)
+                        if m is not None and hasattr(m, "rule") and hasattr(m, "changes"):
+                            rule_id = getattr(m.rule, "rule_id", "")
+                            value = {
+                                "rule_id": rule_id,
+                                "changes": getattr(m, "changes", []),
+                            }
+                            callobj.set_annotation(key="spec.mutations", value=value, rule_id=rule_id)
 
         self.trees = trees
         self.additional = additional
-        self.extra_requirements = extra_requirements
-        self.resolve_failures = resolve_failures
+        self.extra_requirements = cast(YAMLList, extra_requirements)
+        self.resolve_failures = cast(YAMLDict, resolve_failures)
 
         if self.do_save:
-            root_def_dir = self.__path_mappings["root_definitions"]
+            root_def_dir_val = self.__path_mappings.get("root_definitions")
+            root_def_dir = str(root_def_dir_val) if isinstance(root_def_dir_val, str) else ""
             tree_rel_file = os.path.join(root_def_dir, "tree.json")
             if tree_rel_file != "":
                 lines = []
@@ -622,12 +663,13 @@ class SingleScan:
                 parent=self.target_object,
                 last_item=last_item,
                 ram_client=ram_client,
-                scan_metadata=scan_metadata,
+                scan_metadata=cast(YAMLDict, scan_metadata),
             )
             self.contexts.append(ctx)
 
         if self.do_save:
-            root_def_dir = self.__path_mappings["root_definitions"]
+            root_def_dir_val = self.__path_mappings.get("root_definitions")
+            root_def_dir = str(root_def_dir_val) if isinstance(root_def_dir_val, str) else ""
             tasks_in_t_path = os.path.join(root_def_dir, "tasks_in_trees.json")
             tasks_in_t_lines = []
             for d in taskcalls_in_trees:
@@ -642,7 +684,8 @@ class SingleScan:
         self.contexts = contexts
 
         if self.do_save:
-            root_def_dir = self.__path_mappings["root_definitions"]
+            root_def_dir_val = self.__path_mappings.get("root_definitions")
+            root_def_dir = str(root_def_dir_val) if isinstance(root_def_dir_val, str) else ""
             contexts_a_path = os.path.join(root_def_dir, "contexts_with_analysis.json")
             conetxts_a_lines = []
             for d in contexts:
@@ -653,7 +696,7 @@ class SingleScan:
 
         return
 
-    def _node_to_dict(self, node: Any) -> dict[str, Any]:
+    def _node_to_dict(self, node: RunTarget) -> YAMLDict:
         """Serialize a RunTarget (playcall, rolecall, taskcall, etc.) to a JSON-serializable dict for OPA input."""
         d = {"type": getattr(node, "type", ""), "key": getattr(node, "key", "")}
         spec = getattr(node, "spec", None)
@@ -710,7 +753,7 @@ class SingleScan:
                     d["module_options"] = {str(k): self._json_safe(v) for k, v in mo.items()}
         return d
 
-    def _opts_for_opa(self, opts: dict[str, Any], keys: list[str]) -> dict[str, Any]:
+    def _opts_for_opa(self, opts: YAMLDict, keys: list[str]) -> YAMLDict:
         """Return a JSON-serializable subset of opts for OPA (only listed keys that exist)."""
         out = {}
         for k in keys:
@@ -721,7 +764,7 @@ class SingleScan:
                 out[k] = self._json_safe(v)
         return out
 
-    def _json_safe(self, v: Any) -> Any:
+    def _json_safe(self, v: YAMLValue) -> YAMLValue:
         """Coerce value to a JSON-serializable form."""
         if v is None:
             return None
@@ -733,7 +776,7 @@ class SingleScan:
             return {str(k): self._json_safe(x) for k, x in v.items()}
         return str(v)
 
-    def _location_to_dict(self, loc: Any) -> dict[str, Any] | None:
+    def _location_to_dict(self, loc: Location | None) -> YAMLDict | None:
         """Serialize a Location to a JSON-safe dict for OPA."""
         if loc is None or getattr(loc, "is_empty", False):
             return None
@@ -743,9 +786,9 @@ class SingleScan:
             "is_mutable": getattr(loc, "is_mutable", False),
         }
 
-    def _annotation_to_dict(self, an: Any) -> dict[str, Any]:
+    def _annotation_to_dict(self, an: Annotation) -> YAMLDict:
         """Serialize a full Annotation (including RiskAnnotation detail) for OPA input."""
-        from .models import Location, RiskAnnotation
+        from .models import Location
 
         d = {
             "type": getattr(an, "type", ""),
@@ -807,7 +850,7 @@ class SingleScan:
 
         return d
 
-    def build_hierarchy_payload(self, scan_id: str = "") -> dict[str, Any]:
+    def build_hierarchy_payload(self, scan_id: str = "") -> YAMLDict:
         """Build OPA input: hierarchy (collection/role/playbook/play/task) + annotations. No native rules."""
         if not scan_id:
             scan_id = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
@@ -826,16 +869,19 @@ class SingleScan:
             for item in getattr(ctx, "sequence", None) or []:
                 nodes.append(self._node_to_dict(item))
             trees_data.append({"root_key": root_key, "root_type": root_type, "root_path": root_path, "nodes": nodes})
-        self.hierarchy_payload = {
-            "scan_id": scan_id,
-            "hierarchy": trees_data,
-            "metadata": {
-                "type": self.type,
-                "name": self.name,
-                "collection_name": self.collection_name or "",
-                "role_name": self.role_name or "",
+        self.hierarchy_payload = cast(
+            YAMLDict,
+            {
+                "scan_id": scan_id,
+                "hierarchy": trees_data,
+                "metadata": {
+                    "type": self.type,
+                    "name": self.name,
+                    "collection_name": self.collection_name or "",
+                    "role_name": self.role_name or "",
+                },
             },
-        }
+        )
         return self.hierarchy_payload
 
     def apply_rules(self) -> None:
@@ -856,8 +902,8 @@ class SingleScan:
         }
         dependencies = self.loaded_dependency_dirs
         self.findings = Findings(
-            metadata=metadata,
-            dependencies=dependencies,
+            metadata=cast(YAMLDict, metadata),
+            dependencies=cast(YAMLList, dependencies),
             root_definitions=self.root_definitions,
             ext_definitions=self.ext_definitions,
             extra_requirements=self.extra_requirements,
@@ -870,32 +916,36 @@ class SingleScan:
         self.result = None
         return
 
-    def add_time_records(self, time_records: dict[str, Any]) -> None:
-        if self.findings:
-            self.findings.metadata["time_records"] = time_records
+    def add_time_records(self, time_records: dict[str, object]) -> None:
+        if self.findings and isinstance(self.findings.metadata, dict):
+            self.findings.metadata["time_records"] = cast(YAMLValue, time_records)
         return
 
     def count_definitions(self) -> tuple[int, dict[str, int], dict[str, int]]:
         dep_num = len(self.loaded_dependency_dirs)
         ext_counts: dict[str, int] = {}
         for _, _defs in self.ext_definitions.items():
-            for key, val in _defs.get("definitions", {}).items():
+            defs_val = _defs.get("definitions") if isinstance(_defs, dict) else None
+            defs_dict = defs_val if isinstance(defs_val, dict) else {}
+            for key, val in defs_dict.items():
                 _current = ext_counts.get(key, 0)
-                _current += len(val)
+                _current += len(val) if isinstance(val, (list, dict)) else 0
                 ext_counts[key] = _current
         root_counts: dict[str, int] = {}
-        for key, val in self.root_definitions.get("definitions", {}).items():
+        root_defs_val = self.root_definitions.get("definitions")
+        root_defs_dict = root_defs_val if isinstance(root_defs_val, dict) else {}
+        for key, val in root_defs_dict.items():
             _current = root_counts.get(key, 0)
-            _current += len(val)
+            _current += len(val) if isinstance(val, (list, dict)) else 0
             root_counts[key] = _current
         return dep_num, ext_counts, root_counts
 
-    def set_metadata(self, metadata: dict[str, Any], dependencies: Any) -> None:
+    def set_metadata(self, metadata: dict[str, object], dependencies: list[dict[str, object]]) -> None:
         self.target_path = self.make_target_path(self.type, self.name)
-        self.version = metadata.get("version", "")
-        self.hash = metadata.get("hash", "")
-        self.download_url = metadata.get("download_url", "")
-        self.loaded_dependency_dirs = dependencies
+        self.version = str(metadata.get("version", ""))
+        self.hash = str(metadata.get("hash", ""))
+        self.download_url = str(metadata.get("download_url", ""))
+        self.loaded_dependency_dirs = dependencies  # type: ignore[assignment]
 
     def set_metadata_findings(self) -> None:
         target_name = self.name
@@ -913,12 +963,15 @@ class SingleScan:
         }
         dependencies = self.loaded_dependency_dirs
         self.findings = Findings(
-            metadata=metadata,
-            dependencies=dependencies,
+            metadata=cast(YAMLDict, metadata),
+            dependencies=cast(YAMLList, dependencies),
         )
 
     def load_index(self) -> None:
-        index_location = self.__path_mappings["index"]
+        index_location_val = self.__path_mappings.get("index")
+        index_location = str(index_location_val) if isinstance(index_location_val, str) else ""
+        if not index_location:
+            return
         with open(index_location) as f:
             self.index = json.load(f)
 
@@ -929,8 +982,8 @@ class ARIScanner:
 
     root_dir: str = ""
     rules_dir: str = ""
-    rules: list[Any] = field(default_factory=list)
-    rules_cache: list[Any] = field(default_factory=list)
+    rules: list[str] = field(default_factory=list)
+    rules_cache: list[Rule] = field(default_factory=list)
 
     ram_client: RAMClient | None = None
     read_ram: bool = True
@@ -1003,12 +1056,12 @@ class ARIScanner:
         include_test_contents: bool = False,
         load_all_taskfiles: bool = False,
         save_only_rule_result: bool = False,
-        yaml_label_list: list[Any] | None = None,
+        yaml_label_list: list[str] | None = None,
         objects: bool = False,
         out_dir: str = "",
-        spec_mutations_from_previous_scan: dict[str, Any] | None = None,
-    ) -> Any:
-        time_records: dict[str, Any] = {}
+        spec_mutations_from_previous_scan: YAMLDict | None = None,
+    ) -> SingleScan | None:
+        time_records: dict[str, object] = {}
         self.record_begin(time_records, "scandata_init")
 
         if not name and path:
@@ -1072,7 +1125,7 @@ class ARIScanner:
         if read_root_from_ram:
             loaded, metadata, dependencies = self.load_metadata_from_ram(scandata.type, scandata.name, scandata.version)
             logger.debug(f"metadata loaded: {loaded}")
-            if loaded:
+            if loaded and metadata is not None and dependencies is not None:
                 scandata.set_metadata(metadata, dependencies)
                 metdata_loaded = True
                 if not self.silent:
@@ -1088,20 +1141,21 @@ class ARIScanner:
         self.record_end(time_records, "metadata_load")
 
         if not skip_dependency:
-            ext_list = []
-            ext_list.extend(
-                [
-                    (
-                        d.get("metadata", {}).get("type", ""),
-                        d.get("metadata", {}).get("name", ""),
-                        d.get("metadata", {}).get("version", ""),
-                        d.get("metadata", {}).get("hash", ""),
-                        d.get("dir"),
-                        d.get("is_local_dir", False),
-                    )
-                    for d in scandata.loaded_dependency_dirs
-                ]
-            )
+            ext_list: list[tuple[str, str, str, str, str, bool]] = []
+            for d in scandata.loaded_dependency_dirs:
+                if not isinstance(d, dict):
+                    continue
+                meta = d.get("metadata")
+                meta_dict = meta if isinstance(meta, dict) else {}
+                ext_type = str(meta_dict.get("type", "")) if meta_dict else ""
+                ext_name = str(meta_dict.get("name", "")) if meta_dict else ""
+                ext_ver = str(meta_dict.get("version", "")) if meta_dict else ""
+                ext_hash = str(meta_dict.get("hash", "")) if meta_dict else ""
+                dir_val = d.get("dir")
+                ext_path = str(dir_val) if isinstance(dir_val, str) else ""
+                is_local_val = d.get("is_local_dir")
+                is_local_dir = bool(is_local_val) if isinstance(is_local_val, bool) else False
+                ext_list.append((ext_type, ext_name, ext_ver, ext_hash, ext_path, is_local_dir))
             ext_count = len(ext_list)
 
             # Start ARI Scanner main flow
@@ -1145,7 +1199,7 @@ class ARIScanner:
                         # searching findings from ARI RAM and use them if found
                         dep_loaded, ext_defs = self.load_definitions_from_ram(ext_type, ext_name, ext_ver, ext_hash)
                         if dep_loaded:
-                            scandata.ext_definitions[key] = ext_defs
+                            scandata.ext_definitions[key] = cast(YAMLValue, ext_defs)
                             if not self.silent:
                                 logger.debug(f'Use spec data for "{ext_name}" in RAM DB')
 
@@ -1210,7 +1264,7 @@ class ARIScanner:
             )
             logger.debug(f"spec data loaded: {loaded}")
             if loaded:
-                scandata.root_definitions = root_defs
+                scandata.root_definitions = cast(YAMLDict, root_defs)
                 if not self.silent:
                     logger.info("Use spec data in RAM DB")
         self.record_end(time_records, "target_load")
@@ -1222,11 +1276,18 @@ class ARIScanner:
 
         if not self.silent:
             logger.debug("load_definitions_root() done")
-            playbooks_num = len(scandata.root_definitions["definitions"]["playbooks"])
-            roles_num = len(scandata.root_definitions["definitions"]["roles"])
-            taskfiles_num = len(scandata.root_definitions["definitions"]["taskfiles"])
-            tasks_num = len(scandata.root_definitions["definitions"]["tasks"])
-            modules_num = len(scandata.root_definitions["definitions"]["modules"])
+            defs = scandata.root_definitions.get("definitions")
+            defs_dict = defs if isinstance(defs, dict) else {}
+            _pb = defs_dict.get("playbooks")
+            _rl = defs_dict.get("roles")
+            _tf = defs_dict.get("taskfiles")
+            _tk = defs_dict.get("tasks")
+            _md = defs_dict.get("modules")
+            playbooks_num = len(_pb) if isinstance(_pb, (list, dict)) else 0
+            roles_num = len(_rl) if isinstance(_rl, (list, dict)) else 0
+            taskfiles_num = len(_tf) if isinstance(_tf, (list, dict)) else 0
+            tasks_num = len(_tk) if isinstance(_tk, (list, dict)) else 0
+            modules_num = len(_md) if isinstance(_md, (list, dict)) else 0
             logger.debug(
                 f"playbooks: {playbooks_num}, roles: {roles_num}, taskfiles: {taskfiles_num}, "
                 f"tasks: {tasks_num}, modules: {modules_num}"
@@ -1298,7 +1359,7 @@ class ARIScanner:
                 print(f"The rule result is saved at {scandata.out_dir}")
 
             if objects:
-                self.save_definitions(scandata.root_definitions, scandata.out_dir)
+                self.save_definitions(cast(dict[str, object], scandata.root_definitions), scandata.out_dir)
                 if not self.silent:
                     print(f"The objects is saved at {scandata.out_dir}")
 
@@ -1358,23 +1419,25 @@ class ARIScanner:
                     spec_mutations_from_previous_scan=scandata.spec_mutations,
                 )
 
-        return findings.report.get("ari_result", None) if findings is not None else None
+        return cast(SingleScan | None, findings.report.get("ari_result", None)) if findings is not None else None
 
-    def load_metadata_from_ram(self, type: str, name: str, version: str) -> tuple[bool, Any, Any]:
+    def load_metadata_from_ram(
+        self, type: str, name: str, version: str
+    ) -> tuple[bool, dict[str, object] | None, list[dict[str, object]] | None]:
         if self.ram_client is None:
             return False, None, None
         loaded, metadata, dependencies = self.ram_client.load_metadata_from_findings(type, name, version)
-        return loaded, metadata, dependencies
+        return loaded, cast(dict[str, object] | None, metadata), cast(list[dict[str, object]] | None, dependencies)
 
     def load_definitions_from_ram(
         self, type: str, name: str, version: str, hash: str, allow_unresolved: bool = False
-    ) -> tuple[bool, dict[str, Any]]:
+    ) -> tuple[bool, dict[str, object]]:
         if self.ram_client is None:
             return False, {}
         loaded, definitions, mappings = self.ram_client.load_definitions_from_findings(
             type, name, version, hash, allow_unresolved
         )
-        definitions_dict = {}
+        definitions_dict: dict[str, object] = {}
         if loaded:
             definitions_dict = {
                 "definitions": definitions,
@@ -1403,7 +1466,7 @@ class ARIScanner:
 
         findings.save_rule_result(fpath=os.path.join(out_dir, "rule_result.json"))
 
-    def save_definitions(self, definitions: dict[str, Any], out_dir: str) -> None:
+    def save_definitions(self, definitions: dict[str, object], out_dir: str) -> None:
         if out_dir == "":
             raise ValueError("output dir must be a non-empty value")
 
@@ -1428,29 +1491,36 @@ class ARIScanner:
         if self.ram_client is not None:
             self.ram_client.save_error(error, out_dir)
 
-    def record_begin(self, time_records: dict[str, Any], record_name: str) -> None:
-        time_records[record_name] = {}
-        time_records[record_name]["begin"] = datetime.datetime.now(datetime.timezone.utc).strftime(
-            "%Y-%m-%dT%H:%M:%S.%f"
-        )
+    def record_begin(self, time_records: dict[str, object], record_name: str) -> None:
+        rec: dict[str, object] = {}
+        rec["begin"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")
+        time_records[record_name] = rec
 
-    def record_end(self, time_records: dict[str, Any], record_name: str) -> None:
+    def record_end(self, time_records: dict[str, object], record_name: str) -> None:
         end = datetime.datetime.now(datetime.timezone.utc)
         end = end.replace(tzinfo=None)
-        time_records[record_name]["end"] = end.strftime("%Y-%m-%dT%H:%M:%S.%f")
-        begin = datetime.datetime.fromisoformat(time_records[record_name]["begin"])
+        rec = time_records.get(record_name)
+        if not isinstance(rec, dict):
+            return
+        rec["end"] = end.strftime("%Y-%m-%dT%H:%M:%S.%f")
+        begin_val = rec.get("begin")
+        begin = (
+            datetime.datetime.fromisoformat(str(begin_val))
+            if isinstance(begin_val, str)
+            else datetime.datetime.now(datetime.timezone.utc)
+        )
         elapsed = (end - begin).total_seconds()
-        time_records[record_name]["elapsed"] = elapsed
+        rec["elapsed"] = elapsed
 
 
 def tree(
-    root_definitions: dict[str, Any],
-    ext_definitions: dict[str, Any],
+    root_definitions: dict[str, object],
+    ext_definitions: dict[str, object],
     ram_client: RAMClient | None = None,
     target_playbook_path: str | None = None,
     target_taskfile_path: str | None = None,
     load_all_taskfiles: bool = False,
-) -> tuple[list[Any], Any, list[Any], dict[str, Any]]:
+) -> tuple[list[ObjectList], ObjectList, list[dict[str, object]], dict[str, dict[str, int]]]:
     tl = TreeLoader(
         root_definitions, ext_definitions, ram_client, target_playbook_path, target_taskfile_path, load_all_taskfiles
     )
@@ -1467,7 +1537,7 @@ def tree(
     )
 
 
-def resolve(trees: list[Any], additional: Any) -> list[TaskCallsInTree]:
+def resolve(trees: list[ObjectList], additional: ObjectList) -> list[TaskCallsInTree]:
     taskcalls_in_trees = []
     for i, tree in enumerate(trees):
         if not isinstance(tree, ObjectList):

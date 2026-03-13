@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import cast
 
 from apme_engine.engine.annotators.annotator_base import Annotator, AnnotatorResult
 from apme_engine.engine.context import Context, resolve_module_options
@@ -10,6 +10,7 @@ from apme_engine.engine.models import (
     Arguments,
     ArgumentsType,
     CallObject,
+    Inventory,
     Object,
     ObjectList,
     Playbook,
@@ -18,7 +19,10 @@ from apme_engine.engine.models import (
     TaskCall,
     Variable,
     VariableAnnotation,
+    VariablePrecedence,
     VariableType,
+    YAMLDict,
+    YAMLValue,
 )
 
 
@@ -39,28 +43,33 @@ class VariableAnnotator(Annotator):
         _vars = []
         is_mutable = False
         for rv in resolved_variables:
-            v_name = rv.get("key", "")
+            v_name = str(rv.get("key", "")) if rv.get("key") is not None else ""
             v_value = rv.get("value", "")
-            v_type = rv.get("type", VariableType.Unknown)
+            v_type_raw = rv.get("type", VariableType.Unknown)
+            v_type = v_type_raw if isinstance(v_type_raw, VariablePrecedence) else VariableType.Unknown
             elements = []
-            if v_name in used_variables:
-                if not isinstance(used_variables[v_name], dict):
+            if v_name and v_name in used_variables:
+                used_entry = used_variables[v_name]
+                if not isinstance(used_entry, dict):
                     continue
-                for u_v_name, info in used_variables[v_name].items():
+                for u_v_name, info in used_entry.items():
                     if u_v_name == v_name:
                         continue
+                    if not isinstance(info, dict):
+                        continue
                     u_v_value = info.get("value", "")
-                    u_v_type = info.get("type", VariableType.Unknown)
+                    u_v_type_raw = info.get("type", VariableType.Unknown)
+                    u_v_type = u_v_type_raw if isinstance(u_v_type_raw, VariablePrecedence) else VariableType.Unknown
                     u_v = Variable(
-                        name=u_v_name,
-                        value=u_v_value,
+                        name=str(u_v_name) if u_v_name else "",
+                        value=cast(YAMLValue, u_v_value),
                         type=u_v_type,
                         used_in=taskcall.key,
                     )
                     elements.append(u_v)
             v = Variable(
                 name=v_name,
-                value=v_value,
+                value=cast(YAMLValue, v_value),
                 type=v_type,
                 elements=elements,
                 used_in=taskcall.key,
@@ -71,6 +80,9 @@ class VariableAnnotator(Annotator):
 
         for v in _vars:
             history = self.context.var_use_history.get(v.name, [])
+            if not isinstance(history, list):
+                history = []
+            history = cast(list[Variable], history)
             history.append(v)
             self.context.var_use_history[v.name] = history
 
@@ -92,9 +104,9 @@ class VariableAnnotator(Annotator):
         taskcall.args = args
         # deep copy the history here because the context is updated by subsequent taskcalls
         if self.context.var_set_history:
-            taskcall.variable_set = self.context.var_set_history.copy()
+            taskcall.variable_set = self.context.var_set_history.copy()  # type: ignore[assignment]
         if self.context.var_use_history:
-            taskcall.variable_use = self.context.var_use_history.copy()
+            taskcall.variable_use = self.context.var_use_history.copy()  # type: ignore[assignment]
         taskcall.become = self.context.become
         taskcall.module_defaults = self.context.module_defaults
 
@@ -106,26 +118,28 @@ class VariableAnnotatorResult(AnnotatorResult):
     pass
 
 
-def tree_to_task_list(tree: Any, node_objects: ObjectList) -> list[dict[str, Any]]:
+def tree_to_task_list(tree: ObjectList | object, node_objects: ObjectList) -> list[YAMLDict]:
     """Convert tree (TreeNode-like with .key, .children) to task list. tree is unused/dead."""
     node_dict: dict[str, Object | CallObject] = {}
     for no in node_objects.items:
         node_dict[no.key] = no
 
-    def getSubTree(node: Any) -> tuple[list[dict[str, Any]], str]:
-        tasks: list[dict[str, Any]] = []
+    def getSubTree(node: CallObject) -> tuple[list[YAMLDict], str]:
+        tasks: list[YAMLDict] = []
         resolved_name = ""
         no = node_dict[node.key]
         node_type = detect_type(node.key)
 
-        children_tasks: list[dict[str, Any]] = []
+        children_tasks: list[YAMLDict] = []
         if node_type == "module" or node_type == "role":
             resolved_name = getattr(no, "fqcn", "")
         elif node_type == "taskfile":
             resolved_name = no.key
 
         children_per_type: dict[str, list[Object | CallObject]] = {}
-        for c in node.children:
+        for c in getattr(node, "children", []):
+            if not isinstance(c, CallObject):
+                continue
             ctype = detect_type(c.key)
             if ctype in children_per_type:
                 children_per_type[ctype].append(c)
@@ -134,33 +148,33 @@ def tree_to_task_list(tree: Any, node_objects: ObjectList) -> list[dict[str, Any
 
         # obj["children_types"] = list(children_per_type.keys())
         if "playbook" in children_per_type:
-            tasks_per_children = [getSubTree(c) for c in children_per_type["playbook"]]
+            tasks_per_children = [getSubTree(c) for c in children_per_type["playbook"] if isinstance(c, CallObject)]
             for _tasks, _ in tasks_per_children:
                 children_tasks.extend(_tasks)
         if "play" in children_per_type:
-            tasks_per_children = [getSubTree(c) for c in children_per_type["play"]]
+            tasks_per_children = [getSubTree(c) for c in children_per_type["play"] if isinstance(c, CallObject)]
             for _tasks, _ in tasks_per_children:
                 children_tasks.extend(_tasks)
         if "role" in children_per_type:
-            tasks_per_children = [getSubTree(c) for c in children_per_type["role"]]
+            tasks_per_children = [getSubTree(c) for c in children_per_type["role"] if isinstance(c, CallObject)]
             for _tasks, _ in tasks_per_children:
                 children_tasks.extend(_tasks)
             if node_type == "task":
                 fqcns = [fqcn for (_, fqcn) in tasks_per_children]
                 resolved_name = fqcns[0] if len(fqcns) > 0 else ""
         if "taskfile" in children_per_type:
-            tasks_per_children = [getSubTree(c) for c in children_per_type["taskfile"]]
+            tasks_per_children = [getSubTree(c) for c in children_per_type["taskfile"] if isinstance(c, CallObject)]
             for _tasks, _ in tasks_per_children:
                 children_tasks.extend(_tasks)
             if node_type == "task":
                 _tf_path_list = [_tf_path for (_, _tf_path) in tasks_per_children]
                 resolved_name = _tf_path_list[0] if len(_tf_path_list) > 0 else ""
         if "task" in children_per_type:
-            tasks_per_children = [getSubTree(c) for c in children_per_type["task"]]
+            tasks_per_children = [getSubTree(c) for c in children_per_type["task"] if isinstance(c, CallObject)]
             for _tasks, _ in tasks_per_children:
                 children_tasks.extend(_tasks)
         if "module" in children_per_type and node_type == "task":
-            fqcns = [getSubTree(c)[1] for c in children_per_type["module"]]
+            fqcns = [getSubTree(c)[1] for c in children_per_type["module"] if isinstance(c, CallObject)]
             resolved_name = fqcns[0] if len(fqcns) > 0 else ""
 
         if node_type == "task":
@@ -170,6 +184,8 @@ def tree_to_task_list(tree: Any, node_objects: ObjectList) -> list[dict[str, Any
         return tasks, resolved_name
 
     root = tree.items[0] if isinstance(tree, ObjectList) and tree.items else tree
+    if not isinstance(root, CallObject):
+        return []
     tasks, _ = getSubTree(root)
     return tasks
 
@@ -200,12 +216,12 @@ def resolve_variables(tree: ObjectList, additional: ObjectList) -> list[TaskCall
     return resolved_taskcalls
 
 
-def get_inventories(tree_root_key: str, additional: ObjectList) -> list[Any]:
+def get_inventories(tree_root_key: str, additional: ObjectList) -> list[Inventory]:
     if tree_root_key == "":
         return []
     tree_root_type = detect_type(tree_root_key)
     projects = additional.find_by_type("repository")
-    inventories = []
+    inventories: list[Inventory | str] = []
     found = False
     for p in projects:
         if not isinstance(p, Repository):
@@ -234,4 +250,4 @@ def get_inventories(tree_root_key: str, additional: ObjectList) -> list[Any]:
                     break
         if found:
             break
-    return inventories
+    return [i for i in inventories if isinstance(i, Inventory)]

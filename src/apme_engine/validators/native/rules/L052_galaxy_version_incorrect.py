@@ -2,6 +2,7 @@
 
 import re
 from dataclasses import dataclass
+from typing import cast
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
@@ -9,6 +10,7 @@ from apme_engine.engine.models import (
     RuleResult,
     RunTargetType,
     Severity,
+    YAMLDict,
 )
 from apme_engine.engine.models import (
     RuleTag as Tag,
@@ -41,11 +43,20 @@ class GalaxyVersionIncorrectRule(Rule):
         galaxy_info = gi if isinstance(gi, dict) else {}
         version = galaxy_info.get("version") if galaxy_info else None
         if version is None:
-            return RuleResult(verdict=False, file=role.file_info(), rule=self.get_metadata())
+            return RuleResult(
+                verdict=False,
+                file=cast("tuple[str | int, ...] | None", role.file_info()),
+                rule=self.get_metadata(),
+            )
         vs = str(version).strip()
         verdict = not bool(GALAXY_VERSION_PATTERN.match(vs))
         detail = {}
         if verdict:
             detail["version"] = vs
             detail["message"] = "galaxy version should be semantic (e.g. 1.0.0)"
-        return RuleResult(verdict=verdict, detail=detail, file=role.file_info(), rule=self.get_metadata())
+        return RuleResult(
+            verdict=verdict,
+            detail=cast(YAMLDict | None, detail),
+            file=cast("tuple[str | int, ...] | None", role.file_info()),
+            rule=self.get_metadata(),
+        )

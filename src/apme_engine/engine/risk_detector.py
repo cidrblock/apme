@@ -6,7 +6,7 @@ import json
 import os
 import time
 import traceback
-from typing import Any
+from typing import cast
 
 from . import logger
 from .analyzer import load_taskcalls_in_trees
@@ -22,6 +22,7 @@ from .models import (
     SpecMutation,
     TargetResult,
     TaskCall,
+    YAMLDict,
 )
 from .utils import load_classes_in_dir
 
@@ -32,7 +33,7 @@ def key2name(key: str) -> str:
     return key.split(key_delimiter)[-1]
 
 
-def load_rule_versions_file(filepath: str) -> dict[str, Any]:
+def load_rule_versions_file(filepath: str) -> dict[str, object]:
     if not os.path.exists(filepath):
         return {}
 
@@ -79,14 +80,16 @@ def load_rules(
                 logger.warning("some rules are skipped by the following errors: " + "; ".join(_errors_for_this_dir))
         for r in _rule_classes:
             try:
-                _rule = r()
+                _rule = cast(Rule, r())
                 # if `rule_id_list` is provided, filter out rules that are not in the list
                 if rule_id_list and _rule.rule_id not in rule_id_list:
                     continue
                 if _rule.rule_id in exclude_rule_ids:
                     continue
                 if versions_dict and _rule.rule_id in versions_dict:
-                    _rule.commit_id = versions_dict[_rule.rule_id]
+                    _rule.commit_id = (
+                        str(versions_dict[_rule.rule_id]) if versions_dict[_rule.rule_id] is not None else ""
+                    )
                 _rules.append(_rule)
             except Exception as err:
                 exc = traceback.format_exc()
@@ -134,7 +137,7 @@ def detect(
     rules_cache: list[Rule] | None = None,
     save_only_rule_result: bool = False,
     exclude_rule_ids: list[str] | None = None,
-) -> tuple[dict[str, Any], list[Rule]]:
+) -> tuple[dict[str, object], list[Rule]]:
     if rules_cache is None:
         rules_cache = []
     if rules is None:
@@ -147,7 +150,7 @@ def detect(
     playbook_count = {"total": 0, "risk_found": 0}
     role_count = {"total": 0, "risk_found": 0}
 
-    data_report: dict[str, Any] = {"summary": {}, "details": [], "ari_result": None}
+    data_report: dict[str, object] = {"summary": {}, "details": [], "ari_result": None}
     role_to_playbook_mappings: dict[str, list[str]] = {}
 
     ari_result = ARIResult()
@@ -189,8 +192,12 @@ def detect(
                     continue
                 rule_id = rule.rule_id
                 start_time = time.time()
-                r_result = RuleResult(file=t.file_info(), rule=rule.get_metadata())
-                detail: dict[str, Any] = {}
+                file_info = t.file_info()
+                r_result = RuleResult(
+                    file=(file_info[0], file_info[1] if file_info[1] is not None else 0),
+                    rule=rule.get_metadata(),
+                )
+                detail: dict[str, object] = {}
                 try:
                     matched = rule.match(ctx)
                     if matched:
@@ -199,7 +206,7 @@ def detect(
                             r_result = tmp_result
                         r_result.matched = matched
                     r_result.duration = round((time.time() - start_time) * 1000, 6)
-                    detail = r_result.get_detail() or {}
+                    detail = cast(dict[str, object], r_result.get_detail() or {})
                     fatal = detail.get("fatal", False) if detail else False
                     if fatal:
                         error = r_result.error or "unknown error"
@@ -207,7 +214,7 @@ def detect(
                         raise FatalRuleResultError(error)
                     if rule.spec_mutation:
                         s_mutations = detail.get("spec_mutations", [])
-                        for s_mutation in s_mutations:
+                        for s_mutation in s_mutations if isinstance(s_mutations, list) else []:
                             if not isinstance(s_mutation, SpecMutation):
                                 continue
                             spec_mutations[s_mutation.key] = s_mutation
@@ -219,7 +226,7 @@ def detect(
                 n_result.rules.append(r_result)
             # remove node details (replace node with summary dict when save_only_rule_result)
             if save_only_rule_result and n_result.node is not None and isinstance(n_result.node, RunTarget):
-                n_result.node = omit_node_details(n_result.node)
+                n_result.node = cast(YAMLDict, omit_node_details(n_result.node))
             t_result.nodes.append(n_result)
         ari_result.targets.append(t_result)
 
@@ -229,7 +236,7 @@ def detect(
     return data_report, loaded_rules
 
 
-def omit_node_details(node: RunTarget) -> dict[str, Any]:
+def omit_node_details(node: RunTarget) -> dict[str, object]:
     spec = None
     if node.spec:
         spec = {
@@ -239,7 +246,7 @@ def omit_node_details(node: RunTarget) -> dict[str, Any]:
         }
         if isinstance(node, TaskCall) and node.spec:
             spec["line_num_in_file"] = (getattr(node.spec, "line_num_in_file", 0),)
-    summary = {
+    summary: dict[str, object] = {
         "type": node.type,
         "spec": spec,
     }
@@ -270,7 +277,7 @@ def main() -> None:
     contexts: list[AnsibleRunContext] = []
     for tct in tasks_in_trees:
         ctx = AnsibleRunContext.from_targets(
-            targets=tct.taskcalls,
+            targets=cast(list[RunTarget], tct.taskcalls),
             root_key=tct.root_key,
         )
         contexts.append(ctx)

@@ -1,12 +1,15 @@
 """Tests for integrated engine scanner hierarchy payload (build_hierarchy_payload, _node_to_dict, apply_rules)."""
 
-from typing import Any
+from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock
 
 import pytest
 
+if TYPE_CHECKING:
+    from apme_engine.engine.scanner import SingleScan
 
-def _import_single_scan() -> type[Any] | None:
+
+def _import_single_scan() -> type["SingleScan"] | None:
     """Import SingleScan from apme_engine.engine; return None if import fails."""
     try:
         from apme_engine.engine.scanner import SingleScan
@@ -17,7 +20,7 @@ def _import_single_scan() -> type[Any] | None:
 
 
 @pytest.fixture  # type: ignore[untyped-decorator]
-def single_scan_with_mock_contexts() -> Any:
+def single_scan_with_mock_contexts() -> "SingleScan":
     """SingleScan with minimal mock contexts so build_hierarchy_payload runs."""
     SingleScan = _import_single_scan()
     if SingleScan is None:
@@ -51,26 +54,31 @@ def single_scan_with_mock_contexts() -> Any:
 class TestScannerHierarchy:
     """Tests for integrated engine scanner build_hierarchy_payload and apply_rules."""
 
-    def test_build_hierarchy_payload_structure(self, single_scan_with_mock_contexts: Any) -> None:
+    def test_build_hierarchy_payload_structure(self, single_scan_with_mock_contexts: "SingleScan") -> None:
         """build_hierarchy_payload returns dict with scan_id, hierarchy, metadata."""
         scan = single_scan_with_mock_contexts
         payload = scan.build_hierarchy_payload(scan_id="fixed-id")
         assert payload["scan_id"] == "fixed-id"
         assert "hierarchy" in payload
-        assert len(payload["hierarchy"]) == 1
-        tree = payload["hierarchy"][0]
+        hierarchy = cast(list[dict[str, object]], payload["hierarchy"])
+        assert len(hierarchy) == 1
+        tree = hierarchy[0]
         assert tree["root_key"] == "playbook :/path/to/play.yml"
         assert tree["root_type"] == "playbook"
         assert tree["root_path"] == "/path/to/play.yml"
-        assert len(tree["nodes"]) == 2
-        assert payload["metadata"]["type"] == "playbook"
-        assert payload["metadata"]["name"] == "test.yml"
+        nodes = cast(list[dict[str, object]], tree["nodes"])
+        assert len(nodes) == 2
+        metadata = cast(dict[str, object], payload["metadata"])
+        assert metadata["type"] == "playbook"
+        assert metadata["name"] == "test.yml"
 
-    def test_build_hierarchy_payload_node_serialization(self, single_scan_with_mock_contexts: Any) -> None:
+    def test_build_hierarchy_payload_node_serialization(self, single_scan_with_mock_contexts: "SingleScan") -> None:
         """_node_to_dict serializes playcall and taskcall with file, line, module."""
         scan = single_scan_with_mock_contexts
         payload = scan.build_hierarchy_payload(scan_id="x")
-        nodes = payload["hierarchy"][0]["nodes"]
+        hierarchy = cast(list[dict[str, object]], payload["hierarchy"])
+        tree = hierarchy[0]
+        nodes = cast(list[dict[str, object]], tree["nodes"])
         play_node = nodes[0]
         assert play_node["type"] == "playcall"
         assert play_node["key"] == "playcall#play1"
@@ -88,13 +96,14 @@ class TestScannerHierarchy:
         assert task_node["module_options"] == {}
 
     def test_build_hierarchy_payload_empty_scan_id_generates_timestamp(
-        self, single_scan_with_mock_contexts: Any
+        self, single_scan_with_mock_contexts: "SingleScan"
     ) -> None:
         """When scan_id is empty, build_hierarchy_payload uses timestamp."""
         scan = single_scan_with_mock_contexts
         payload = scan.build_hierarchy_payload()
-        assert payload["scan_id"] != ""
-        assert len(payload["scan_id"]) >= 14  # YYYYMMDDHHMMSS
+        scan_id = str(payload["scan_id"])
+        assert scan_id != ""
+        assert len(scan_id) >= 14  # YYYYMMDDHHMMSS
 
     def test_build_hierarchy_payload_empty_contexts_returns_empty_trees(self) -> None:
         SingleScan = _import_single_scan()
@@ -105,7 +114,9 @@ class TestScannerHierarchy:
         payload = scan.build_hierarchy_payload(scan_id="id")
         assert payload["hierarchy"] == []
 
-    def test_apply_rules_sets_findings_and_hierarchy_payload(self, single_scan_with_mock_contexts: Any) -> None:
+    def test_apply_rules_sets_findings_and_hierarchy_payload(
+        self, single_scan_with_mock_contexts: "SingleScan"
+    ) -> None:
         """apply_rules builds hierarchy_payload and sets findings with it in report."""
         scan = single_scan_with_mock_contexts
         scan.apply_rules()
@@ -115,7 +126,7 @@ class TestScannerHierarchy:
         assert scan.findings.report["hierarchy_payload"] == scan.hierarchy_payload
         assert scan.result is None
 
-    def test_node_to_dict_no_spec(self, single_scan_with_mock_contexts: Any) -> None:
+    def test_node_to_dict_no_spec(self, single_scan_with_mock_contexts: "SingleScan") -> None:
         """_node_to_dict handles node without spec (file/line empty)."""
         scan = single_scan_with_mock_contexts
         node = MagicMock()

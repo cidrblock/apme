@@ -3,7 +3,6 @@
 import os
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any
 
 from apme_engine.engine.risk_detector import detect
 from apme_engine.validators.base import ScanContext
@@ -20,7 +19,7 @@ class NativeRuleTiming:
 
 @dataclass
 class NativeRunResult:
-    violations: list[dict[str, Any]] = field(default_factory=list)
+    violations: list[dict[str, object]] = field(default_factory=list)
     rule_timings: list[NativeRuleTiming] = field(default_factory=list)
 
 
@@ -28,9 +27,9 @@ def _default_rules_dir() -> str:
     return os.path.join(os.path.dirname(__file__), "rules")
 
 
-def _extract_results(data_report: dict[str, Any]) -> NativeRunResult:
+def _extract_results(data_report: dict[str, object]) -> NativeRunResult:
     """Convert ARI detect() report to violations + per-rule timing."""
-    violations: list[dict[str, Any]] = []
+    violations: list[dict[str, object]] = []
     timing_accum: dict[str, dict[str, float | int]] = defaultdict(lambda: {"elapsed_ms": 0.0, "violations": 0})
 
     ari_result = data_report.get("ari_result")
@@ -97,7 +96,7 @@ class NativeValidator:
             list(exclude_rule_ids) if exclude_rule_ids is not None else list(RULES_REQUIRING_ANSIBLE)
         )
 
-    def run(self, context: ScanContext) -> list[dict[str, Any]]:
+    def run(self, context: ScanContext) -> list[dict[str, object]]:
         """Run native rules on context.scandata; return list of violation dicts."""
         result = self.run_with_timing(context)
         return result.violations

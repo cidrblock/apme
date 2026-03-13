@@ -2,8 +2,9 @@
 
 import textwrap
 from pathlib import Path
-from typing import Any
+from typing import cast
 
+from apme_engine.engine.models import ViolationDict
 from apme_engine.remediation.engine import RemediationEngine
 from apme_engine.remediation.partition import is_finding_resolvable, partition_violations
 from apme_engine.remediation.registry import TransformRegistry, TransformResult
@@ -82,7 +83,7 @@ class TestPartition:
         reg = TransformRegistry()
         reg.register("L021", lambda c, v: TransformResult(c, False))
 
-        violations: list[dict[str, Any]] = [
+        violations: list[ViolationDict] = [
             {"rule_id": "L021"},
             {"rule_id": "R118"},
             {"rule_id": "POLICY", "ai_proposable": False},
@@ -266,12 +267,15 @@ class TestFQCNTransform:
           debug:
             msg: hello
         """)
-        violation = {
-            "rule_id": "M001",
-            "line": 1,
-            "resolved_fqcn": "ansible.builtin.debug",
-            "original_module": "debug",
-        }
+        violation = cast(
+            ViolationDict,
+            {
+                "rule_id": "M001",
+                "line": 1,
+                "resolved_fqcn": "ansible.builtin.debug",
+                "original_module": "debug",
+            },
+        )
         result = fix_fqcn(content, violation)
         assert result.applied is True
         assert "ansible.builtin.debug" in result.content
@@ -284,7 +288,7 @@ class TestFQCNTransform:
             src: /a
             dest: /b
         """)
-        violation = {"rule_id": "L002", "line": 1}
+        violation = cast(ViolationDict, {"rule_id": "L002", "line": 1})
         result = fix_fqcn(content, violation)
         assert result.applied is True
         assert "ansible.builtin.copy" in result.content
@@ -295,7 +299,7 @@ class TestFQCNTransform:
           ansible.builtin.debug:
             msg: hello
         """)
-        violation = {"rule_id": "L002", "line": 1}
+        violation = cast(ViolationDict, {"rule_id": "L002", "line": 1})
         result = fix_fqcn(content, violation)
         assert result.applied is False
 
@@ -305,7 +309,7 @@ class TestFQCNTransform:
           my_custom_module:
             param: value
         """)
-        violation = {"rule_id": "L002", "line": 1}
+        violation = cast(ViolationDict, {"rule_id": "L002", "line": 1})
         result = fix_fqcn(content, violation)
         assert result.applied is False
 
@@ -316,9 +320,9 @@ class TestFQCNTransform:
             name: httpd
             state: present
         """)
-        r1 = fix_fqcn(content, {"rule_id": "L002", "line": 1})
+        r1 = fix_fqcn(content, cast(ViolationDict, {"rule_id": "L002", "line": 1}))
         assert r1.applied is True
-        r2 = fix_fqcn(r1.content, {"rule_id": "L002", "line": 1})
+        r2 = fix_fqcn(r1.content, cast(ViolationDict, {"rule_id": "L002", "line": 1}))
         assert r2.applied is False
 
     def test_m003_redirect_uses_resolved_fqcn(self) -> None:
@@ -327,13 +331,16 @@ class TestFQCNTransform:
           yum:
             name: httpd
         """)
-        violation = {
-            "rule_id": "M003",
-            "line": 1,
-            "original_module": "yum",
-            "resolved_fqcn": "ansible.builtin.dnf",
-            "redirect_chain": ["ansible.builtin.yum", "ansible.builtin.dnf"],
-        }
+        violation = cast(
+            ViolationDict,
+            {
+                "rule_id": "M003",
+                "line": 1,
+                "original_module": "yum",
+                "resolved_fqcn": "ansible.builtin.dnf",
+                "redirect_chain": ["ansible.builtin.yum", "ansible.builtin.dnf"],
+            },
+        )
         result = fix_fqcn(content, violation)
         assert result.applied is True
         assert "ansible.builtin.dnf" in result.content
@@ -356,7 +363,7 @@ class TestRemediationEngine:
         """)
         )
 
-        def scan_fn(paths: list[str]) -> list[dict[str, Any]]:
+        def scan_fn(paths: list[str]) -> list[ViolationDict]:
             content = playbook.read_text()
             if "mode:" not in content:
                 return [{"rule_id": "L021", "file": str(playbook), "line": 1}]
@@ -381,7 +388,7 @@ class TestRemediationEngine:
         """)
         playbook.write_text(original)
 
-        def scan_fn(paths: list[str]) -> list[dict[str, Any]]:
+        def scan_fn(paths: list[str]) -> list[ViolationDict]:
             content = playbook.read_text()
             if "mode:" not in content:
                 return [{"rule_id": "L021", "file": str(playbook), "line": 1}]
@@ -403,11 +410,11 @@ class TestRemediationEngine:
 
         call_count = [0]
 
-        def scan_fn(paths: list[str]) -> list[dict[str, Any]]:
+        def scan_fn(paths: list[str]) -> list[ViolationDict]:
             call_count[0] += 1
             return [{"rule_id": "FLIP", "file": str(playbook), "line": 1}]
 
-        def flip_transform(content: str, violation: dict[str, Any]) -> TransformResult:
+        def flip_transform(content: str, violation: ViolationDict) -> TransformResult:
             return TransformResult(content + "\n# flipped", True)
 
         reg = TransformRegistry()
@@ -422,7 +429,7 @@ class TestRemediationEngine:
         playbook = tmp_path / "play.yml"
         playbook.write_text("- name: Clean\n  ansible.builtin.debug:\n    msg: hi\n")
 
-        def scan_fn(paths: list[str]) -> list[dict[str, Any]]:
+        def scan_fn(paths: list[str]) -> list[ViolationDict]:
             return []
 
         reg = build_default_registry()
@@ -437,7 +444,7 @@ class TestRemediationEngine:
         playbook = tmp_path / "play.yml"
         playbook.write_text("- name: test\n  debug: msg=hi\n")
 
-        def scan_fn(paths: list[str]) -> list[dict[str, Any]]:
+        def scan_fn(paths: list[str]) -> list[ViolationDict]:
             return [
                 {"rule_id": "UNKNOWN_AI", "file": str(playbook), "line": 1},
                 {"rule_id": "MANUAL", "file": str(playbook), "line": 1, "ai_proposable": False},

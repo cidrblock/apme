@@ -2,10 +2,12 @@
 
 import json
 from pathlib import Path
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from apme_engine.engine.models import YAMLDict
 from apme_engine.opa_client import run_opa, run_opa_test
 
 
@@ -37,7 +39,7 @@ class TestRunOpa:
         assert "opa" in mock_stderr.call_args[0][0].lower()
 
     def test_opa_nonzero_exit_returns_empty_list(
-        self, opa_bundle_path: Path, sample_hierarchy_payload: dict[str, object]
+        self, opa_bundle_path: Path, sample_hierarchy_payload: YAMLDict
     ) -> None:
         """When OPA returns non-zero exit code, returns [] and writes stderr."""
         with patch("apme_engine.opa_client.subprocess.run") as mock_run:
@@ -49,7 +51,7 @@ class TestRunOpa:
         assert "policy error" in mock_stderr.call_args[0][0]
 
     def test_opa_invalid_json_returns_empty_list(
-        self, opa_bundle_path: Path, sample_hierarchy_payload: dict[str, object]
+        self, opa_bundle_path: Path, sample_hierarchy_payload: YAMLDict
     ) -> None:
         """When OPA stdout is not valid JSON, returns [] and writes stderr."""
         with patch("apme_engine.opa_client.subprocess.run") as mock_run:
@@ -63,8 +65,8 @@ class TestRunOpa:
     def test_opa_empty_result_returns_empty_list(
         self,
         opa_bundle_path: Path,
-        sample_hierarchy_payload: dict[str, object],
-        opa_eval_result_empty: dict[str, object],
+        sample_hierarchy_payload: YAMLDict,
+        opa_eval_result_empty: YAMLDict,
     ) -> None:
         """When OPA result has no expressions, returns []."""
         with patch("apme_engine.opa_client.subprocess.run") as mock_run:
@@ -72,9 +74,7 @@ class TestRunOpa:
             result = run_opa(sample_hierarchy_payload, str(opa_bundle_path))
         assert result == []
 
-    def test_opa_value_none_returns_empty_list(
-        self, opa_bundle_path: Path, sample_hierarchy_payload: dict[str, object]
-    ) -> None:
+    def test_opa_value_none_returns_empty_list(self, opa_bundle_path: Path, sample_hierarchy_payload: YAMLDict) -> None:
         """When expressions[0].expressions[0].value is None, returns []."""
         with patch("apme_engine.opa_client.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
@@ -86,7 +86,7 @@ class TestRunOpa:
         assert result == []
 
     def test_opa_value_not_list_returns_empty_list(
-        self, opa_bundle_path: Path, sample_hierarchy_payload: dict[str, object]
+        self, opa_bundle_path: Path, sample_hierarchy_payload: YAMLDict
     ) -> None:
         """When value is not a list (e.g. object), returns []."""
         with patch("apme_engine.opa_client.subprocess.run") as mock_run:
@@ -101,8 +101,8 @@ class TestRunOpa:
     def test_opa_success_returns_violations_list(
         self,
         opa_bundle_path: Path,
-        sample_hierarchy_payload: dict[str, object],
-        opa_eval_result_with_violations: dict[str, object],
+        sample_hierarchy_payload: YAMLDict,
+        opa_eval_result_with_violations: YAMLDict,
     ) -> None:
         """When OPA returns valid result with violations, returns that list."""
         with patch("apme_engine.opa_client.subprocess.run") as mock_run:
@@ -121,8 +121,8 @@ class TestRunOpa:
     def test_opa_success_empty_violations(
         self,
         opa_bundle_path: Path,
-        sample_hierarchy_payload: dict[str, object],
-        opa_eval_result_empty: dict[str, object],
+        sample_hierarchy_payload: YAMLDict,
+        opa_eval_result_empty: YAMLDict,
     ) -> None:
         """When OPA returns valid result with empty value list, returns []."""
         with patch("apme_engine.opa_client.subprocess.run") as mock_run:
@@ -143,7 +143,11 @@ class TestRunOpa:
         """run_opa passes custom entrypoint to opa eval."""
         with patch("apme_engine.opa_client.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout=json.dumps(opa_eval_result_empty), stderr="")
-            run_opa(sample_hierarchy_payload, str(opa_bundle_path), entrypoint="data.custom.violations")
+            run_opa(
+                cast(YAMLDict, sample_hierarchy_payload),
+                str(opa_bundle_path),
+                entrypoint="data.custom.violations",
+            )
         call_args = mock_run.call_args[0][0]
         assert "data.custom.violations" in call_args
 
@@ -156,7 +160,7 @@ class TestRunOpa:
         """Input JSON is passed to opa via stdin."""
         with patch("apme_engine.opa_client.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout=json.dumps(opa_eval_result_empty), stderr="")
-            run_opa(sample_hierarchy_payload, str(opa_bundle_path))
+            run_opa(cast(YAMLDict, sample_hierarchy_payload), str(opa_bundle_path))
         kwargs = mock_run.call_args[1]
         assert kwargs["input"] == json.dumps(sample_hierarchy_payload)
 

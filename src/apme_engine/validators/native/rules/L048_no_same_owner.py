@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import cast
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
@@ -6,6 +7,7 @@ from apme_engine.engine.models import (
     RuleResult,
     RunTargetType,
     Severity,
+    YAMLDict,
 )
 from apme_engine.engine.models import (
     RuleTag as Tag,
@@ -39,15 +41,21 @@ class NoSameOwnerRule(Rule):
         if task is None:
             return None
         resolved = getattr(task.spec, "resolved_name", "") or ""
+        file_info = cast("tuple[str | int, ...] | None", task.file_info())
         if resolved not in COPY_MODULES:
-            return RuleResult(verdict=False, file=task.file_info(), rule=self.get_metadata())
+            return RuleResult(verdict=False, file=file_info, rule=self.get_metadata())
         module_options = getattr(task.spec, "module_options", None) or {}
         remote_src = module_options.get("remote_src")
         if not remote_src:
-            return RuleResult(verdict=False, file=task.file_info(), rule=self.get_metadata())
+            return RuleResult(verdict=False, file=file_info, rule=self.get_metadata())
         has_owner = "owner" in module_options
         verdict = not has_owner
-        detail = {}
+        detail: dict[str, str] = {}
         if verdict:
             detail["message"] = "copy with remote_src should set owner explicitly"
-        return RuleResult(verdict=verdict, detail=detail, file=task.file_info(), rule=self.get_metadata())
+        return RuleResult(
+            verdict=verdict,
+            detail=cast("YAMLDict | None", detail),
+            file=file_info,
+            rule=self.get_metadata(),
+        )

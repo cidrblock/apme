@@ -209,7 +209,7 @@ class TestGitleaksServicer:
 
         servicer = GitleaksValidatorServicer()
         request = validate_pb2.ValidateRequest(files=[], request_id="gl-1")
-        resp = await servicer.Validate(request, None)
+        resp = await servicer.Validate(request, None)  # type: ignore[arg-type]
         assert len(resp.violations) == 0  # type: ignore[attr-defined]
         assert resp.request_id == "gl-1"  # type: ignore[attr-defined]
 
@@ -235,7 +235,7 @@ class TestGitleaksServicer:
         )
 
         with patch("apme_engine.daemon.gitleaks_validator_server.run_gitleaks", return_value=fake_violations):
-            resp = await servicer.Validate(request, None)
+            resp = await servicer.Validate(request, None)  # type: ignore[arg-type]
 
         assert len(resp.violations) == 1  # type: ignore[attr-defined]
         assert resp.violations[0].rule_id == "SEC:aws-access-key-id"  # type: ignore[attr-defined]
@@ -252,7 +252,7 @@ class TestGitleaksServicer:
         mock_proc.communicate = AsyncMock(return_value=(b"8.18.0", b""))
 
         with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_proc):
-            resp = await servicer.Health(common_pb2.HealthRequest(), None)
+            resp = await servicer.Health(common_pb2.HealthRequest(), None)  # type: ignore[arg-type]
         assert "ok" in resp.status
         assert "8.18.0" in resp.status
 
@@ -262,5 +262,5 @@ class TestGitleaksServicer:
 
         servicer = GitleaksValidatorServicer()
         with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, side_effect=FileNotFoundError):
-            resp = await servicer.Health(common_pb2.HealthRequest(), None)
+            resp = await servicer.Health(common_pb2.HealthRequest(), None)  # type: ignore[arg-type]
         assert "not found" in resp.status

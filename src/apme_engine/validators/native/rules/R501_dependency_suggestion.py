@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import cast
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
@@ -7,6 +8,7 @@ from apme_engine.engine.models import (
     RunTargetType,
     Severity,
     Task,
+    YAMLDict,
 )
 from apme_engine.engine.models import RuleTag as Tag
 
@@ -32,18 +34,18 @@ class DependencySuggestionRule(Rule):
             return None
 
         verdict = False
-        detail: dict[str, object] = {}
+        detail: YAMLDict = {}
         spec = task.spec
         if isinstance(spec, Task) and spec.possible_candidates:
+            fqcn, defined_in = spec.possible_candidates[0]
             verdict = True
             detail["type"] = spec.executable_type.lower()
-            detail["fqcn"] = spec.possible_candidates[0][0]
-            req_info = spec.possible_candidates[0][1]
-            req_dict = req_info if isinstance(req_info, dict) else {}
-            detail["suggestion"] = {
-                "type": req_dict.get("type", ""),
-                "name": req_dict.get("name", ""),
-                "version": req_dict.get("version", ""),
-            }
+            detail["fqcn"] = fqcn
+            detail["defined_in"] = defined_in
 
-        return RuleResult(verdict=verdict, detail=detail, file=task.file_info(), rule=self.get_metadata())
+        return RuleResult(
+            verdict=verdict,
+            detail=detail if detail else None,
+            file=cast("tuple[str | int, ...] | None", task.file_info()),
+            rule=self.get_metadata(),
+        )

@@ -1,6 +1,6 @@
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import cast
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
@@ -8,6 +8,7 @@ from apme_engine.engine.models import (
     RuleResult,
     RunTargetType,
     Severity,
+    YAMLDict,
 )
 from apme_engine.engine.models import (
     RuleTag as Tag,
@@ -67,23 +68,40 @@ class KeyOrderRule(Rule):
         spec = task.spec
         yaml_lines = getattr(spec, "yaml_lines", "") or ""
         if not yaml_lines.strip():
-            return RuleResult(verdict=False, file=task.file_info(), rule=self.get_metadata())
+            return RuleResult(
+                verdict=False,
+                file=cast("tuple[str | int, ...] | None", task.file_info()),
+                rule=self.get_metadata(),
+            )
 
         keys = _top_level_keys_from_yaml(yaml_lines)
         if not keys:
-            return RuleResult(verdict=False, file=task.file_info(), rule=self.get_metadata())
+            return RuleResult(
+                verdict=False,
+                file=cast("tuple[str | int, ...] | None", task.file_info()),
+                rule=self.get_metadata(),
+            )
 
         module_name = getattr(spec, "module", "") or ""
         first_action = _first_action_key(keys, module_name)
         if not first_action:
-            return RuleResult(verdict=False, file=task.file_info(), rule=self.get_metadata())
+            return RuleResult(
+                verdict=False,
+                file=cast("tuple[str | int, ...] | None", task.file_info()),
+                rule=self.get_metadata(),
+            )
 
         # Violation: "name" exists but appears after the action key
         action_index = keys.index(first_action) if first_action in keys else -1
         name_index = keys.index("name") if "name" in keys else -1
         verdict = name_index > action_index if (name_index >= 0 and action_index >= 0) else False
-        detail: dict[str, Any] = {}
+        detail: YAMLDict = {}
         if verdict:
-            detail["keys_order"] = keys
+            detail["keys_order"] = keys  # type: ignore[assignment]
             detail["message"] = "name should appear before the action/module key"
-        return RuleResult(verdict=verdict, detail=detail, file=task.file_info(), rule=self.get_metadata())
+        return RuleResult(
+            verdict=verdict,
+            detail=detail,
+            file=cast("tuple[str | int, ...] | None", task.file_info()),
+            rule=self.get_metadata(),
+        )

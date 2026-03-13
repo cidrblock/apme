@@ -4,13 +4,15 @@ import json
 import os
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import cast
 
 import yaml
 
 from . import logger
 from .models import (
     LoadType,
+    YAMLDict,
+    YAMLValue,
 )
 from .safe_glob import safe_glob
 
@@ -29,33 +31,33 @@ def find_dependency(
     target: str,
     dependency_dir: str,
     use_ansible_path: bool = False,
-) -> dict[str, Any]:
-    dependencies: dict[str, Any] = {"dependencies": {}, "type": "", "file": ""}
+) -> YAMLDict:
+    dependencies: YAMLDict = {"dependencies": {}, "type": "", "file": ""}
     logger.debug("search dependency")
     if dependency_dir:
-        requirements, paths, metadata = load_existing_dependency_dir(dependency_dir)
-        dependencies["dependencies"] = requirements
-        dependencies["paths"] = paths
-        dependencies["metadata"] = metadata
+        dir_reqs, paths, metadata = load_existing_dependency_dir(dependency_dir)
+        dependencies["dependencies"] = cast(YAMLValue, dir_reqs)
+        dependencies["paths"] = cast(YAMLValue, paths)
+        dependencies["metadata"] = cast(YAMLValue, metadata)
         dependencies["type"] = type
         dependencies["file"] = None
     else:
         if type == LoadType.PROJECT:
             logger.debug("search project dependency")
-            requirements, reqyml = find_project_dependency(target)
-            dependencies["dependencies"] = requirements
+            proj_reqs, reqyml = find_project_dependency(target)
+            dependencies["dependencies"] = cast(YAMLValue, proj_reqs)
             dependencies["type"] = LoadType.PROJECT
             dependencies["file"] = reqyml
         elif type == LoadType.ROLE:
             logger.debug("search role dependency")
-            requirements, mainyml = find_role_dependency(target)
-            dependencies["dependencies"] = requirements
+            role_reqs, mainyml = find_role_dependency(target)
+            dependencies["dependencies"] = cast(YAMLValue, role_reqs)
             dependencies["type"] = LoadType.ROLE
             dependencies["file"] = mainyml
         elif type == LoadType.COLLECTION:
             logger.debug("search collection dependency")
-            requirements, manifestjson = find_collection_dependency(target)
-            dependencies["dependencies"] = requirements
+            coll_reqs, manifestjson = find_collection_dependency(target)
+            dependencies["dependencies"] = cast(YAMLValue, coll_reqs)
             dependencies["type"] = LoadType.COLLECTION
             dependencies["file"] = manifestjson
 
@@ -65,16 +67,16 @@ def find_dependency(
         if isinstance(deps, dict):
             paths, metadata = search_ansible_dir(deps, str(ansible_dir))
             if paths:
-                dependencies["paths"] = paths
+                dependencies["paths"] = cast(YAMLValue, paths)
             if metadata:
-                dependencies["metadata"] = metadata
+                dependencies["metadata"] = cast(YAMLValue, metadata)
 
     return dependencies
 
 
 def search_ansible_dir(
-    dependencies: dict[str, Any], ansible_dir: str
-) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, Any]]]:
+    dependencies: YAMLDict, ansible_dir: str
+) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, YAMLValue]]]:
     if not dependencies:
         return {}, {}
     if not isinstance(dependencies, dict):
@@ -85,18 +87,18 @@ def search_ansible_dir(
         "collections": {},
     }
 
-    metadata: dict[str, dict[str, Any]] = {
+    metadata: dict[str, dict[str, YAMLValue]] = {
         "roles": {},
         "collections": {},
     }
 
     collections = dependencies.get("collections", [])
-    if collections:
+    if isinstance(collections, list):
         for coll_info in collections:
             if not isinstance(coll_info, dict):
                 continue
             coll_name = coll_info.get("name", "")
-            if not coll_name:
+            if not coll_name or not isinstance(coll_name, str):
                 continue
 
             parts = coll_name.split(":")[0].split(".")
@@ -119,15 +121,15 @@ def search_ansible_dir(
                         pass
                 if not isinstance(galaxy_data, dict):
                     continue
-                metadata["collections"][coll_name] = galaxy_data
+                metadata["collections"][coll_name] = cast(YAMLDict, galaxy_data)
 
     roles = dependencies.get("roles", [])
-    if roles:
+    if isinstance(roles, list):
         for role_info in roles:
             if not isinstance(role_info, dict):
                 continue
             role_name = role_info.get("name", "")
-            if not role_name:
+            if not role_name or not isinstance(role_name, str):
                 continue
 
             role_name = role_name.split(":")[0]
@@ -140,7 +142,7 @@ def search_ansible_dir(
     return paths, metadata
 
 
-def find_role_dependency(target: str) -> tuple[dict[str, Any], str]:
+def find_role_dependency(target: str) -> tuple[YAMLDict, str]:
     requirements = {}
     if not os.path.exists(target):
         raise ValueError(f"Invalid target dir: {target}")
@@ -178,9 +180,9 @@ def find_role_dependency(target: str) -> tuple[dict[str, Any], str]:
             if isinstance(r_req, str):
                 r_req_name = r_req
             elif isinstance(r_req, dict):
-                r_req_name = r_req.get("role", "")
-                if not r_req_name and "name" in r_req:
-                    r_req_name = r_req.get("name", "")
+                r_req_name = str(r_req.get("role", "") or "")
+            if not r_req_name and "name" in r_req:
+                r_req_name = str(r_req.get("name", "") or "")
             # if role dependency name does not have ".", it should be a local dependency
             is_local_dir = False
             if "." not in r_req_name:
@@ -199,8 +201,8 @@ def find_role_dependency(target: str) -> tuple[dict[str, Any], str]:
     return requirements, main_yaml
 
 
-def find_collection_dependency(target: str) -> tuple[dict[str, Any], str]:
-    requirements = {}
+def find_collection_dependency(target: str) -> tuple[YAMLDict, str]:
+    requirements: YAMLDict = {}
     # collection dir installed by ansible-galaxy command
     manifest_json_files = safe_glob(os.path.join(target, "**", collection_manifest_json), recursive=True)
     manifest_json_files = [fpath for fpath in manifest_json_files if github_workflows_dir not in fpath]
@@ -213,14 +215,15 @@ def find_collection_dependency(target: str) -> tuple[dict[str, Any], str]:
                 metadata = {}
                 with open(cmf) as file:
                     metadata = json.load(file)
-                    dependencies = metadata.get("collection_info", {}).get("dependencies", [])
-                    requirements["collections"] = format_dependency_info(dependencies)
+                    collection_info = metadata.get("collection_info", {})
+                    dependencies = collection_info.get("dependencies", {}) if isinstance(collection_info, dict) else {}
+                    requirements["collections"] = cast(YAMLValue, format_dependency_info(cast(YAMLDict, dependencies)))
     else:
         requirements, manifest_json = load_dependency_from_galaxy(target)
     return requirements, manifest_json
 
 
-def find_project_dependency(target: str) -> tuple[dict[str, Any], str]:
+def find_project_dependency(target: str) -> tuple[YAMLDict, str]:
     if os.path.exists(target):
         coll_req = os.path.join(target, collection_manifest_json)
         role_req1 = os.path.join(target, role_meta_main_yaml)
@@ -238,7 +241,7 @@ def find_project_dependency(target: str) -> tuple[dict[str, Any], str]:
         raise ValueError(f"Invalid target dir: {target}")
 
 
-def load_requirements(path: str) -> tuple[dict[str, Any], str]:
+def load_requirements(path: str) -> tuple[YAMLDict, str]:
     requirements = {}
     yaml_path = ""
     # project dir
@@ -261,7 +264,7 @@ def load_requirements(path: str) -> tuple[dict[str, Any], str]:
             if isinstance(item, str):
                 role_name = item
             elif isinstance(item, dict):
-                role_name = item.get("name", "")
+                role_name = str(item.get("name", "") or "")
             # if no `name` field is given in the requirements yml, we skip this item
             if not role_name:
                 continue
@@ -292,7 +295,7 @@ def is_galaxy_yml(path: str) -> bool:
     return bool("name" in metadata and "namespace" in metadata)
 
 
-def load_dependency_from_galaxy(path: str) -> tuple[dict[str, Any], str]:
+def load_dependency_from_galaxy(path: str) -> tuple[YAMLDict, str]:
     requirements = {}
     yaml_path = ""
     galaxy_yml_files = safe_glob(os.path.join(path, "**", galaxy_yml), recursive=True)
@@ -309,7 +312,7 @@ def load_dependency_from_galaxy(path: str) -> tuple[dict[str, Any], str]:
                     dependencies = metadata.get("dependencies", {})
                     if dependencies:
                         requirements["collections"] = format_dependency_info(dependencies)
-    return requirements, yaml_path
+    return cast(tuple[YAMLDict, str], (requirements, yaml_path))
 
 
 def load_existing_dependency_dir(
@@ -317,7 +320,7 @@ def load_existing_dependency_dir(
 ) -> tuple[
     dict[str, list[str]],
     dict[str, dict[str, str]],
-    dict[str, dict[str, Any]],
+    dict[str, dict[str, YAMLValue]],
 ]:
     # role_meta_files = safe_glob(
     #     [
@@ -336,7 +339,7 @@ def load_existing_dependency_dir(
         "roles": {},
         "collections": {},
     }
-    metadata: dict[str, dict[str, Any]] = {
+    metadata: dict[str, dict[str, YAMLValue]] = {
         "roles": {},
         "collections": {},
     }
@@ -363,7 +366,9 @@ def load_existing_dependency_dir(
                     pass
             if not isinstance(galaxy_data, dict):
                 continue
-            metadata["collections"][collection_name] = galaxy_data
+            coll_meta = metadata.get("collections", {})
+            if isinstance(coll_meta, dict):
+                coll_meta[collection_name] = cast(YAMLValue, galaxy_data)
         requirements["collections"].append(collection_name)
         paths["collections"][collection_name] = collection_path
     return requirements, paths, metadata
@@ -382,8 +387,10 @@ def install_github_target(target: str, output_dir: str) -> str:
     return proc.stdout
 
 
-def format_dependency_info(dependencies: dict[str, Any]) -> list[dict[str, Any]]:
-    results = []
+def format_dependency_info(dependencies: YAMLDict | list[YAMLValue]) -> list[YAMLDict]:
+    results: list[YAMLDict] = []
+    if not isinstance(dependencies, dict):
+        return results
     for k, v in dependencies.items():
         results.append({"name": k, "version": v})
     return results

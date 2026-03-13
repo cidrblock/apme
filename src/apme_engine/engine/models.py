@@ -4,22 +4,30 @@ import builtins
 import contextlib
 import json
 import os
-from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import jsonpickle
 from rapidfuzz.distance import Levenshtein
 from ruamel.yaml.scalarstring import DoubleQuotedScalarString
 from tabulate import tabulate
 
-from . import yaml as ariyaml
-from .finder import (
+# Recursive type for YAML/JSON values (defined before local imports to avoid circular import)
+YAMLScalar = str | int | float | bool | None
+YAMLValue = YAMLScalar | list["YAMLValue"] | dict[str, "YAMLValue"]
+YAMLDict = dict[str, YAMLValue]
+YAMLList = list[YAMLValue]
+
+# Violation dicts from validators (rule_id, level, message, file, line, path, etc.)
+ViolationDict = dict[str, str | int | list[int] | bool | None]
+
+from . import yaml as ariyaml  # noqa: E402
+from .finder import (  # noqa: E402
     identify_lines_with_jsonpath,
 )
-from .keyutil import (
+from .keyutil import (  # noqa: E402
     get_obj_info_by_key,
     set_call_object_key,
     set_collection_key,
@@ -32,11 +40,14 @@ from .keyutil import (
     set_task_key,
     set_taskfile_key,
 )
-from .utils import (
+from .utils import (  # noqa: E402
     equal,
     parse_bool,
     recursive_copy_dict,
 )
+
+if TYPE_CHECKING:
+    from .risk_assessment_model import RAMClient
 
 
 class PlaybookFormatError(Exception):
@@ -61,14 +72,18 @@ class JSONSerializable:
     @classmethod
     def from_json(cls: type[JSONSerializable], json_str: str) -> JSONSerializable:
         instance = cls()
-        loaded: Any = jsonpickle.decode(json_str)
+        loaded: object = jsonpickle.decode(json_str)
         if hasattr(loaded, "__dict__"):
             instance.__dict__.update(loaded.__dict__)
         return instance
 
 
+class Resolver(Protocol):
+    def apply(self, target: Resolvable) -> None: ...
+
+
 class Resolvable:
-    def resolve(self, resolver: Any) -> None:
+    def resolve(self, resolver: Resolver) -> None:
         if not hasattr(resolver, "apply"):
             raise ValueError("this resolver does not have apply() method")
         if not callable(resolver.apply):
@@ -92,7 +107,7 @@ class Resolvable:
         return
 
     @property
-    def resolver_targets(self) -> list[Any] | None:
+    def resolver_targets(self) -> list[Resolvable | str] | None:
         raise NotImplementedError
 
 
@@ -158,7 +173,7 @@ class ObjectList(JSONSerializable):
         if fpath != "":
             json_str = Path(fpath).read_text()
         lines: list[str] = json_str.splitlines()
-        items: list[Any] = [jsonpickle.decode(obj_str) for obj_str in lines]
+        items: list[object] = [jsonpickle.decode(obj_str) for obj_str in lines]
         instance.items = [cast(Object, obj) for obj in items]
         instance._update_dict()
         return instance
@@ -176,7 +191,7 @@ class ObjectList(JSONSerializable):
         self._update_dict()
         return
 
-    def find_by_attr(self, key: str, val: Any) -> list[Object | CallObject]:
+    def find_by_attr(self, key: str, val: YAMLValue) -> list[Object | CallObject]:
         found = [obj for obj in self.items if obj.__dict__.get(key, None) == val]
         return found
 
@@ -297,13 +312,13 @@ class File:
     collection: str = ""
 
     body: str = ""
-    data: Any = None
+    data: YAMLValue | None = None
     encrypted: bool = False
     error: str = ""
     label: str = ""
     defined_in: str = ""
 
-    annotations: dict[str, Any] = field(default_factory=dict)
+    annotations: dict[str, YAMLValue] = field(default_factory=dict)
 
     def set_key(self) -> None:
         set_file_key(self)
@@ -321,10 +336,10 @@ class ModuleArgument:
     name: str = ""
     type: str | None = None
     elements: str | None = None
-    default: Any = None
+    default: YAMLValue = None
     required: bool = False
     description: str = ""
-    choices: list[Any] = field(default_factory=list)
+    choices: list[YAMLScalar] = field(default_factory=list)
     aliases: list[str] = field(default_factory=list)
 
     def available_keys(self) -> list[str]:
@@ -345,12 +360,12 @@ class Module(Object, Resolvable):
     role: str = ""
     documentation: str = ""
     examples: str = ""
-    arguments: list[Any] = field(default_factory=list)
+    arguments: list[ModuleArgument] = field(default_factory=list)
     defined_in: str = ""
     builtin: bool = False
-    used_in: list[Any] = field(default_factory=list)  # resolved later
+    used_in: list[str] = field(default_factory=list)  # resolved later
 
-    annotations: dict[str, Any] = field(default_factory=dict)
+    annotations: dict[str, YAMLValue] = field(default_factory=dict)
 
     def set_key(self) -> None:
         set_module_key(self)
@@ -375,41 +390,44 @@ class Collection(Object, Resolvable):
     path: str = ""
     key: str = ""
     local_key: str = ""
-    metadata: dict[str, Any] = field(default_factory=dict)
-    meta_runtime: dict[str, Any] = field(default_factory=dict)
-    files: dict[str, Any] = field(default_factory=dict)
-    playbooks: list[Any] = field(default_factory=list)
-    taskfiles: list[Any] = field(default_factory=list)
-    roles: list[Any] = field(default_factory=list)
-    modules: list[Any] = field(default_factory=list)
-    dependency: dict[str, Any] = field(default_factory=dict)
-    requirements: dict[str, Any] = field(default_factory=dict)
+    metadata: YAMLDict = field(default_factory=dict)
+    meta_runtime: YAMLDict = field(default_factory=dict)
+    files: YAMLDict = field(default_factory=dict)
+    playbooks: list[Playbook | str] = field(default_factory=list)
+    taskfiles: list[TaskFile | str] = field(default_factory=list)
+    roles: list[Role | str] = field(default_factory=list)
+    modules: list[Module | str] = field(default_factory=list)
+    dependency: YAMLDict = field(default_factory=dict)
+    requirements: YAMLDict = field(default_factory=dict)
 
-    annotations: dict[str, Any] = field(default_factory=dict)
+    annotations: dict[str, YAMLValue] = field(default_factory=dict)
 
-    variables: dict[str, Any] = field(default_factory=dict)
-    options: dict[str, Any] = field(default_factory=dict)
+    variables: YAMLDict = field(default_factory=dict)
+    options: YAMLDict = field(default_factory=dict)
 
     def set_key(self) -> None:
         set_collection_key(self)
 
     def children_to_key(self) -> Collection:
         module_keys = [m.key if isinstance(m, Module) else m for m in self.modules]
-        self.modules = sorted(module_keys)
+        self.modules = cast(list["Module | str"], sorted(module_keys))
 
         playbook_keys = [p.key if isinstance(p, Playbook) else p for p in self.playbooks]
-        self.playbooks = sorted(playbook_keys)
+        self.playbooks = cast(list["Playbook | str"], sorted(playbook_keys))
 
         role_keys = [r.key if isinstance(r, Role) else r for r in self.roles]
-        self.roles = sorted(role_keys)
+        self.roles = cast(list["Role | str"], sorted(role_keys))
 
         taskfile_keys = [tf.key if isinstance(tf, TaskFile) else tf for tf in self.taskfiles]
-        self.taskfiles = sorted(taskfile_keys)
+        self.taskfiles = cast(list["TaskFile | str"], sorted(taskfile_keys))
         return self
 
     @property
-    def resolver_targets(self) -> list[Any]:
-        return self.playbooks + self.taskfiles + self.roles + self.modules
+    def resolver_targets(self) -> list[Resolvable | str]:
+        return cast(
+            list["Resolvable" | str],
+            list(self.playbooks) + list(self.taskfiles) + list(self.roles) + list(self.modules),
+        )
 
 
 @dataclass
@@ -420,7 +438,7 @@ class CollectionCall(CallObject, Resolvable):
 @dataclass
 class TaskCallsInTree(JSONSerializable):
     root_key: str = ""
-    taskcalls: list[Any] = field(default_factory=list)
+    taskcalls: list[TaskCall] = field(default_factory=list)
 
 
 @dataclass
@@ -502,11 +520,11 @@ immutable_var_types = [VariableType.LoopVars]
 @dataclass
 class Variable:
     name: str = ""
-    value: Any = None
+    value: YAMLValue = None
     type: VariablePrecedence | None = None
-    elements: list[Any] = field(default_factory=list)
-    setter: Any = None
-    used_in: Any = None
+    elements: list[Variable] = field(default_factory=list)
+    setter: str | TaskCall | None = None
+    used_in: str | TaskCall | None = None
 
     @property
     def is_mutable(self) -> bool:
@@ -533,17 +551,17 @@ class VariableDict:
 
         for v_name in d._dict:
             v_list = d._dict[v_name]
-            row = {"NAME": v_name}
+            row: dict[str, YAMLValue] = {"NAME": v_name}
             for t in type_labels:
-                value = "-"
+                cell_value: YAMLValue = "-"
                 for v in v_list:
                     if v.type != t:
                         continue
-                    value = v.value
-                    if isinstance(value, str) and value == "":
-                        value = '""'
+                    cell_value = v.value
+                    if isinstance(cell_value, str) and cell_value == "":
+                        cell_value = '""'
                 type_label = t.name.upper()
-                row[type_label] = value
+                row[type_label] = cell_value
             table.append(row)
         return str(tabulate(table, headers="keys"))
 
@@ -557,15 +575,15 @@ class ArgumentsType:
 @dataclass
 class Arguments:
     type: str = ArgumentsType.SIMPLE
-    raw: Any = None
+    raw: YAMLValue = None
     vars: list[Variable] = field(default_factory=list)
     resolved: bool = False
-    templated: Any = None
+    templated: YAMLValue = None
     is_mutable: bool = False
 
     def get(self, key: str = "") -> Arguments | None:
-        sub_raw: Any = None
-        sub_templated: Any = None
+        sub_raw: YAMLValue = None
+        sub_templated: YAMLValue = None
         if key == "":
             sub_raw = self.raw
             sub_templated = self.templated
@@ -573,7 +591,7 @@ class Arguments:
             if isinstance(self.raw, dict):
                 sub_raw = self.raw.get(key, None)
                 if self.templated and isinstance(self.templated, (list, tuple)):
-                    first: Any = self.templated[0]
+                    first: YAMLValue = self.templated[0]
                     sub_templated = first.get(key, None) if isinstance(first, dict) else self.templated
             else:
                 sub_raw = self.raw
@@ -707,8 +725,8 @@ class OutboundTransferDetail(NetworkTransferDetail):
 
 @dataclass
 class PackageInstallDetail(AnnotationDetail):
-    pkg: Any = ""
-    version: Any = ""
+    pkg: str | Arguments = ""
+    version: str | Arguments | list[Variable] = ""
     is_mutable_pkg: bool = False
     disable_validate_certs: bool = False
     allow_downgrade: bool = False
@@ -720,7 +738,7 @@ class PackageInstallDetail(AnnotationDetail):
 
     def __post_init__(self) -> None:
         if self._pkg_arg:
-            self.pkg = self._pkg_arg.raw
+            self.pkg = cast(str | Arguments, self._pkg_arg.raw)
             if self._pkg_arg.is_mutable:
                 self.is_mutable_pkg = True
         if self._version_arg:
@@ -735,7 +753,7 @@ class PackageInstallDetail(AnnotationDetail):
 class KeyConfigChangeDetail(AnnotationDetail):
     is_deletion: bool = False
     is_mutable_key: bool = False
-    key: Any = ""
+    key: str | list[Variable] = ""
 
     _key_arg: Arguments | None = None
     _state_arg: Arguments | None = None
@@ -795,9 +813,9 @@ class CommandExecDetail(AnnotationDetail):
         self.exec_files = self.extract_exec_files()
 
     def extract_exec_files(self) -> list[Location]:
-        cmd_str: str | list[str] | dict[str, Any] = ""
-        if self.command:
-            cmd_str = self.command.raw or ""
+        cmd_str: str | list[str] | YAMLDict = cast(
+            "str | list[str] | YAMLDict", "" if not self.command else (self.command.raw or "")
+        )
         if isinstance(cmd_str, list):
             cmd_str = " ".join(str(x) for x in cmd_str)
         elif isinstance(cmd_str, dict):
@@ -852,7 +870,7 @@ class CommandExecDetail(AnnotationDetail):
         return exec_files
 
 
-def _convert_to_bool(a: Any) -> bool | None:
+def _convert_to_bool(a: YAMLValue) -> bool | None:
     if type(a) is bool:
         return bool(a)
     if type(a) is str:
@@ -863,7 +881,7 @@ def _convert_to_bool(a: Any) -> bool | None:
 @dataclass
 class Annotation(JSONSerializable):
     key: str = ""
-    value: Any = None
+    value: YAMLValue = None
 
     rule_id: str = ""
 
@@ -908,7 +926,7 @@ class RiskAnnotation(Annotation, NetworkTransferDetail, CommandExecDetail):
         anno = cls()
         anno.risk_type = risk_type
         # Walk MRO to collect annotations from all parent classes of the detail
-        all_attrs: dict[str, Any] = {}
+        all_attrs: dict[str, Any] = {}  # type: ignore[explicit-any]
         for klass in reversed(type(detail).__mro__):
             all_attrs.update(getattr(klass, "__annotations__", {}))
         for attr_name in all_attrs:
@@ -937,13 +955,13 @@ class FindCondition:
 @dataclass
 class AnnotationCondition:
     type: str | RiskType = ""
-    attr_conditions: list[tuple[str, Any]] = field(default_factory=list)
+    attr_conditions: list[tuple[str, YAMLValue]] = field(default_factory=list)
 
     def risk_type(self, risk_type: str | RiskType) -> AnnotationCondition:
         self.type = risk_type
         return self
 
-    def attr(self, key: str, val: Any) -> AnnotationCondition:
+    def attr(self, key: str, val: YAMLValue) -> AnnotationCondition:
         self.attr_conditions.append((key, val))
         return self
 
@@ -951,7 +969,7 @@ class AnnotationCondition:
 @dataclass
 class AttributeCondition(FindCondition):
     attr: str | None = None
-    result: Any = None
+    result: YAMLValue = None
 
     def check(self, anno: RiskAnnotation) -> bool:
         if self.attr and hasattr(anno, self.attr):
@@ -963,15 +981,19 @@ class AttributeCondition(FindCondition):
         return False
 
 
+class _RiskAnnotationChecker(Protocol):
+    def __call__(self, anno: RiskAnnotation, **kwargs: YAMLValue) -> bool | None: ...
+
+
 @dataclass
 class FunctionCondition(FindCondition):
-    func: Callable[..., Any] | None = None
-    args: dict[str, Any] | list[Any] | None = None
-    result: Any = None
+    func: _RiskAnnotationChecker | None = None
+    args: YAMLDict | YAMLList | None = None
+    result: bool | None = None
 
     def check(self, anno: RiskAnnotation) -> bool:
         if self.func is not None and callable(self.func):
-            kwargs: dict[str, Any] = self.args if isinstance(self.args, dict) else {}
+            kwargs: YAMLDict = self.args if isinstance(self.args, dict) else {}
             result = self.func(anno, **kwargs)
             if result == self.result:
                 return True
@@ -1069,15 +1091,15 @@ class BecomeInfo:
     flags: str = ""
 
     @staticmethod
-    def from_options(options: dict[str, Any]) -> BecomeInfo | None:
+    def from_options(options: YAMLDict) -> BecomeInfo | None:
         if "become" in options:
             become = options.get("become", "")
             enabled = False
             with contextlib.suppress(Exception):
                 enabled = parse_bool(become)
-            user = options.get("become_user", "")
-            method = options.get("become_method", "")
-            flags = options.get("become_flags", "")
+            user = str(options.get("become_user", ""))
+            method = str(options.get("become_method", ""))
+            flags = str(options.get("become_flags", ""))
             return BecomeInfo(enabled=enabled, user=user, method=method, flags=flags)
         return None
 
@@ -1095,13 +1117,13 @@ class Task(Object, Resolvable):
     role: str = ""
     collection: str = ""
     become: BecomeInfo | None = None
-    variables: dict[str, Any] = field(default_factory=dict)
-    module_defaults: dict[str, Any] = field(default_factory=dict)
-    registered_variables: dict[str, Any] = field(default_factory=dict)
-    set_facts: dict[str, Any] = field(default_factory=dict)
-    loop: dict[str, Any] = field(default_factory=dict)
-    options: dict[str, Any] = field(default_factory=dict)
-    module_options: dict[str, Any] = field(default_factory=dict)
+    variables: YAMLDict = field(default_factory=dict)
+    module_defaults: YAMLDict = field(default_factory=dict)
+    registered_variables: YAMLDict = field(default_factory=dict)
+    set_facts: YAMLDict = field(default_factory=dict)
+    loop: YAMLDict = field(default_factory=dict)
+    options: YAMLDict = field(default_factory=dict)
+    module_options: YAMLDict = field(default_factory=dict)
     executable: str = ""
     executable_type: str = ""
     collections_in_play: list[str] = field(default_factory=list)
@@ -1112,12 +1134,12 @@ class Task(Object, Resolvable):
 
     # FQCN for Module and Role. Or a file path for TaskFile.  resolved later
     resolved_name: str = ""
-    # candidates of resovled_name
-    possible_candidates: list[Any] = field(default_factory=list)
+    # candidates of resovled_name — (fqcn, defined_in_path)
+    possible_candidates: list[tuple[str, str]] = field(default_factory=list)
 
     # embed these data when module/role/taskfile are resolved
-    module_info: dict[str, Any] = field(default_factory=dict)
-    include_info: dict[str, Any] = field(default_factory=dict)
+    module_info: YAMLDict = field(default_factory=dict)
+    include_info: YAMLDict = field(default_factory=dict)
 
     def set_yaml_lines(
         self,
@@ -1125,8 +1147,8 @@ class Task(Object, Resolvable):
         yaml_lines: str = "",
         task_name: str = "",
         module_name: str = "",
-        module_options: Any = None,
-        task_options: Any = None,
+        module_options: YAMLValue | None = None,
+        task_options: YAMLValue | None = None,
         previous_task_line: int = -1,
         jsonpath: str = "",
     ) -> None:
@@ -1191,7 +1213,7 @@ class Task(Object, Resolvable):
             best_line_num_in_file = candidate_blocks[0][1]
         else:
             # reconstruct yaml from the task data to calculate similarity (edit distance) later
-            reconstructed_data: list[dict[str, Any]] = [{}]
+            reconstructed_data: list[YAMLDict] = [{}]
             if task_name:
                 reconstructed_data[0]["name"] = task_name
             reconstructed_data[0][module_name] = module_options
@@ -1201,7 +1223,7 @@ class Task(Object, Resolvable):
                         reconstructed_data[0][key] = val
 
             with contextlib.suppress(Exception):
-                reconstructed_yaml = ariyaml.dump(reconstructed_data)
+                reconstructed_yaml = ariyaml.dump(cast(YAMLValue, reconstructed_data))
 
             # find best match by edit distance
             if reconstructed_yaml:
@@ -1316,12 +1338,13 @@ class Task(Object, Resolvable):
     # this keeps original contents like comments, indentation
     # and quotes for string as much as possible
     def yaml(self, original_module: str = "", use_yaml_lines: bool = True) -> str:
-        task_data_wrapper: list[dict[str, Any]] | None = None
-        task_data: dict[str, Any] | None = None
+        task_data_wrapper: list[YAMLDict] | None = None
+        task_data: YAMLDict | None = None
         if use_yaml_lines:
             try:
-                task_data_wrapper = ariyaml.load(self.yaml_lines)
-                task_data = task_data_wrapper[0]
+                loaded: object = ariyaml.load(self.yaml_lines)
+                task_data_wrapper = cast(list[YAMLDict], loaded) if loaded else None
+                task_data = task_data_wrapper[0] if task_data_wrapper else None
             except Exception:
                 pass
 
@@ -1374,24 +1397,24 @@ class Task(Object, Resolvable):
                     current_to.pop(old_key)
             options_without_name = {k: v for k, v in self.options.items() if k != "name"}
             if is_local_action:
-                new_la_opt = {}
+                new_la_opt: YAMLDict = {}
                 new_la_opt["module"] = self.module
                 recursive_copy_dict(self.module_options, new_la_opt)
                 options_without_name["local_action"] = new_la_opt
-            recursive_copy_dict(options_without_name, current_to)
+                recursive_copy_dict(options_without_name, current_to)
         wrapper = task_data_wrapper if task_data_wrapper is not None else []
         if len(wrapper) == 0:
             wrapper.append(current_to)
         else:
             wrapper[0] = current_to
-        new_yaml = str(ariyaml.dump(wrapper))
+        new_yaml = str(ariyaml.dump(cast(YAMLValue, wrapper)))
         return new_yaml
 
     # this makes a yaml from task contents such as spec.module,
     # spec.options, spec.module_options in a fixed format
     # NOTE: this will lose comments and indentations in the original YAML
     def formatted_yaml(self) -> str:
-        task_data: dict[str, Any] = {}
+        task_data: YAMLDict = {}
         if self.name:
             task_data["name"] = self.name
         if self.module:
@@ -1400,11 +1423,11 @@ class Task(Object, Resolvable):
             if key == "name":
                 continue
             task_data[key] = val
-        task_data = cast(dict[str, Any], self.str2double_quoted_scalar(task_data))
+        task_data = cast(YAMLDict, self.str2double_quoted_scalar(task_data))
         data = [task_data]
-        return str(ariyaml.dump(data))
+        return str(ariyaml.dump(cast(YAMLValue, data)))
 
-    def str2double_quoted_scalar(self, v: Any) -> Any:
+    def str2double_quoted_scalar(self, v: YAMLValue) -> YAMLValue:
         if isinstance(v, dict):
             for key, val in v.items():
                 new_val = self.str2double_quoted_scalar(val)
@@ -1426,18 +1449,18 @@ class Task(Object, Resolvable):
         return self
 
     @property
-    def defined_vars(self) -> dict[str, Any]:
+    def defined_vars(self) -> YAMLDict:
         d_vars = self.variables
         d_vars.update(self.registered_variables)
         d_vars.update(self.set_facts)
         return d_vars
 
     @property
-    def tags(self) -> Any:
+    def tags(self) -> YAMLValue:
         return self.options.get("tags", None)
 
     @property
-    def when(self) -> Any:
+    def when(self) -> YAMLValue:
         return self.options.get("when", None)
 
     @property
@@ -1553,7 +1576,7 @@ class MutableContent:
         spec.yaml_lines = self._yaml
         return self
 
-    def set_new_module_arg_key(self, key: str, value: Any) -> MutableContent:
+    def set_new_module_arg_key(self, key: str, value: YAMLValue) -> MutableContent:
         spec = self._require_task_spec()
         original_value = deepcopy(value)
         need_restore = False
@@ -1585,7 +1608,9 @@ class MutableContent:
         spec.yaml_lines = self._yaml
         return self
 
-    def replace_module_arg_value(self, key: str = "", old_value: Any = None, new_value: Any = None) -> MutableContent:
+    def replace_module_arg_value(
+        self, key: str = "", old_value: YAMLValue = None, new_value: YAMLValue = None
+    ) -> MutableContent:
         spec = self._require_task_spec()
         original_new_value = deepcopy(new_value)
         need_restore = False
@@ -1609,7 +1634,7 @@ class MutableContent:
                     spec.module_options[k] = original_new_value
         return self
 
-    def replace_with_dict(self, new_dict: dict[str, Any]) -> MutableContent:
+    def replace_with_dict(self, new_dict: YAMLDict) -> MutableContent:
         spec = self._require_task_spec()
         from .model_loader import load_task
 
@@ -1617,7 +1642,7 @@ class MutableContent:
         new_task = load_task(
             path=spec.defined_in,
             index=spec.index,
-            task_block_dict=new_dict,
+            task_block_dict=cast(dict[str, object], new_dict),
             task_jsonpath=spec.jsonpath,
             role_name=spec.role,
             collection_name=spec.collection,
@@ -1629,7 +1654,7 @@ class MutableContent:
         self._task_spec = new_task
         return self
 
-    def replace_module_arg_with_dict(self, new_dict: dict[str, Any]) -> MutableContent:
+    def replace_module_arg_with_dict(self, new_dict: YAMLDict) -> MutableContent:
         spec = self._require_task_spec()
         spec.module_options = new_dict
         self._yaml = spec.yaml()
@@ -1654,10 +1679,10 @@ class TaskCall(CallObject, RunTarget):
     # any Annotators in "annotators" dir can add them to this object
     annotations: list[Annotation] = field(default_factory=list)
     args: Arguments = field(default_factory=Arguments)
-    variable_set: dict[str, Any] = field(default_factory=dict)
-    variable_use: dict[str, Any] = field(default_factory=dict)
+    variable_set: YAMLDict = field(default_factory=dict)
+    variable_use: YAMLDict = field(default_factory=dict)
     become: BecomeInfo | None = None
-    module_defaults: dict[str, Any] = field(default_factory=dict)
+    module_defaults: YAMLDict = field(default_factory=dict)
 
     module: Module | None = None
     content: MutableContent | None = None
@@ -1666,7 +1691,9 @@ class TaskCall(CallObject, RunTarget):
         matched = [an for an in self.annotations if an.type == type_str]
         return matched
 
-    def get_annotation_by_type_and_attr(self, type_str: str = "", key: str = "", val: Any = None) -> list[Annotation]:
+    def get_annotation_by_type_and_attr(
+        self, type_str: str = "", key: str = "", val: YAMLValue = None
+    ) -> list[Annotation]:
         matched = [
             an
             for an in self.annotations
@@ -1674,7 +1701,7 @@ class TaskCall(CallObject, RunTarget):
         ]
         return matched
 
-    def set_annotation(self, key: str, value: Any, rule_id: str) -> None:
+    def set_annotation(self, key: str, value: YAMLValue, rule_id: str) -> None:
         end_to_set = False
         for an in self.annotations:
             if not hasattr(an, "key"):
@@ -1687,7 +1714,7 @@ class TaskCall(CallObject, RunTarget):
             self.annotations.append(Annotation(key=key, value=value, rule_id=rule_id))
         return
 
-    def get_annotation(self, key: str, __default: Any = None, rule_id: str = "") -> Any:
+    def get_annotation(self, key: str, __default: YAMLValue = None, rule_id: str = "") -> YAMLValue:
         value = __default
         for an in self.annotations:
             if not hasattr(an, "key"):
@@ -1740,8 +1767,8 @@ class AnsibleRunContext:
     sequence: RunTargetList = field(default_factory=RunTargetList)
     root_key: str = ""
     parent: Object | None = None
-    ram_client: Any = None
-    scan_metadata: dict[str, Any] = field(default_factory=dict)
+    ram_client: RAMClient | None = None
+    scan_metadata: YAMLDict = field(default_factory=dict)
 
     # used by rule check
     current: RunTarget | None = None
@@ -1751,8 +1778,8 @@ class AnsibleRunContext:
     last_item: bool = False
 
     # TODO: implement the following attributes
-    vars: Any = None
-    host_info: Any = None
+    vars: YAMLDict | None = None
+    host_info: YAMLDict | None = None
 
     def __len__(self) -> int:
         return len(self.sequence)
@@ -1778,8 +1805,8 @@ class AnsibleRunContext:
         tree: ObjectList,
         parent: Object | None = None,
         last_item: bool = False,
-        ram_client: Any = None,
-        scan_metadata: dict[str, Any] | None = None,
+        ram_client: RAMClient | None = None,
+        scan_metadata: YAMLDict | None = None,
     ) -> AnsibleRunContext:
         if not tree:
             return AnsibleRunContext(parent=parent, last_item=last_item, scan_metadata=scan_metadata or {})
@@ -1809,8 +1836,8 @@ class AnsibleRunContext:
         root_key: str = "",
         parent: Object | None = None,
         last_item: bool = False,
-        ram_client: Any = None,
-        scan_metadata: dict[str, Any] | None = None,
+        ram_client: RAMClient | None = None,
+        scan_metadata: YAMLDict | None = None,
     ) -> AnsibleRunContext:
         if not root_key and len(targets) > 0:
             root_key = (
@@ -1888,10 +1915,10 @@ class AnsibleRunContext:
         )
 
     @property
-    def info(self) -> dict[str, Any]:
+    def info(self) -> YAMLDict:
         if not self.root_key:
             return {}
-        info: dict[str, Any] = dict(get_obj_info_by_key(self.root_key))
+        info = cast(YAMLDict, dict(get_obj_info_by_key(self.root_key)))
         return info
 
     @property
@@ -1919,7 +1946,7 @@ class TaskFile(Object, Resolvable):
     defined_in: str = ""
     key: str = ""
     local_key: str = ""
-    tasks: list[Any] = field(default_factory=list)
+    tasks: list[Task | str] = field(default_factory=list)
     # role name of this task file
     # this might be empty because a task file can be defined out of roles
     role: str = ""
@@ -1927,27 +1954,27 @@ class TaskFile(Object, Resolvable):
 
     yaml_lines: str = ""
 
-    used_in: list[Any] = field(default_factory=list)  # resolved later
+    used_in: list[str] = field(default_factory=list)  # resolved later
 
-    annotations: dict[str, Any] = field(default_factory=dict)
+    annotations: dict[str, YAMLValue] = field(default_factory=dict)
 
-    variables: dict[str, Any] = field(default_factory=dict)
-    module_defaults: dict[str, Any] = field(default_factory=dict)
-    options: dict[str, Any] = field(default_factory=dict)
+    variables: YAMLDict = field(default_factory=dict)
+    module_defaults: YAMLDict = field(default_factory=dict)
+    options: YAMLDict = field(default_factory=dict)
 
-    task_loading: dict[str, Any] = field(default_factory=dict)
+    task_loading: YAMLDict = field(default_factory=dict)
 
     def set_key(self) -> None:
         set_taskfile_key(self)
 
     def children_to_key(self) -> TaskFile:
         task_keys = [t.key if isinstance(t, Task) else t for t in self.tasks]
-        self.tasks = task_keys
+        self.tasks = cast(list["Task" | str], sorted(task_keys))
         return self
 
     @property
-    def resolver_targets(self) -> list[Any]:
-        return self.tasks
+    def resolver_targets(self) -> list[Resolvable | str]:
+        return list(self.tasks)
 
 
 @dataclass
@@ -1963,44 +1990,44 @@ class Role(Object, Resolvable):
     key: str = ""
     local_key: str = ""
     fqcn: str = ""
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: YAMLDict = field(default_factory=dict)
     collection: str = ""
-    playbooks: list[Any] = field(default_factory=list)
+    playbooks: list[Playbook | str] = field(default_factory=list)
     # 1 role can have multiple task yamls
-    taskfiles: list[Any] = field(default_factory=list)
-    handlers: list[Any] = field(default_factory=list)
+    taskfiles: list[TaskFile | str] = field(default_factory=list)
+    handlers: list[Task] = field(default_factory=list)
     # roles/xxxx/library/zzzz.py can be called as module zzzz
-    modules: list[Any] = field(default_factory=list)
-    dependency: dict[str, Any] = field(default_factory=dict)
-    requirements: dict[str, Any] = field(default_factory=dict)
+    modules: list[Module | str] = field(default_factory=list)
+    dependency: YAMLDict = field(default_factory=dict)
+    requirements: YAMLDict = field(default_factory=dict)
 
     source: str = ""  # collection/scm repo/galaxy
 
-    annotations: dict[str, Any] = field(default_factory=dict)
+    annotations: dict[str, YAMLValue] = field(default_factory=dict)
 
-    default_variables: dict[str, Any] = field(default_factory=dict)
-    variables: dict[str, Any] = field(default_factory=dict)
+    default_variables: YAMLDict = field(default_factory=dict)
+    variables: YAMLDict = field(default_factory=dict)
     # key: loop_var (default "item"), value: list/dict of item value
-    loop: dict[str, Any] = field(default_factory=dict)
-    options: dict[str, Any] = field(default_factory=dict)
+    loop: YAMLDict = field(default_factory=dict)
+    options: YAMLDict = field(default_factory=dict)
 
     def set_key(self) -> None:
         set_role_key(self)
 
     def children_to_key(self) -> Role:
         module_keys = [m.key if isinstance(m, Module) else m for m in self.modules]
-        self.modules = sorted(module_keys)
+        self.modules = cast(list["Module" | str], sorted(module_keys))
 
         playbook_keys = [p.key if isinstance(p, Playbook) else p for p in self.playbooks]
-        self.playbooks = sorted(playbook_keys)
+        self.playbooks = cast(list["Playbook" | str], sorted(playbook_keys))
 
         taskfile_keys = [tf.key if isinstance(tf, TaskFile) else tf for tf in self.taskfiles]
-        self.taskfiles = sorted(taskfile_keys)
+        self.taskfiles = cast(list["TaskFile" | str], sorted(taskfile_keys))
         return self
 
     @property
-    def resolver_targets(self) -> list[Any]:
-        return self.taskfiles + self.modules
+    def resolver_targets(self) -> list[Resolvable | str]:
+        return cast(list["Resolvable" | str], list(self.taskfiles) + list(self.modules))
 
 
 @dataclass
@@ -2012,7 +2039,7 @@ class RoleCall(CallObject, RunTarget):
 class RoleInPlay(Object, Resolvable):
     type: str = "roleinplay"
     name: str = ""
-    options: dict[str, Any] = field(default_factory=dict)
+    options: YAMLDict = field(default_factory=dict)
     defined_in: str = ""
     role_index: int = -1
     play_index: int = -1
@@ -2021,14 +2048,14 @@ class RoleInPlay(Object, Resolvable):
     collection: str = ""
 
     resolved_name: str = ""  # resolved later
-    # candidates of resovled_name
-    possible_candidates: list[Any] = field(default_factory=list)
+    # candidates of resovled_name — (fqcn, defined_in_path)
+    possible_candidates: list[tuple[str, str]] = field(default_factory=list)
 
-    annotations: dict[str, Any] = field(default_factory=dict)
-    collections_in_play: list[Any] = field(default_factory=list)
+    annotations: dict[str, YAMLValue] = field(default_factory=dict)
+    collections_in_play: list[str] = field(default_factory=list)
 
     # embed this data when role is resolved
-    role_info: dict[str, Any] = field(default_factory=dict)
+    role_info: YAMLDict = field(default_factory=dict)
 
     @property
     def resolver_targets(self) -> None:
@@ -2053,38 +2080,38 @@ class Play(Object, Resolvable):
     collection: str = ""
     import_module: str = ""
     import_playbook: str = ""
-    pre_tasks: list[Any] = field(default_factory=list)
-    tasks: list[Any] = field(default_factory=list)
-    post_tasks: list[Any] = field(default_factory=list)
-    handlers: list[Any] = field(default_factory=list)
+    pre_tasks: list[Task | str] = field(default_factory=list)
+    tasks: list[Task | str] = field(default_factory=list)
+    post_tasks: list[Task | str] = field(default_factory=list)
+    handlers: list[Task | str] = field(default_factory=list)
     # not actual Role, but RoleInPlay defined in this playbook
-    roles: list[Any] = field(default_factory=list)
-    module_defaults: dict[str, Any] = field(default_factory=dict)
-    options: dict[str, Any] = field(default_factory=dict)
-    collections_in_play: list[Any] = field(default_factory=list)
+    roles: list[RoleInPlay | str] = field(default_factory=list)
+    module_defaults: YAMLDict = field(default_factory=dict)
+    options: YAMLDict = field(default_factory=dict)
+    collections_in_play: list[str] = field(default_factory=list)
     become: BecomeInfo | None = None
-    variables: dict[str, Any] = field(default_factory=dict)
-    vars_files: list[Any] = field(default_factory=list)
+    variables: YAMLDict = field(default_factory=dict)
+    vars_files: list[str] = field(default_factory=list)
 
     jsonpath: str = ""
 
-    task_loading: dict[str, Any] = field(default_factory=dict)
+    task_loading: YAMLDict = field(default_factory=dict)
 
     def set_key(self, parent_key: str = "", parent_local_key: str = "") -> None:
         set_play_key(self, parent_key, parent_local_key)
 
     def children_to_key(self) -> Play:
         pre_task_keys = [t.key if isinstance(t, Task) else t for t in self.pre_tasks]
-        self.pre_tasks = pre_task_keys
+        self.pre_tasks = cast(list["Task" | str], sorted(pre_task_keys))
 
         task_keys = [t.key if isinstance(t, Task) else t for t in self.tasks]
-        self.tasks = task_keys
+        self.tasks = cast(list["Task" | str], sorted(task_keys))
 
         post_task_keys = [t.key if isinstance(t, Task) else t for t in self.post_tasks]
-        self.post_tasks = post_task_keys
+        self.post_tasks = cast(list["Task" | str], sorted(post_task_keys))
 
         handler_task_keys = [t.key if isinstance(t, Task) else t for t in self.handlers]
-        self.handlers = handler_task_keys
+        self.handlers = cast(list["Task" | str], sorted(handler_task_keys))
         return self
 
     @property
@@ -2092,8 +2119,11 @@ class Play(Object, Resolvable):
         return json.dumps({"path": self.defined_in, "index": self.index})
 
     @property
-    def resolver_targets(self) -> list[Any]:
-        return self.pre_tasks + self.tasks + self.roles
+    def resolver_targets(self) -> list[Resolvable | str]:
+        return cast(
+            list["Resolvable" | str],
+            list(self.pre_tasks) + list(self.tasks) + list(self.roles),
+        )
 
 
 @dataclass
@@ -2114,28 +2144,31 @@ class Playbook(Object, Resolvable):
     role: str = ""
     collection: str = ""
 
-    plays: list[Any] = field(default_factory=list)
+    plays: list[Play | str] = field(default_factory=list)
 
-    used_in: list[Any] = field(default_factory=list)  # resolved later
+    used_in: list[str] = field(default_factory=list)  # resolved later
 
-    annotations: dict[str, Any] = field(default_factory=dict)
+    annotations: dict[str, YAMLValue] = field(default_factory=dict)
 
-    variables: dict[str, Any] = field(default_factory=dict)
-    options: dict[str, Any] = field(default_factory=dict)
+    variables: YAMLDict = field(default_factory=dict)
+    options: YAMLDict = field(default_factory=dict)
 
     def set_key(self) -> None:
         set_playbook_key(self)
 
     def children_to_key(self) -> Playbook:
         play_keys = [play.key if isinstance(play, Play) else play for play in self.plays]
-        self.plays = play_keys
+        self.plays = cast(list["Play" | str], sorted(play_keys))
         return self
 
     @property
-    def resolver_targets(self) -> list[Any]:
+    def resolver_targets(self) -> list[Resolvable | str]:
         if "plays" in self.__dict__:
-            return self.plays
-        return getattr(self, "roles", []) + getattr(self, "tasks", [])
+            return cast(list["Resolvable" | str], self.plays)
+        return cast(
+            list["Resolvable" | str],
+            list(getattr(self, "roles", [])) + list(getattr(self, "tasks", [])),
+        )
 
 
 @dataclass
@@ -2157,7 +2190,7 @@ class Inventory(JSONSerializable):
     inventory_type: str = ""
     group_name: str = ""
     host_name: str = ""
-    variables: dict[str, Any] = field(default_factory=dict)
+    variables: YAMLDict = field(default_factory=dict)
 
 
 @dataclass
@@ -2171,8 +2204,8 @@ class Repository(Object, Resolvable):
     # if set, this repository is a collection repository
     my_collection_name: str = ""
 
-    playbooks: list[Any] = field(default_factory=list)
-    roles: list[Any] = field(default_factory=list)
+    playbooks: list[Playbook | str] = field(default_factory=list)
+    roles: list[Role | str] = field(default_factory=list)
 
     # for playbook scan
     target_playbook_path: str = ""
@@ -2180,44 +2213,51 @@ class Repository(Object, Resolvable):
     # for taskfile scan
     target_taskfile_path: str = ""
 
-    requirements: dict[str, Any] = field(default_factory=dict)
+    requirements: YAMLDict = field(default_factory=dict)
 
     installed_collections_path: str = ""
-    installed_collections: list[Any] = field(default_factory=list)
+    installed_collections: list[Collection | str] = field(default_factory=list)
 
     installed_roles_path: str = ""
-    installed_roles: list[Any] = field(default_factory=list)
-    modules: list[Any] = field(default_factory=list)
-    taskfiles: list[Any] = field(default_factory=list)
+    installed_roles: list[Role | str] = field(default_factory=list)
+    modules: list[Module | str] = field(default_factory=list)
+    taskfiles: list[TaskFile | str] = field(default_factory=list)
 
-    inventories: list[Any] = field(default_factory=list)
+    inventories: list[Inventory | str] = field(default_factory=list)
 
-    files: list[Any] = field(default_factory=list)
+    files: list[File | str] = field(default_factory=list)
 
     version: str = ""
 
-    annotations: dict[str, Any] = field(default_factory=dict)
+    annotations: dict[str, YAMLValue] = field(default_factory=dict)
 
     def set_key(self) -> None:
         set_repository_key(self)
 
     def children_to_key(self) -> Repository:
         module_keys = [m.key if isinstance(m, Module) else m for m in self.modules]
-        self.modules = sorted(module_keys)
+        self.modules = cast(list["Module" | str], sorted(module_keys))
 
         playbook_keys = [p.key if isinstance(p, Playbook) else p for p in self.playbooks]
-        self.playbooks = sorted(playbook_keys)
+        self.playbooks = cast(list["Playbook" | str], sorted(playbook_keys))
 
         taskfile_keys = [tf.key if isinstance(tf, TaskFile) else tf for tf in self.taskfiles]
-        self.taskfiles = sorted(taskfile_keys)
+        self.taskfiles = cast(list["TaskFile" | str], sorted(taskfile_keys))
 
         role_keys = [r.key if isinstance(r, Role) else r for r in self.roles]
-        self.roles = sorted(role_keys)
+        self.roles = cast(list["Role" | str], sorted(role_keys))
         return self
 
     @property
-    def resolver_targets(self) -> list[Any]:
-        return self.playbooks + self.roles + self.modules + self.installed_roles + self.installed_collections
+    def resolver_targets(self) -> list[Resolvable | str]:
+        return cast(
+            list["Resolvable" | str],
+            list(self.playbooks)
+            + list(self.roles)
+            + list(self.modules)
+            + list(self.installed_roles)
+            + list(self.installed_collections),
+        )
 
 
 @dataclass
@@ -2254,17 +2294,17 @@ class GalaxyArtifact(Repository):
     type: str = ""  # Role or Collection
 
     # make it easier to search a module
-    module_dict: dict[str, Any] = field(default_factory=dict)
+    module_dict: dict[str, Module] = field(default_factory=dict)
     # make it easier to search a task
-    task_dict: dict[str, Any] = field(default_factory=dict)
+    task_dict: dict[str, Task] = field(default_factory=dict)
     # make it easier to search a taskfile
-    taskfile_dict: dict[str, Any] = field(default_factory=dict)
+    taskfile_dict: dict[str, TaskFile] = field(default_factory=dict)
     # make it easier to search a role
-    role_dict: dict[str, Any] = field(default_factory=dict)
+    role_dict: dict[str, Role] = field(default_factory=dict)
     # make it easier to search a playbook
-    playbook_dict: dict[str, Any] = field(default_factory=dict)
+    playbook_dict: dict[str, Playbook] = field(default_factory=dict)
     # make it easier to search a collection
-    collection_dict: dict[str, Any] = field(default_factory=dict)
+    collection_dict: dict[str, Collection] = field(default_factory=dict)
 
 
 @dataclass
@@ -2278,38 +2318,38 @@ class ModuleMetadata:
     deprecated: bool = False
 
     @staticmethod
-    def from_module(m: Module, metadata: dict[str, Any]) -> ModuleMetadata:
+    def from_module(m: Module, metadata: YAMLDict) -> ModuleMetadata:
         mm = ModuleMetadata()
         for key in mm.__dict__:
             if hasattr(m, key):
                 val = getattr(m, key, None)
                 setattr(mm, key, val)
 
-        mm.type = metadata.get("type", "")
-        mm.name = metadata.get("name", "")
-        mm.version = metadata.get("version", "")
-        mm.hash = metadata.get("hash", "")
+        mm.type = str(metadata.get("type", ""))
+        mm.name = str(metadata.get("name", ""))
+        mm.version = str(metadata.get("version", ""))
+        mm.hash = str(metadata.get("hash", ""))
         return mm
 
     @staticmethod
-    def from_routing(dst: str, metadata: dict[str, Any]) -> ModuleMetadata:
+    def from_routing(dst: str, metadata: YAMLDict) -> ModuleMetadata:
         mm = ModuleMetadata()
         mm.fqcn = dst
-        mm.type = metadata.get("type", "")
-        mm.name = metadata.get("name", "")
-        mm.version = metadata.get("version", "")
-        mm.hash = metadata.get("hash", "")
+        mm.type = str(metadata.get("type", ""))
+        mm.name = str(metadata.get("name", ""))
+        mm.version = str(metadata.get("version", ""))
+        mm.hash = str(metadata.get("hash", ""))
         mm.deprecated = True
         return mm
 
     @staticmethod
-    def from_dict(d: dict[str, Any]) -> ModuleMetadata:
+    def from_dict(d: YAMLDict) -> ModuleMetadata:
         mm = ModuleMetadata()
-        mm.fqcn = d.get("fqcn", "")
-        mm.type = d.get("type", "")
-        mm.name = d.get("name", "")
-        mm.version = d.get("version", "")
-        mm.hash = d.get("hash", "")
+        mm.fqcn = str(d.get("fqcn", ""))
+        mm.type = str(d.get("type", ""))
+        mm.name = str(d.get("name", ""))
+        mm.version = str(d.get("version", ""))
+        mm.hash = str(d.get("hash", ""))
         return mm
 
     def __eq__(self, mm: object) -> bool:
@@ -2333,27 +2373,27 @@ class RoleMetadata:
     hash: str = ""
 
     @staticmethod
-    def from_role(r: Role, metadata: dict[str, Any]) -> RoleMetadata:
+    def from_role(r: Role, metadata: YAMLDict) -> RoleMetadata:
         rm = RoleMetadata()
         for key in rm.__dict__:
             if hasattr(r, key):
                 val = getattr(r, key, None)
                 setattr(rm, key, val)
 
-        rm.type = metadata.get("type", "")
-        rm.name = metadata.get("name", "")
-        rm.version = metadata.get("version", "")
-        rm.hash = metadata.get("hash", "")
+        rm.type = str(metadata.get("type", ""))
+        rm.name = str(metadata.get("name", ""))
+        rm.version = str(metadata.get("version", ""))
+        rm.hash = str(metadata.get("hash", ""))
         return rm
 
     @staticmethod
-    def from_dict(d: dict[str, Any]) -> RoleMetadata:
+    def from_dict(d: YAMLDict) -> RoleMetadata:
         rm = RoleMetadata()
-        rm.fqcn = d.get("fqcn", "")
-        rm.type = d.get("type", "")
-        rm.name = d.get("name", "")
-        rm.version = d.get("version", "")
-        rm.hash = d.get("hash", "")
+        rm.fqcn = str(d.get("fqcn", ""))
+        rm.type = str(d.get("type", ""))
+        rm.name = str(d.get("name", ""))
+        rm.version = str(d.get("version", ""))
+        rm.hash = str(d.get("hash", ""))
         return rm
 
     def __eq__(self, rm: object) -> bool:
@@ -2377,27 +2417,27 @@ class TaskFileMetadata:
     hash: str = ""
 
     @staticmethod
-    def from_taskfile(tf: TaskFile, metadata: dict[str, Any]) -> TaskFileMetadata:
+    def from_taskfile(tf: TaskFile, metadata: YAMLDict) -> TaskFileMetadata:
         tfm = TaskFileMetadata()
         for key in tfm.__dict__:
             if hasattr(tf, key):
                 val = getattr(tf, key, None)
                 setattr(tfm, key, val)
 
-        tfm.type = metadata.get("type", "")
-        tfm.name = metadata.get("name", "")
-        tfm.version = metadata.get("version", "")
-        tfm.hash = metadata.get("hash", "")
+        tfm.type = str(metadata.get("type", ""))
+        tfm.name = str(metadata.get("name", ""))
+        tfm.version = str(metadata.get("version", ""))
+        tfm.hash = str(metadata.get("hash", ""))
         return tfm
 
     @staticmethod
-    def from_dict(d: dict[str, Any]) -> TaskFileMetadata:
+    def from_dict(d: YAMLDict) -> TaskFileMetadata:
         tfm = TaskFileMetadata()
-        tfm.key = d.get("key", "")
-        tfm.type = d.get("type", "")
-        tfm.name = d.get("name", "")
-        tfm.version = d.get("version", "")
-        tfm.hash = d.get("hash", "")
+        tfm.key = str(d.get("key", ""))
+        tfm.type = str(d.get("type", ""))
+        tfm.name = str(d.get("name", ""))
+        tfm.version = str(d.get("version", ""))
+        tfm.hash = str(d.get("hash", ""))
         return tfm
 
     def __eq__(self, tfm: object) -> bool:
@@ -2415,7 +2455,7 @@ class TaskFileMetadata:
 @dataclass
 class ActionGroupMetadata:
     group_name: str = ""
-    group_modules: list[Any] = field(default_factory=list)
+    group_modules: list[Module] = field(default_factory=list)
     type: str = ""
     name: str = ""
     version: str = ""
@@ -2423,7 +2463,7 @@ class ActionGroupMetadata:
 
     @staticmethod
     def from_action_group(
-        group_name: str, group_modules: list[Any], metadata: dict[str, Any]
+        group_name: str, group_modules: list[Module], metadata: YAMLDict
     ) -> ActionGroupMetadata | None:
         if not group_name:
             return None
@@ -2434,21 +2474,21 @@ class ActionGroupMetadata:
         agm = ActionGroupMetadata()
         agm.group_name = group_name
         agm.group_modules = group_modules
-        agm.type = metadata.get("type", "")
-        agm.name = metadata.get("name", "")
-        agm.version = metadata.get("version", "")
-        agm.hash = metadata.get("hash", "")
+        agm.type = str(metadata.get("type", ""))
+        agm.name = str(metadata.get("name", ""))
+        agm.version = str(metadata.get("version", ""))
+        agm.hash = str(metadata.get("hash", ""))
         return agm
 
     @staticmethod
-    def from_dict(d: dict[str, Any]) -> ActionGroupMetadata:
+    def from_dict(d: YAMLDict) -> ActionGroupMetadata:
         agm = ActionGroupMetadata()
-        agm.group_name = d.get("group_name", "")
-        agm.group_modules = d.get("group_modules", [])
-        agm.type = d.get("type", "")
-        agm.name = d.get("name", "")
-        agm.version = d.get("version", "")
-        agm.hash = d.get("hash", "")
+        agm.group_name = str(d.get("group_name", ""))
+        agm.group_modules = cast(list["Module"], d.get("group_modules", []))
+        agm.type = str(d.get("type", ""))
+        agm.name = str(d.get("name", ""))
+        agm.version = str(d.get("version", ""))
+        agm.hash = str(d.get("hash", ""))
         return agm
 
     def __eq__(self, agm: object) -> bool:
@@ -2510,7 +2550,7 @@ class RuleMetadata:
 @dataclass
 class SpecMutation:
     key: str | None = None
-    changes: list[Any] = field(default_factory=list)
+    changes: list[YAMLValue] = field(default_factory=list)
     object: Object = field(default_factory=Object)
     rule: RuleMetadata = field(default_factory=RuleMetadata)
 
@@ -2520,8 +2560,8 @@ class RuleResult:
     rule: RuleMetadata | None = None
 
     verdict: bool = False
-    detail: dict[str, Any] | None = None
-    file: tuple[Any, ...] | None = None
+    detail: YAMLDict | None = None
+    file: tuple[str | int, ...] | None = None
     error: str | None = None
 
     matched: bool = False
@@ -2533,11 +2573,11 @@ class RuleResult:
         else:
             self.verdict = False
 
-    def set_value(self, key: str, value: Any) -> None:
+    def set_value(self, key: str, value: YAMLValue) -> None:
         if self.detail is not None:
             self.detail[key] = value
 
-    def get_detail(self) -> dict[str, Any] | None:
+    def get_detail(self) -> YAMLDict | None:
         return self.detail
 
 
@@ -2605,7 +2645,7 @@ class Rule(RuleMetadata):
 
 @dataclass
 class NodeResult(JSONSerializable):
-    node: RunTarget | dict[str, Any] | None = None
+    node: RunTarget | YAMLDict | None = None
     rules: list[RuleResult] = field(default_factory=list)
 
     def results(self) -> list[RuleResult]:
@@ -2619,8 +2659,8 @@ class NodeResult(JSONSerializable):
 
     def search_results(
         self,
-        rule_id: str | list[Any] | None = None,
-        tag: str | list[Any] | None = None,
+        rule_id: str | list[str] | None = None,
+        tag: str | list[str] | None = None,
         matched: bool | None = None,
         verdict: bool | None = None,
     ) -> list[RuleResult]:
@@ -2637,7 +2677,7 @@ class NodeResult(JSONSerializable):
             filtered = [r for r in filtered if r.rule and r.rule.rule_id in target_rule_ids]
 
         if tag:
-            target_tags: list[Any] = []
+            target_tags: list[str] = []
             if isinstance(tag, str):
                 target_tags = [tag]
             elif isinstance(tag, list):

@@ -7,8 +7,8 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
+from apme_engine.engine.models import ViolationDict
 from apme_engine.remediation.partition import partition_violations
 from apme_engine.remediation.registry import TransformRegistry
 
@@ -27,13 +27,13 @@ class FixReport:
     passes: int
     fixed: int
     applied_patches: list[FilePatch]
-    remaining_ai: list[dict[str, Any]]
-    remaining_manual: list[dict[str, Any]]
-    ai_proposed: list[dict[str, Any]]
+    remaining_ai: list[ViolationDict]
+    remaining_manual: list[ViolationDict]
+    ai_proposed: list[ViolationDict]
     oscillation_detected: bool
 
 
-ScanFn = Callable[[list[str]], list[dict[str, Any]]]
+ScanFn = Callable[[list[str]], list[ViolationDict]]
 
 
 class RemediationEngine:
@@ -105,8 +105,8 @@ class RemediationEngine:
 
             applied_this_pass = 0
             for v in tier1:
-                rule_id = v.get("rule_id", "")
-                vf = v.get("file", "")
+                rule_id = str(v.get("rule_id", ""))
+                vf = str(v.get("file", ""))
 
                 if vf not in file_contents:
                     continue

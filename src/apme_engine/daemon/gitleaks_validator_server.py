@@ -9,14 +9,13 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
 
 import grpc
 import grpc.aio
 
-from apme.v1 import validate_pb2_grpc
-from apme.v1.common_pb2 import HealthResponse, RuleTiming, ValidatorDiagnostics
-from apme.v1.validate_pb2 import ValidateResponse
+from apme.v1 import common_pb2, validate_pb2_grpc
+from apme.v1.common_pb2 import File, HealthResponse, RuleTiming, ValidatorDiagnostics
+from apme.v1.validate_pb2 import ValidateRequest, ValidateResponse
 from apme_engine.daemon.violation_convert import violation_dict_to_proto
 from apme_engine.validators.gitleaks.scanner import GITLEAKS_BIN, run_gitleaks
 
@@ -35,7 +34,7 @@ _SCANNABLE_EXTENSIONS = (
 )
 
 
-def _run_scan(files: list[Any]) -> tuple[list[dict[str, Any]], int]:
+def _run_scan(files: list[File]) -> tuple[list[dict[str, str | int | list[int] | None]], int]:
     """Blocking function: write files to temp dir, run gitleaks, return (violations, files_written)."""
     temp_dir = Path(tempfile.mkdtemp(prefix="apme_gitleaks_"))
     try:
@@ -68,7 +67,11 @@ def _get_gitleaks_version() -> str:
 class GitleaksValidatorServicer(validate_pb2_grpc.ValidatorServicer):
     """Async gRPC adapter: runs gitleaks in executor thread."""
 
-    async def Validate(self, request: Any, context: Any) -> ValidateResponse:
+    async def Validate(
+        self,
+        request: ValidateRequest,
+        context: grpc.aio.ServicerContext,  # type: ignore[type-arg]
+    ) -> ValidateResponse:
         req_id = request.request_id or ""
         t0 = time.monotonic()
         try:
@@ -80,7 +83,7 @@ class GitleaksValidatorServicer(validate_pb2_grpc.ValidatorServicer):
 
             violations, files_written = await asyncio.get_event_loop().run_in_executor(
                 None,
-                _run_scan,
+                _run_scan,  # type: ignore[arg-type]
                 list(request.files),
             )
 
@@ -120,7 +123,11 @@ class GitleaksValidatorServicer(validate_pb2_grpc.ValidatorServicer):
             sys.stderr.flush()
             return ValidateResponse(violations=[], request_id=req_id)
 
-    async def Health(self, request: Any, context: Any) -> HealthResponse:
+    async def Health(
+        self,
+        request: common_pb2.HealthRequest,
+        context: grpc.aio.ServicerContext,  # type: ignore[type-arg]
+    ) -> HealthResponse:
         try:
             proc = await asyncio.create_subprocess_exec(
                 GITLEAKS_BIN,
@@ -139,7 +146,7 @@ class GitleaksValidatorServicer(validate_pb2_grpc.ValidatorServicer):
             return HealthResponse(status=f"gitleaks health error: {e}")
 
 
-async def serve(listen: str = "0.0.0.0:50056") -> Any:
+async def serve(listen: str = "0.0.0.0:50056") -> grpc.aio.Server:
     """Create, bind, and start async gRPC server with Gitleaks servicer."""
     server = grpc.aio.server(maximum_concurrent_rpcs=_MAX_CONCURRENT_RPCS)
     validate_pb2_grpc.add_ValidatorServicer_to_server(GitleaksValidatorServicer(), server)  # type: ignore[no-untyped-call]

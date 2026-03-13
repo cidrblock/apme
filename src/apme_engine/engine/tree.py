@@ -5,7 +5,7 @@ import os
 import re
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import cast
 
 from . import logger
 from .keyutil import detect_type, key_delimiter, object_delimiter
@@ -13,6 +13,7 @@ from .model_loader import load_builtin_modules
 from .models import (
     CallObject,
     ExecutableType,
+    Load,
     LoadType,
     Module,
     Object,
@@ -47,7 +48,7 @@ class TreeNode:
     # children is a list of TreeNode
     children: list[TreeNode] = field(default_factory=list)
 
-    definition: dict[str, Any] = field(default_factory=dict)
+    definition: dict[str, object] = field(default_factory=dict)
 
     # load a list of (src, dst) as a tree structure
     # which is composed of multiple TreeNode
@@ -191,15 +192,56 @@ def nodelist2branch(nodelist: list[TreeNode]) -> TreeNode:
     return t
 
 
-def load_single_definition(defs: dict[str, Any], key: str) -> ObjectList:
+def _safe_list(v: object) -> list[Object | CallObject]:
+    """Get a list from a value that might be list or ObjectList."""
+    if isinstance(v, ObjectList):
+        return v.items
+    if isinstance(v, list):
+        return [x for x in v if isinstance(x, (Object, CallObject))]
+    return []
+
+
+def _safe_dict(v: object) -> dict[str, object]:
+    """Get a dict from a value that might be dict."""
+    return v if isinstance(v, dict) else {}
+
+
+def _ram_match_object(match: object) -> Object | CallObject | None:
+    """Extract 'object' from a RAM search result dict if it's an Object/CallObject."""
+    if not isinstance(match, dict):
+        return None
+    obj = match.get("object")
+    return obj if isinstance(obj, (Object, CallObject)) else None
+
+
+def _ram_match_defined_in(match: object) -> str:
+    """Extract 'defined_in' from a RAM search result for display."""
+    if not isinstance(match, dict):
+        return ""
+    di = match.get("defined_in")
+    return str(di) if di is not None else ""
+
+
+def _ram_match_offspring(match: object) -> list[dict[str, object]]:
+    """Extract 'offspring_objects' from a RAM search result as list of dicts."""
+    if not isinstance(match, dict):
+        return []
+    raw = match.get("offspring_objects", [])
+    if not isinstance(raw, list):
+        return []
+    return [x for x in raw if isinstance(x, dict)]
+
+
+def load_single_definition(defs: dict[str, object], key: str) -> ObjectList:
     obj_list = ObjectList()
-    items = defs.get(key, [])
+    items = _safe_list(defs.get(key, []))
     for item in items:
-        obj_list.add(item)
+        if isinstance(item, (Object, CallObject)):
+            obj_list.add(item)
     return obj_list
 
 
-def load_definitions(defs: dict[str, Any], types: list[str]) -> list[ObjectList]:
+def load_definitions(defs: dict[str, object], types: list[str]) -> list[ObjectList]:
     def_list = []
     for type_key in types:
         objs_per_type = load_single_definition(defs, type_key)
@@ -207,15 +249,17 @@ def load_definitions(defs: dict[str, Any], types: list[str]) -> list[ObjectList]
     return def_list
 
 
-def load_all_definitions(definitions: dict[str, Any]) -> dict[str, ObjectList]:
-    _definitions: dict[str, Any] = {}
+def load_all_definitions(definitions: dict[str, object]) -> dict[str, ObjectList]:
+    _definitions: dict[str, object] = {}
     _definitions = {"root": definitions} if "mappings" in definitions else definitions
     loaded: dict[str, ObjectList] = {}
     types = ["collections", "roles", "taskfiles", "modules", "playbooks", "plays", "tasks"]
     for type_key in types:
         loaded[type_key] = ObjectList()
     for _, definitions_per_artifact in _definitions.items():
-        def_list = load_definitions(definitions_per_artifact.get("definitions", {}), types)
+        defs_raw = definitions_per_artifact.get("definitions", {}) if isinstance(definitions_per_artifact, dict) else {}
+        defs = defs_raw if isinstance(defs_raw, dict) else {}
+        def_list = load_definitions(defs, types)
         for i, type_key in enumerate(types):
             if type_key not in loaded:
                 loaded[type_key] = def_list[i]
@@ -224,7 +268,10 @@ def load_all_definitions(definitions: dict[str, Any]) -> dict[str, ObjectList]:
     return loaded
 
 
-def make_dicts(root_definitions: dict[str, Any], ext_definitions: dict[str, Any]) -> dict[str, dict[str, Any]]:
+def make_dicts(
+    root_definitions: dict[str, ObjectList],
+    ext_definitions: dict[str, ObjectList],
+) -> dict[str, dict[str, object]]:
     definitions: dict[str, ObjectList] = {
         "roles": ObjectList(),
         "modules": ObjectList(),
@@ -232,9 +279,13 @@ def make_dicts(root_definitions: dict[str, Any], ext_definitions: dict[str, Any]
         "playbooks": ObjectList(),
     }
     for type_key in definitions:
-        definitions[type_key].merge(root_definitions.get(type_key, ObjectList()))
-        definitions[type_key].merge(ext_definitions.get(type_key, ObjectList()))
-    dicts: dict[str, dict[str, Any]] = {k: {} for k in definitions}
+        root_val = root_definitions.get(type_key, ObjectList())
+        ext_val = ext_definitions.get(type_key, ObjectList())
+        if isinstance(root_val, ObjectList):
+            definitions[type_key].merge(root_val)
+        if isinstance(ext_val, ObjectList):
+            definitions[type_key].merge(ext_val)
+    dicts: dict[str, dict[str, object]] = {k: {} for k in definitions}
     for type_key, obj_list in definitions.items():
         for obj in obj_list.items:
             obj_dict_key = obj.fqcn if hasattr(obj, "fqcn") else obj.key
@@ -245,31 +296,41 @@ def make_dicts(root_definitions: dict[str, Any], ext_definitions: dict[str, Any]
 
 
 def load_module_redirects(
-    root_definitions: dict[str, Any],
-    ext_definitions: dict[str, Any],
-    module_dict: dict[str, Any] | None = None,
+    root_definitions: dict[str, ObjectList],
+    ext_definitions: dict[str, ObjectList],
+    module_dict: dict[str, object] | None = None,
 ) -> dict[str, str]:
     if module_dict is None:
         module_dict = {}
     collection_list = root_definitions.get("collections", ObjectList())
     ext_collection_list = ext_definitions.get("collections", ObjectList())
-    collection_list.merge(ext_collection_list)
-    redirects = {}
-    for coll in collection_list.items:
-        if not coll.meta_runtime:
+    if isinstance(collection_list, ObjectList) and isinstance(ext_collection_list, ObjectList):
+        collection_list.merge(ext_collection_list)
+    redirects: dict[str, str] = {}
+    coll_items = collection_list.items if isinstance(collection_list, ObjectList) else []
+    for coll in coll_items:
+        meta = getattr(coll, "meta_runtime", None)
+        if not meta:
             continue
-        for short_name, routing in coll.meta_runtime.get("plugin_routing", {}).get("modules", {}).items():
-            redirect_to = routing.get("redirect", "")
-            if short_name in redirects:
+        if not isinstance(meta, dict):
+            continue
+        plugin_routing = meta.get("plugin_routing", {})
+        if not isinstance(plugin_routing, dict):
+            continue
+        modules_dict = plugin_routing.get("modules", {})
+        if not isinstance(modules_dict, dict):
+            continue
+        for short_name, routing in modules_dict.items():
+            redirect_to = routing.get("redirect", "") if isinstance(routing, dict) else ""
+            if str(short_name) in redirects:
                 continue
-            found_module = module_dict.get(redirect_to)
-            if found_module:
-                module_key = found_module.key
-                redirects[short_name] = module_key
+            found_module = module_dict.get(str(redirect_to))
+            if found_module is not None and hasattr(found_module, "key"):
+                redirects[str(short_name)] = getattr(found_module, "key", "")
     return redirects
 
 
-def resolve(obj: Task | Play, dicts: dict[str, dict[str, Any]]) -> tuple[Task | Play, bool]:
+def resolve(obj: Task | Play, dicts: dict[str, dict[str, object]]) -> tuple[Task | Play, bool]:
     failed = False
     if isinstance(obj, Task):
         task = obj
@@ -306,7 +367,7 @@ def resolve(obj: Task | Play, dicts: dict[str, dict[str, Any]]) -> tuple[Task | 
 
 def resolve_module(
     module_name: str,
-    module_dict: dict[str, Any] | None = None,
+    module_dict: dict[str, object] | None = None,
     module_redirects: dict[str, str] | None = None,
 ) -> str:
     if module_redirects is None:
@@ -315,13 +376,15 @@ def resolve_module(
         module_dict = {}
     module_key = ""
     found_module = module_dict.get(module_name)
-    if found_module is not None:
-        module_key = found_module.key
+    if found_module is not None and hasattr(found_module, "key"):
+        module_key = getattr(found_module, "key", "")
     if module_key == "":
         for k in module_dict:
             suffix = f".{module_name}"
             if k.endswith(suffix):
-                module_key = module_dict[k].key
+                mod = module_dict[k]
+                if hasattr(mod, "key"):
+                    module_key = getattr(mod, "key", "")
                 break
     if module_key == "" and module_name in module_redirects:
         module_key = module_redirects[module_name]
@@ -330,7 +393,7 @@ def resolve_module(
 
 def resolve_role(
     role_name: str,
-    role_dict: dict[str, Any] | None = None,
+    role_dict: dict[str, object] | None = None,
     my_collection_name: str = "",
     collections_in_play: list[str] | None = None,
 ) -> str:
@@ -346,30 +409,32 @@ def resolve_role(
         for coll in collections_in_play:
             role_name_cand = f"{coll}.{role_name}"
             found_role = role_dict.get(role_name_cand)
-            if found_role is not None:
-                role_key = found_role.key
+            if found_role is not None and hasattr(found_role, "key"):
+                role_key = getattr(found_role, "key", "")
     else:
         if "." not in role_name and my_collection_name != "":
             role_name_cand = f"{my_collection_name}.{role_name}"
             found_role = role_dict.get(role_name_cand)
-            if found_role is not None:
-                role_key = found_role.key
+            if found_role is not None and hasattr(found_role, "key"):
+                role_key = getattr(found_role, "key", "")
     if role_key == "":
         found_role = role_dict.get(role_name)
-        if found_role is not None:
-            role_key = found_role.key
+        if found_role is not None and hasattr(found_role, "key"):
+            role_key = getattr(found_role, "key", "")
         else:
             for k in role_dict:
                 suffix = f".{role_name}"
                 if k.endswith(suffix):
-                    role_key = role_dict[k].key
+                    r = role_dict[k]
+                    if hasattr(r, "key"):
+                        role_key = getattr(r, "key", "")
                     break
     return role_key
 
 
 def resolve_taskfile(
     taskfile_ref: str,
-    taskfile_dict: dict[str, Any] | None = None,
+    taskfile_dict: dict[str, object] | None = None,
     task_key: str = "",
 ) -> str:
     if taskfile_dict is None:
@@ -392,8 +457,8 @@ def resolve_taskfile(
         fpath = os.path.normpath(fpath)
         taskfile_key = f"taskfile {parent_key}taskfile{key_delimiter}{fpath}"
         found_tf = taskfile_dict.get(taskfile_key)
-        if found_tf is not None:
-            return str(found_tf.key)
+        if found_tf is not None and hasattr(found_tf, "key"):
+            return str(getattr(found_tf, "key", ""))
 
     task_dir = os.path.dirname(task_defined_path)
     fpath = os.path.join(task_dir, taskfile_ref)
@@ -403,15 +468,15 @@ def resolve_taskfile(
     fpath = os.path.normpath(fpath)
     taskfile_key = f"taskfile {parent_key}taskfile{key_delimiter}{fpath}"
     found_tf = taskfile_dict.get(taskfile_key)
-    if found_tf is not None:
-        return str(found_tf.key)
+    if found_tf is not None and hasattr(found_tf, "key"):
+        return str(getattr(found_tf, "key", ""))
 
     return ""
 
 
 def resolve_playbook(
     playbook_ref: str,
-    playbook_dict: dict[str, Any] | None = None,
+    playbook_dict: dict[str, object] | None = None,
     play_key: str = "",
 ) -> str:
     if playbook_dict is None:
@@ -433,12 +498,12 @@ def resolve_playbook(
     fpath = os.path.normpath(fpath)
     playbook_key = f"playbook {parent_key}playbook{key_delimiter}{fpath}"
     found_playbook = playbook_dict.get(playbook_key)
-    if found_playbook is not None:
-        return str(found_playbook.key)
+    if found_playbook is not None and hasattr(found_playbook, "key"):
+        return str(getattr(found_playbook, "key", ""))
     return ""
 
 
-def init_builtin_modules() -> list[Any]:
+def init_builtin_modules() -> list[Module]:
     builtin_module_dict = load_builtin_modules()
     modules = list(builtin_module_dict.values())
     return modules
@@ -447,8 +512,8 @@ def init_builtin_modules() -> list[Any]:
 class TreeLoader:
     def __init__(
         self,
-        root_definitions: dict[str, Any],
-        ext_definitions: dict[str, Any],
+        root_definitions: dict[str, object],
+        ext_definitions: dict[str, object],
         ram_client: RAMClient | None = None,
         target_playbook_path: str | None = None,
         target_taskfile_path: str | None = None,
@@ -472,10 +537,15 @@ class TreeLoader:
         # use mappings just to get tree tops (playbook/role)
         # we don't load any files by this mappings here
         self.load_and_mapping = root_definitions.get("mappings")
-        load_mapping = self.load_and_mapping
-        self.playbook_mappings = load_mapping.playbooks if load_mapping else []
-        self.role_mappings = load_mapping.roles if load_mapping else []
-        self.taskfile_mappings = []
+        load_mapping = cast(Load | None, self.load_and_mapping) if self.load_and_mapping else None
+        # Parser produces list of [path, key]; cast for indexing as (src, dst)
+        self.playbook_mappings: list[tuple[str | None, str]] = (
+            cast(list[tuple[str | None, str]], load_mapping.playbooks) if load_mapping else []
+        )
+        self.role_mappings: list[tuple[str | None, str]] = (
+            cast(list[tuple[str | None, str]], load_mapping.roles) if load_mapping else []
+        )
+        self.taskfile_mappings: list[tuple[str | None, str]] = []
 
         # role can have child playbooks (mostly for test)
         # we add them to playbook_mappins here
@@ -486,7 +556,9 @@ class TreeLoader:
                 if not role or not isinstance(role, Role):
                     continue
                 playbook_keys = role.playbooks
-                playbook_mappings_in_role = [(None, p_key) for p_key in playbook_keys]
+                playbook_mappings_in_role = [
+                    (None, p_key.key if isinstance(p_key, Playbook) else str(p_key)) for p_key in playbook_keys
+                ]
                 self.playbook_mappings.extend(playbook_mappings_in_role)
 
         if target_playbook_path:
@@ -502,12 +574,18 @@ class TreeLoader:
                 if not role or not isinstance(role, Role):
                     continue
                 taskfile_keys = role.taskfiles
-                taskfile_mappings_in_role = [(None, tf_key) for tf_key in taskfile_keys]
+                taskfile_mappings_in_role = [
+                    (None, tf_key.key if isinstance(tf_key, TaskFile) else str(tf_key)) for tf_key in taskfile_keys
+                ]
                 self.taskfile_mappings.extend(taskfile_mappings_in_role)
-            self.taskfile_mappings.extend(load_mapping.taskfiles if load_mapping else [])
+            self.taskfile_mappings.extend(
+                cast(list[tuple[str | None, str]], load_mapping.taskfiles) if load_mapping else []
+            )
         # or, if the scan is for a single taskfile, ARI just scans it
         elif target_taskfile_path:
-            self.taskfile_mappings = load_mapping.taskfiles if load_mapping else []
+            _load_mapping = cast(Load | None, self.load_and_mapping) if self.load_and_mapping else None
+            raw_taskfiles = _load_mapping.taskfiles if _load_mapping else []
+            self.taskfile_mappings = cast(list[tuple[str | None, str]], raw_taskfiles)
             self.taskfile_mappings = [tf for tf in self.taskfile_mappings if tf[0] == target_taskfile_path]
             self.playbook_mappings = []
             self.role_mappings = []
@@ -526,7 +604,7 @@ class TreeLoader:
         self.resolved_role_from_ram: dict[str, tuple[str, str]] = {}
         self.resolved_taskfile_from_ram: dict[str, tuple[str, str]] = {}
 
-        self.extra_requirements: list[dict[str, Any]] = []
+        self.extra_requirements: list[dict[str, object]] = []
         self.extra_requirement_obj_set: set[str] = set()
 
         self.trees: list[ObjectList] = []
@@ -540,10 +618,14 @@ class TreeLoader:
 
     def run(self) -> tuple[list[ObjectList], ObjectList]:
         additional_objects = ObjectList()
-        if self.load_and_mapping and self.load_and_mapping.target_type == LoadType.PROJECT:
-            p_defs = self.org_root_definitions.get("definitions", {}).get("projects", [])
+        load_mapping = cast(Load | None, self.load_and_mapping) if self.load_and_mapping else None
+        if load_mapping and load_mapping.target_type == LoadType.PROJECT:
+            definitions = _safe_dict(self.org_root_definitions.get("definitions", {}))
+            p_defs = _safe_list(definitions.get("projects", []))
             if len(p_defs) > 0:
-                additional_objects.add(p_defs[0])
+                first = p_defs[0]
+                if isinstance(first, (Object, CallObject)):
+                    additional_objects.add(first)
         covered_taskfiles = []
         for i, mapping in enumerate(self.playbook_mappings):
             logger.debug(f"[{i + 1}/{len(self.playbook_mappings)}] {mapping[1]}")
@@ -590,7 +672,7 @@ class TreeLoader:
         self,
         key: str,
         caller: CallObject | None = None,
-        handover: dict[str, Any] | None = None,
+        handover: dict[str, object] | None = None,
         index: int = 0,
         history: list[str] | None = None,
     ) -> ObjectList:
@@ -698,10 +780,12 @@ class TreeLoader:
                         role_spec = cast(Role, first_child.spec)
                         play_spec = playcall.spec
                         if isinstance(play_spec, Play):
+                            roles_info_val = handover.get("roles_info")
+                            roles_info_map = roles_info_val if isinstance(roles_info_val, dict) else {}
                             for rip in play_spec.roles:
                                 if not isinstance(rip, RoleInPlay):
                                     continue
-                                resolved_key = handover["roles_info"].get(rip.key, "")
+                                resolved_key = roles_info_map.get(rip.key, "")
                                 if resolved_key and resolved_key == role_spec.key:
                                     rip.role_info = {
                                         "fqcn": role_spec.fqcn,
@@ -766,10 +850,10 @@ class TreeLoader:
 
         if search_ram and self.ram_client:
             matched_obj = self.ram_client.get_object_by_key(obj_key)
-            if matched_obj is not None:
-                obj = matched_obj.get("object", None)
-            if obj is not None:
-                return cast(Object | CallObject, obj)
+            if matched_obj is not None and isinstance(matched_obj, dict):
+                obj_raw = matched_obj.get("object", None)
+                if obj_raw is not None and isinstance(obj_raw, (Object, CallObject)):
+                    return obj_raw
 
         return None
 
@@ -782,17 +866,17 @@ class TreeLoader:
     def _get_children_keys(
         self,
         obj: Object | CallObject,
-        handover_from_upper_node: dict[str, Any] | None = None,
-    ) -> tuple[list[str], dict[str, str], dict[str, Any]]:
+        handover_from_upper_node: dict[str, object] | None = None,
+    ) -> tuple[list[str], dict[str, str], dict[str, object]]:
         if handover_from_upper_node is None:
             handover_from_upper_node = {}
         if isinstance(obj, CallObject):
             return self._get_children_keys(obj.spec, handover_from_upper_node)
         children_keys = []
         from_ram = {}
-        handover: dict[str, Any] = {}
+        handover: dict[str, object] = {}
         if isinstance(obj, Playbook):
-            children_keys = obj.plays
+            children_keys = [p.key if isinstance(p, Play) else str(p) for p in obj.plays]
         elif isinstance(obj, Play):
             if obj.import_playbook != "":
                 resolved_playbook_key = resolve_playbook(obj.import_playbook, self.dicts["playbooks"], obj.key)
@@ -821,60 +905,79 @@ class TreeLoader:
                     else:
                         matched_roles = self.ram_client.search_role(rip.name)
                         if len(matched_roles) > 0:
-                            resolved_role_key = matched_roles[0]["object"].key
-                            self.ext_definitions["roles"].add(matched_roles[0]["object"])
-                            for offspr_obj in matched_roles[0].get("offspring_objects", []):
-                                type_str = offspr_obj["type"] + "s"
-                                self.ext_definitions[type_str].add(offspr_obj["object"])
-                            if matched_roles[0]["object"].key not in self.extra_requirement_obj_set:
-                                self.extra_requirements.append(
-                                    {
-                                        "type": "role",
-                                        "name": matched_roles[0]["object"].fqcn,
-                                        "defined_in": matched_roles[0]["defined_in"],
-                                        "used_in": obj.defined_in,
-                                    }
-                                )
-                                self.extra_requirement_obj_set.add(matched_roles[0]["object"].key)
-                            for offspr_obj in matched_roles[0].get("offspring_objects", []):
-                                if hasattr(offspr_obj["object"], "builtin") and offspr_obj["object"].builtin:
-                                    continue
-                                if offspr_obj["object"].key not in self.extra_requirement_obj_set:
+                            m0 = matched_roles[0]
+                            role_obj = _ram_match_object(m0)
+                            if role_obj is not None:
+                                resolved_role_key = role_obj.key
+                                self.ext_definitions["roles"].add(role_obj)
+                                for offspr_obj in _ram_match_offspring(m0):
+                                    type_str = str(offspr_obj.get("type", "")) + "s"
+                                    oo_obj = offspr_obj.get("object")
+                                    if isinstance(oo_obj, (Object, CallObject)):
+                                        self.ext_definitions[type_str].add(oo_obj)
+                                if role_obj.key not in self.extra_requirement_obj_set:
                                     self.extra_requirements.append(
                                         {
-                                            "type": offspr_obj["type"],
-                                            "name": offspr_obj["name"],
-                                            "defined_in": offspr_obj["defined_in"],
-                                            "used_in": offspr_obj["used_in"],
+                                            "type": "role",
+                                            "name": getattr(role_obj, "fqcn", ""),
+                                            "defined_in": _ram_match_defined_in(m0),
+                                            "used_in": obj.defined_in,
                                         }
                                     )
-                                    self.extra_requirement_obj_set.add(offspr_obj["object"].key)
-                            self.resolved_role_from_ram[rip.name] = (resolved_role_key, matched_roles[0]["defined_in"])
-                            from_ram[resolved_role_key] = matched_roles[0]["defined_in"]
+                                    self.extra_requirement_obj_set.add(role_obj.key)
+                                for offspr_obj in _ram_match_offspring(m0):
+                                    oo_obj = offspr_obj.get("object")
+                                    if isinstance(oo_obj, (Object, CallObject)) and getattr(oo_obj, "builtin", False):
+                                        continue
+                                    if (
+                                        isinstance(oo_obj, (Object, CallObject))
+                                        and oo_obj.key not in self.extra_requirement_obj_set
+                                    ):
+                                        self.extra_requirements.append(
+                                            {
+                                                "type": str(offspr_obj.get("type", "")),
+                                                "name": str(offspr_obj.get("name", "")),
+                                                "defined_in": offspr_obj.get("defined_in", ""),
+                                                "used_in": offspr_obj.get("used_in", ""),
+                                            }
+                                        )
+                                        self.extra_requirement_obj_set.add(oo_obj.key)
+                                self.resolved_role_from_ram[rip.name] = (
+                                    resolved_role_key,
+                                    str(_ram_match_defined_in(m0)),
+                                )
+                                from_ram[resolved_role_key] = str(_ram_match_defined_in(m0))
 
                 if resolved_role_key != "":
                     children_keys.append(resolved_role_key)
                     if "roles_info" not in handover:
                         handover["roles_info"] = {}
-                    handover["roles_info"][rip.key] = resolved_role_key
-            children_keys.extend(obj.pre_tasks)
-            children_keys.extend(obj.tasks)
-            children_keys.extend(obj.post_tasks)
-            children_keys.extend(obj.handlers)
+                    ri = handover["roles_info"]
+                    if isinstance(ri, dict):
+                        ri[rip.key] = resolved_role_key
+            for item in obj.pre_tasks:
+                children_keys.append(item.key if isinstance(item, Task) else str(item))
+            for item in obj.tasks:
+                children_keys.append(item.key if isinstance(item, Task) else str(item))
+            for item in obj.post_tasks:
+                children_keys.append(item.key if isinstance(item, Task) else str(item))
+            for item in obj.handlers:
+                children_keys.append(item.key if isinstance(item, Task) else str(item))
         elif isinstance(obj, Role):
-            target_taskfiles = ["main.yml", "main.yaml"]
+            target_taskfiles: list[str] = ["main.yml", "main.yaml"]
             if isinstance(handover_from_upper_node, dict) and "tasks_from" in handover_from_upper_node:
                 tasks_from = handover_from_upper_node.get("tasks_from")
-                if tasks_from:
+                if tasks_from is not None and isinstance(tasks_from, str):
                     target_taskfiles = [tasks_from]
             target_taskfile_key = [
-                tf
+                tf_str
                 for tf in obj.taskfiles
-                if tf.split(key_delimiter)[-1].split("/")[-1] in target_taskfiles and "/handlers/" not in tf
+                for tf_str in [tf.key if isinstance(tf, TaskFile) else str(tf)]
+                if tf_str.split(key_delimiter)[-1].split("/")[-1] in target_taskfiles and "/handlers/" not in tf_str
             ]
             children_keys.extend(target_taskfile_key)
         elif isinstance(obj, TaskFile):
-            children_keys = obj.tasks
+            children_keys = [t.key if isinstance(t, Task) else str(t) for t in obj.tasks]
         elif isinstance(obj, Task):
             executable_type = obj.executable_type
             resolved_key = ""
@@ -895,26 +998,28 @@ class TreeLoader:
                     else:
                         matched_modules = self.ram_client.search_module(target_name)
                         if len(matched_modules) > 0:
-                            resolved_key = matched_modules[0]["object"].key
-                            self.ext_definitions["modules"].add(matched_modules[0]["object"])
-                            if (
-                                matched_modules[0]["object"].key not in self.extra_requirement_obj_set
-                                and not matched_modules[0]["object"].builtin
-                            ):
-                                self.extra_requirements.append(
-                                    {
-                                        "type": "module",
-                                        "name": matched_modules[0]["object"].fqcn,
-                                        "defined_in": matched_modules[0]["defined_in"],
-                                        "used_in": obj.defined_in,
-                                    }
+                            m0 = matched_modules[0]
+                            mod_obj = _ram_match_object(m0)
+                            if mod_obj is not None:
+                                resolved_key = mod_obj.key
+                                self.ext_definitions["modules"].add(mod_obj)
+                                if mod_obj.key not in self.extra_requirement_obj_set and not getattr(
+                                    mod_obj, "builtin", False
+                                ):
+                                    self.extra_requirements.append(
+                                        {
+                                            "type": "module",
+                                            "name": getattr(mod_obj, "fqcn", ""),
+                                            "defined_in": _ram_match_defined_in(m0) or "",
+                                            "used_in": obj.defined_in,
+                                        }
+                                    )
+                                    self.extra_requirement_obj_set.add(mod_obj.key)
+                                self.resolved_module_from_ram[target_name] = (
+                                    resolved_key,
+                                    str(_ram_match_defined_in(m0)),
                                 )
-                                self.extra_requirement_obj_set.add(matched_modules[0]["object"].key)
-                            self.resolved_module_from_ram[target_name] = (
-                                resolved_key,
-                                matched_modules[0]["defined_in"],
-                            )
-                            from_ram[resolved_key] = matched_modules[0]["defined_in"]
+                                from_ram[resolved_key] = str(_ram_match_defined_in(m0))
                 if resolved_key == "":
                     if target_name not in self.resolve_failures["module"]:
                         self.resolve_failures["module"][target_name] = 0
@@ -944,33 +1049,43 @@ class TreeLoader:
                     else:
                         matched_roles = self.ram_client.search_role(target_name)
                         if len(matched_roles) > 0:
-                            resolved_key = matched_roles[0]["object"].key
-                            self.ext_definitions["roles"].add(matched_roles[0]["object"])
-                            if matched_roles[0]["object"].key not in self.extra_requirement_obj_set:
-                                self.extra_requirements.append(
-                                    {
-                                        "type": "role",
-                                        "name": matched_roles[0]["object"].fqcn,
-                                        "defined_in": matched_roles[0]["defined_in"],
-                                        "used_in": obj.defined_in,
-                                    }
-                                )
-                                self.extra_requirement_obj_set.add(matched_roles[0]["object"].key)
-                            for offspr_obj in matched_roles[0].get("offspring_objects", []):
-                                if hasattr(offspr_obj["object"], "builtin") and offspr_obj["object"].builtin:
-                                    continue
-                                if offspr_obj["object"].key not in self.extra_requirement_obj_set:
+                            m0 = matched_roles[0]
+                            role_obj = _ram_match_object(m0)
+                            if role_obj is not None:
+                                resolved_key = role_obj.key
+                                self.ext_definitions["roles"].add(role_obj)
+                                if role_obj.key not in self.extra_requirement_obj_set:
                                     self.extra_requirements.append(
                                         {
-                                            "type": offspr_obj["type"],
-                                            "name": offspr_obj["name"],
-                                            "defined_in": offspr_obj["defined_in"],
-                                            "used_in": offspr_obj["used_in"],
+                                            "type": "role",
+                                            "name": getattr(role_obj, "fqcn", ""),
+                                            "defined_in": _ram_match_defined_in(m0) or "",
+                                            "used_in": obj.defined_in,
                                         }
                                     )
-                                    self.extra_requirement_obj_set.add(offspr_obj["object"].key)
-                            self.resolved_role_from_ram[target_name] = (resolved_key, matched_roles[0]["defined_in"])
-                            from_ram[resolved_key] = matched_roles[0]["defined_in"]
+                                    self.extra_requirement_obj_set.add(role_obj.key)
+                                for offspr_obj in _ram_match_offspring(m0):
+                                    oo_obj = offspr_obj.get("object")
+                                    if isinstance(oo_obj, (Object, CallObject)) and getattr(oo_obj, "builtin", False):
+                                        continue
+                                    if (
+                                        isinstance(oo_obj, (Object, CallObject))
+                                        and oo_obj.key not in self.extra_requirement_obj_set
+                                    ):
+                                        self.extra_requirements.append(
+                                            {
+                                                "type": str(offspr_obj.get("type", "")),
+                                                "name": str(offspr_obj.get("name", "")),
+                                                "defined_in": offspr_obj.get("defined_in", ""),
+                                                "used_in": offspr_obj.get("used_in", ""),
+                                            }
+                                        )
+                                        self.extra_requirement_obj_set.add(oo_obj.key)
+                                self.resolved_role_from_ram[target_name] = (
+                                    resolved_key,
+                                    str(_ram_match_defined_in(m0)),
+                                )
+                                from_ram[resolved_key] = str(_ram_match_defined_in(m0))
                 if resolved_key == "":
                     if target_name not in self.resolve_failures["role"]:
                         self.resolve_failures["role"][target_name] = 0
@@ -997,36 +1112,43 @@ class TreeLoader:
                             target_name, from_path=obj.defined_in, from_key=obj.key
                         )
                         if len(matched_taskfiles) > 0:
-                            resolved_key = matched_taskfiles[0]["object"].key
-                            self.ext_definitions["taskfiles"].add(matched_taskfiles[0]["object"], update_dict=False)
-                            if matched_taskfiles[0]["object"].key not in self.extra_requirement_obj_set:
-                                self.extra_requirements.append(
-                                    {
-                                        "type": "taskfile",
-                                        "name": matched_taskfiles[0]["object"].key,
-                                        "defined_in": matched_taskfiles[0]["defined_in"],
-                                        "used_in": obj.defined_in,
-                                    }
-                                )
-                                self.extra_requirement_obj_set.add(matched_taskfiles[0]["object"].key)
-                            for offspr_obj in matched_taskfiles[0].get("offspring_objects", []):
-                                if hasattr(offspr_obj["object"], "builtin") and offspr_obj["object"].builtin:
-                                    continue
-                                if offspr_obj["object"].key not in self.extra_requirement_obj_set:
+                            m0 = matched_taskfiles[0]
+                            tf_obj = _ram_match_object(m0)
+                            if tf_obj is not None:
+                                resolved_key = tf_obj.key
+                                self.ext_definitions["taskfiles"].add(tf_obj, update_dict=False)
+                                if tf_obj.key not in self.extra_requirement_obj_set:
                                     self.extra_requirements.append(
                                         {
-                                            "type": offspr_obj["type"],
-                                            "name": offspr_obj["name"],
-                                            "defined_in": offspr_obj["defined_in"],
-                                            "used_in": offspr_obj["used_in"],
+                                            "type": "taskfile",
+                                            "name": tf_obj.key,
+                                            "defined_in": _ram_match_defined_in(m0) or "",
+                                            "used_in": obj.defined_in,
                                         }
                                     )
-                                    self.extra_requirement_obj_set.add(offspr_obj["object"].key)
-                            self.resolved_taskfile_from_ram[target_name] = (
-                                resolved_key,
-                                matched_taskfiles[0]["defined_in"],
-                            )
-                            from_ram[resolved_key] = matched_taskfiles[0]["defined_in"]
+                                    self.extra_requirement_obj_set.add(tf_obj.key)
+                                for offspr_obj in _ram_match_offspring(m0):
+                                    oo_obj = offspr_obj.get("object")
+                                    if isinstance(oo_obj, (Object, CallObject)) and getattr(oo_obj, "builtin", False):
+                                        continue
+                                    if (
+                                        isinstance(oo_obj, (Object, CallObject))
+                                        and oo_obj.key not in self.extra_requirement_obj_set
+                                    ):
+                                        self.extra_requirements.append(
+                                            {
+                                                "type": str(offspr_obj.get("type", "")),
+                                                "name": str(offspr_obj.get("name", "")),
+                                                "defined_in": offspr_obj.get("defined_in", ""),
+                                                "used_in": offspr_obj.get("used_in", ""),
+                                            }
+                                        )
+                                        self.extra_requirement_obj_set.add(oo_obj.key)
+                                self.resolved_taskfile_from_ram[target_name] = (
+                                    resolved_key,
+                                    str(_ram_match_defined_in(m0)),
+                                )
+                                from_ram[resolved_key] = str(_ram_match_defined_in(m0))
                 if resolved_key == "":
                     if target_name not in self.resolve_failures["taskfile"]:
                         self.resolve_failures["taskfile"][target_name] = 0
@@ -1057,7 +1179,7 @@ def is_templated(txt: str) -> bool:
 
 
 # TODO: need to use variable manager
-def render_template(txt: str, variable_manager: Any = None) -> str:
+def render_template(txt: str, variable_manager: object = None) -> str:
     regex = r'[\'"]([^\'"]+\.ya?ml)[\'"]'
     matched = re.search(regex, txt)
     if matched:

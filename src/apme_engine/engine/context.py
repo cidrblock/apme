@@ -5,12 +5,13 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 from .models import (
     BecomeInfo,
     CallObject,
     Collection,
+    Inventory,
     InventoryType,
     Module,
     Object,
@@ -23,8 +24,16 @@ from .models import (
     Variable,
     VariablePrecedence,
     VariableType,
+    YAMLDict,
+    YAMLValue,
     immutable_var_types,
 )
+
+# Resolved var dicts can contain VariablePrecedence in "type" field
+ResolveHistoryDict = dict[str, dict[str, YAMLValue | VariablePrecedence]]
+ResolvedVarDict = dict[str, YAMLValue | VariablePrecedence]
+# Chain nodes can hold Object | CallObject in "obj" field
+ChainNodeDict = dict[str, YAMLValue | Object | CallObject]
 
 p = Path(__file__).resolve().parent
 ansible_special_variables = [line.replace("\n", "") for line in (p / "ansible_variables.txt").read_text().splitlines()]
@@ -71,17 +80,18 @@ def get_object(
             raise ValueError("playbook cannot be gotten in a role")
         elif type == "taskfile":
             for tf in r.taskfiles:
-                if tf.defined_in == name:
-                    return cast(TaskFile, tf)
+                if isinstance(tf, TaskFile) and tf.defined_in == name:
+                    return tf
         elif type == "task":
             for tf in r.taskfiles:
-                for t in tf.tasks:
-                    if t.id == name:
-                        return cast(Task, t)
+                if isinstance(tf, TaskFile):
+                    for t in tf.tasks:
+                        if isinstance(t, Task) and t.id == name:
+                            return t
         elif type == "module":
             for m in r.modules:
-                if m.fqcn == name:
-                    return cast(Module, m)
+                if isinstance(m, Module) and m.fqcn == name:
+                    return m
         return None
     elif json_type == "collection":
         c = Collection()
@@ -89,48 +99,55 @@ def get_object(
         if type == "collection":
             return c
         if type == "role":
-            for r in c.roles:
-                if r.fqcn == name:
-                    return cast(Role, r)
+            for r in c.roles:  # type: ignore[assignment]
+                if isinstance(r, Role) and r.fqcn == name:
+                    return r
         elif type == "playbook":
             for p in c.playbooks:
-                if p.defined_in == name:
-                    return cast(Play, p)
+                if isinstance(p, Playbook) and p.defined_in == name:
+                    return p
         elif type == "taskfile":
             for tf in c.taskfiles:
-                if tf.defined_in == name:
-                    return cast(TaskFile, tf)
-            for r in c.roles:
-                for tf in r.taskfiles:
-                    if tf.defined_in == name:
-                        return cast(TaskFile, tf)
+                if isinstance(tf, TaskFile) and tf.defined_in == name:
+                    return tf
+            for r in c.roles:  # type: ignore[assignment]
+                if isinstance(r, Role):
+                    for tf in r.taskfiles:
+                        if isinstance(tf, TaskFile) and tf.defined_in == name:
+                            return tf
         elif type == "task":
             for p in c.playbooks:
-                for t in p.tasks:
-                    if t.id == name:
-                        return cast(Task, t)
+                if isinstance(p, Playbook):
+                    for play in p.plays:
+                        if isinstance(play, Play):
+                            for t in play.pre_tasks + play.tasks + play.post_tasks:
+                                if isinstance(t, Task) and t.id == name:
+                                    return t
             for tf in c.taskfiles:
-                for t in tf.tasks:
-                    if t.id == name:
-                        return cast(Task, t)
-            for r in c.roles:
-                for tf in r.taskfiles:
+                if isinstance(tf, TaskFile):
                     for t in tf.tasks:
-                        if t.id == name:
-                            return cast(Task, t)
+                        if isinstance(t, Task) and t.id == name:
+                            return t
+            for r in c.roles:  # type: ignore[assignment]
+                if isinstance(r, Role):
+                    for tf in r.taskfiles:
+                        if isinstance(tf, TaskFile):
+                            for t in tf.tasks:
+                                if isinstance(t, Task) and t.id == name:
+                                    return t
         elif type == "module":
             for m in c.modules:
-                if m.fqcn == name:
-                    return cast(Module, m)
+                if isinstance(m, Module) and m.fqcn == name:
+                    return m
         return None
     return None
 
 
-def recursive_find_variable(var_name: str, var_dict: dict[str, Any] | None = None) -> Any:
+def recursive_find_variable(var_name: str, var_dict: dict[str, object] | None = None) -> object:
     if var_dict is None:
         var_dict = {}
 
-    def _visitor(vname: str, nname: str, node: Any) -> Any:
+    def _visitor(vname: str, nname: str, node: object) -> object:
         if nname == vname:
             return node
         if isinstance(node, dict):
@@ -148,7 +165,7 @@ def recursive_find_variable(var_name: str, var_dict: dict[str, Any] | None = Non
     return _visitor(var_name, "", var_dict)
 
 
-def flatten(var_dict: dict[str, Any] | None = None, _prefix: str = "") -> dict[str, Any]:
+def flatten(var_dict: YAMLDict | None = None, _prefix: str = "") -> YAMLDict:
     if var_dict is None:
         var_dict = {}
     flat_vars = {}
@@ -166,10 +183,10 @@ def flatten(var_dict: dict[str, Any] | None = None, _prefix: str = "") -> dict[s
 @dataclass
 class Context:
     keep_obj: bool = False
-    chain: list[dict[str, Any]] = field(default_factory=list)
-    variables: dict[str, Any] = field(default_factory=dict)
-    options: dict[str, Any] = field(default_factory=dict)
-    inventories: list[Any] = field(default_factory=list)
+    chain: list[ChainNodeDict] = field(default_factory=list)
+    variables: YAMLDict = field(default_factory=dict)
+    options: YAMLDict = field(default_factory=dict)
+    inventories: list[Inventory] = field(default_factory=list)
     role_defaults: list[str] = field(default_factory=list)
     role_vars: list[str] = field(default_factory=list)
     registered_vars: list[str] = field(default_factory=list)
@@ -177,12 +194,12 @@ class Context:
     task_vars: list[str] = field(default_factory=list)
 
     become: BecomeInfo | None = None
-    module_defaults: dict[str, Any] = field(default_factory=dict)
+    module_defaults: YAMLDict = field(default_factory=dict)
 
     var_set_history: dict[str, list[Variable]] = field(default_factory=dict)
-    var_use_history: dict[str, Any] = field(default_factory=dict)
+    var_use_history: dict[str, YAMLValue | list[Variable]] = field(default_factory=dict)
 
-    _flat_vars: dict[str, Any] = field(default_factory=dict)
+    _flat_vars: YAMLDict = field(default_factory=dict)
 
     def add(self, obj: Object | CallObject, depth_lvl: int = 0) -> None:
         _obj: Object | CallObject | None = None
@@ -263,29 +280,30 @@ class Context:
             # Module
             return
         self.options.update(_spec.options)
-        chain_node: dict[str, Any] = {"key": _obj.key, "depth": depth_lvl}
-        if self.keep_obj:
+        chain_node: ChainNodeDict = {"key": _obj.key, "depth": depth_lvl}
+        if self.keep_obj and _obj is not None:
             chain_node["obj"] = _obj
         self.chain.append(chain_node)
 
     def resolve_variable(
         self,
         var_name: str,
-        resolve_history: dict[str, dict[str, Any]] | None = None,
-    ) -> tuple[Any, VariablePrecedence, dict[str, dict[str, Any]]]:
+        resolve_history: ResolveHistoryDict | None = None,
+    ) -> tuple[YAMLValue | None, VariablePrecedence, ResolveHistoryDict]:
         if resolve_history is None:
             resolve_history = {}
         if var_name in resolve_history:
-            val = resolve_history[var_name].get("value", None)
-            v_type = resolve_history[var_name].get("type", VariableType.Unknown)
-            return val, v_type, resolve_history
+            entry = resolve_history[var_name]
+            val = entry.get("value", None)
+            v_type_raw = entry.get("type", VariableType.Unknown)
+            v_type = v_type_raw if isinstance(v_type_raw, VariablePrecedence) else VariableType.Unknown
+            val_out = None if isinstance(val, VariablePrecedence) else val
+            return val_out, v_type, resolve_history
 
         _resolve_history = resolve_history.copy()
 
-        v_type = None
         if var_name in ansible_special_variables:
-            v_type = VariableType.HostFacts
-            return None, v_type, resolve_history
+            return None, VariableType.HostFacts, resolve_history
 
         if var_name in self.role_vars:
             v_type = VariableType.RoleVars
@@ -359,9 +377,9 @@ class Context:
 
     def resolve_single_variable(
         self,
-        txt: Any,
-        resolve_history: dict[str, dict[str, Any]] | None = None,
-    ) -> tuple[Any, dict[str, dict[str, Any]]]:
+        txt: YAMLValue,
+        resolve_history: ResolveHistoryDict | None = None,
+    ) -> tuple[YAMLValue, ResolveHistoryDict]:
         if resolve_history is None:
             resolve_history = {}
         new_history = resolve_history.copy()
@@ -388,7 +406,7 @@ class Context:
         else:
             return txt, new_history
 
-    def update_flat_vars(self, new_vars: dict[str, Any], _prefix: str = "") -> None:
+    def update_flat_vars(self, new_vars: YAMLDict, _prefix: str = "") -> None:
         for k, v in new_vars.items():
             if isinstance(v, dict):
                 flat_var_name = f"{_prefix}{k}"
@@ -403,8 +421,10 @@ class Context:
     def chain_str(self) -> str:
         lines: list[str] = []
         for chain_item in self.chain:
-            obj: Object | CallObject | None = chain_item.get("obj", None)
-            depth = chain_item.get("depth", 0)
+            obj_raw = chain_item.get("obj", None)
+            obj = obj_raw if isinstance(obj_raw, (Object, CallObject)) or obj_raw is None else None
+            depth_val = chain_item.get("depth", 0)
+            depth = int(depth_val) if isinstance(depth_val, (int, float)) else 0
             indent = "  " * depth
             obj_type = type(obj).__name__ if obj else "None"
             obj_name = getattr(obj, "name", "") or getattr(obj, "key", "") if obj else ""
@@ -429,7 +449,7 @@ class Context:
         # return copy.deepcopy(self)
 
 
-def resolved_vars_contains(resolved_vars: list[dict[str, Any]], new_var: dict[str, Any]) -> bool:
+def resolved_vars_contains(resolved_vars: list[ResolvedVarDict], new_var: ResolvedVarDict) -> bool:
     if not isinstance(new_var, dict):
         return False
     new_var_key = new_var.get("key", "")
@@ -450,15 +470,15 @@ def resolved_vars_contains(resolved_vars: list[dict[str, Any]], new_var: dict[st
 
 def resolve_module_options(
     context: Context, taskcall: TaskCall
-) -> tuple[list[Any], list[dict[str, Any]], dict[str, list[str]], dict[str, Any]]:
-    resolved_vars: list[dict[str, Any]] = []
-    variables_in_loop: list[dict[str, Any]] = []
-    used_variables: dict[str, Any] = {}
+) -> tuple[list[YAMLValue], list[ResolvedVarDict], dict[str, list[str]], dict[str, ResolveHistoryDict]]:
+    resolved_vars: list[ResolvedVarDict] = []
+    variables_in_loop: list[ResolvedVarDict] = []
+    used_variables: dict[str, ResolveHistoryDict] = {}
     spec = taskcall.spec
-    loop: dict[str, Any] = getattr(spec, "loop", {}) or {}
-    module_options: Any = getattr(spec, "module_options", None)
+    loop: YAMLDict = getattr(spec, "loop", {}) or {}
+    module_options: YAMLValue = getattr(spec, "module_options", None)
     if len(loop) == 0:
-        variables_in_loop = [{}]
+        variables_in_loop = [cast(dict[str, YAMLValue | VariablePrecedence], {})]
     else:
         loop_key = list(loop.keys())[0]
         loop_values = loop.get(loop_key, [])
@@ -546,27 +566,27 @@ def resolve_module_options(
                         )
                 else:
                     if isinstance(v, dict):
-                        tmp_variables = {}
+                        tmp_variables: dict[str, YAMLValue | VariablePrecedence] = {}
                         for k2, v2 in v.items():
                             key = f"{loop_key}.{k2}"
-                            tmp_variables.update({key: v2})
+                            tmp_variables[key] = cast(YAMLValue | VariablePrecedence, v2)
                         variables_in_loop.append(tmp_variables)
                     else:
-                        variables_in_loop.append({loop_key: v})
+                        variables_in_loop.append(cast(dict[str, YAMLValue | VariablePrecedence], {loop_key: v}))
         elif isinstance(loop_values, dict):
-            tmp_variables = {}
+            tmp_variables_outer: dict[str, YAMLValue | VariablePrecedence] = {}
             for k, v in loop_values.items():
                 key = f"{loop_key}.{k}"
-                tmp_variables.update({key: v})
-            variables_in_loop.append(tmp_variables)
+                tmp_variables_outer[key] = v
+            variables_in_loop.append(tmp_variables_outer)
         else:
             if loop_values:
                 raise ValueError(f"loop_values of type {type(loop_values).__name__} is not supported yet")
 
-    resolved_opts_in_loop: list[Any] = []
+    resolved_opts_in_loop: list[YAMLValue] = []
     mutable_vars_per_mo: dict[str, list[str]] = {}
     for variables in variables_in_loop:
-        resolved_opts: Any = None
+        resolved_opts: YAMLValue = None
         if isinstance(module_options, dict):
             resolved_opts = {}
             for (
@@ -581,7 +601,7 @@ def resolve_module_options(
                     continue
                 # if variables are used in the module option value string
                 var_names = extract_variable_names(module_opt_val)
-                resolved_opt_val = module_opt_val
+                resolved_opt_val: YAMLValue | str | VariablePrecedence = module_opt_val
                 for var_name_dict in var_names:
                     original_block = var_name_dict.get("original", "")
                     var_name = var_name_dict.get("name", "")
@@ -593,11 +613,16 @@ def resolve_module_options(
                         if loop_var_type not in immutable_var_types:
                             if module_opt_key not in mutable_vars_per_mo:
                                 mutable_vars_per_mo[module_opt_key] = []
-                            mutable_vars_per_mo[module_opt_key].append(loop_var_name)
+                            mutable_vars_per_mo[module_opt_key].append(str(loop_var_name) if loop_var_name else "")
                     if resolved_var_val is None:
                         _ctx = context.copy()
                         if isinstance(variables, dict):
-                            vars_from_loop = flatten_dict_vars(variables)
+                            vars_only: YAMLDict = {
+                                k: v
+                                for k, v in variables.items()
+                                if k not in ("__v_type__", "__v_name__") and not isinstance(v, VariablePrecedence)
+                            }
+                            vars_from_loop = flatten_dict_vars(vars_only)
                             _ctx.variables.update(vars_from_loop)
                         resolved_var_val, v_type, resolve_history = _ctx.resolve_variable(var_name)
                         used_variables[var_name] = resolve_history
@@ -638,13 +663,18 @@ def resolve_module_options(
                             resolved_vars.append(new_var)
                         continue
                     if resolved_opt_val == original_block:
-                        resolved_opt_val = resolved_var_val
+                        resolved_opt_val = (
+                            resolved_var_val
+                            if not isinstance(resolved_var_val, VariablePrecedence)
+                            else resolved_opt_val
+                        )
                         break
-                    resolved_opt_val = resolved_opt_val.replace(original_block, str(resolved_var_val))
-                resolved_opts[module_opt_key] = resolved_opt_val
+                    if isinstance(resolved_opt_val, str):
+                        resolved_opt_val = resolved_opt_val.replace(original_block, str(resolved_var_val))
+                resolved_opts[module_opt_key] = cast(YAMLValue, resolved_opt_val)
         elif isinstance(module_options, str):
-            resolved_opt_val = module_options
-            if variable_block_re.search(resolved_opt_val):
+            resolved_opt_val_str: YAMLValue | str | VariablePrecedence = module_options
+            if variable_block_re.search(str(resolved_opt_val_str)):
                 var_names = extract_variable_names(module_options)
                 for var_name_dict in var_names:
                     original_block = var_name_dict.get("original", "")
@@ -657,7 +687,7 @@ def resolve_module_options(
                         if loop_var_type not in immutable_var_types:
                             if "" not in mutable_vars_per_mo:
                                 mutable_vars_per_mo[""] = []
-                            mutable_vars_per_mo[""].append(loop_var_name)
+                            mutable_vars_per_mo[""].append(str(loop_var_name) if loop_var_name else "")
                     if resolved_var_val is None:
                         resolved_var_val, v_type, resolve_history = context.resolve_variable(var_name)
                         used_variables[var_name] = resolve_history
@@ -697,11 +727,16 @@ def resolve_module_options(
                         if not resolved_vars_contains(resolved_vars, new_var):
                             resolved_vars.append(new_var)
                         continue
-                    if resolved_opt_val == original_block:
-                        resolved_opt_val = resolved_var_val
+                    if resolved_opt_val_str == original_block:
+                        resolved_opt_val_str = (
+                            resolved_var_val
+                            if not isinstance(resolved_var_val, VariablePrecedence)
+                            else resolved_opt_val_str
+                        )
                         break
-                    resolved_opt_val = resolved_opt_val.replace(original_block, str(resolved_var_val))
-            resolved_opts = resolved_opt_val
+                    if isinstance(resolved_opt_val_str, str):
+                        resolved_opt_val_str = resolved_opt_val_str.replace(original_block, str(resolved_var_val))
+            resolved_opts = cast(YAMLValue, resolved_opt_val_str)
         else:
             resolved_opts = module_options
         resolved_opts_in_loop.append(resolved_opts)
@@ -743,8 +778,8 @@ def extract_variable_names(txt: str) -> list[dict[str, str]]:
     return blocks
 
 
-def flatten_dict_vars(variables: dict[str, Any], _prefix: str = "") -> dict[str, Any]:
-    flat_vars_dict: dict[str, Any] = {}
+def flatten_dict_vars(variables: YAMLDict, _prefix: str = "") -> YAMLDict:
+    flat_vars_dict: YAMLDict = {}
     for key, val in variables.items():
         var_name = f"{_prefix}{key}" if _prefix else key
         flat_vars_dict[var_name] = val

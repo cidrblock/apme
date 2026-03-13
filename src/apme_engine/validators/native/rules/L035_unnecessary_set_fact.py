@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any
+from typing import cast
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
@@ -7,6 +7,7 @@ from apme_engine.engine.models import (
     RuleResult,
     RunTargetType,
     Severity,
+    YAMLDict,
 )
 from apme_engine.engine.models import (
     ExecutableType as ActionType,
@@ -39,7 +40,7 @@ class UnnecessarySetFactRule(Rule):
         args_obj = getattr(task, "args", None)
         args = getattr(args_obj, "raw", None) if args_obj is not None else None
         is_impure = False
-        detail: dict[str, Any] = {}
+        detail: dict[str, object] = {}
         if isinstance(args, str):
             is_impure = "random" in args
             detail["impure_args"] = args
@@ -63,4 +64,9 @@ class UnnecessarySetFactRule(Rule):
             and is_impure
         )
 
-        return RuleResult(verdict=verdict, detail=detail, file=task.file_info(), rule=self.get_metadata())
+        return RuleResult(
+            verdict=verdict,
+            detail=cast("YAMLDict | None", detail),
+            file=cast("tuple[str | int, ...] | None", task.file_info()),
+            rule=self.get_metadata(),
+        )

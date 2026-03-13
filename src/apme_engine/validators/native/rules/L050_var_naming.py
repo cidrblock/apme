@@ -1,6 +1,6 @@
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import cast
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
@@ -8,6 +8,7 @@ from apme_engine.engine.models import (
     RuleResult,
     RunTargetType,
     Severity,
+    YAMLDict,
 )
 from apme_engine.engine.models import (
     RuleTag as Tag,
@@ -38,8 +39,13 @@ class VarNamingRule(Rule):
         variable_use = getattr(task, "variable_use", None) or {}
         invalid = [k for k in variable_use if k and not VAR_NAMING_PATTERN.match(k)]
         verdict = len(invalid) > 0
-        detail: dict[str, Any] = {}
+        detail: dict[str, object] = {}
         if invalid:
             detail["variables"] = invalid
             detail["message"] = "variable names should be lowercase with underscores"
-        return RuleResult(verdict=verdict, detail=detail, file=task.file_info(), rule=self.get_metadata())
+        return RuleResult(
+            verdict=verdict,
+            detail=cast(YAMLDict | None, detail),
+            file=cast("tuple[str | int, ...] | None", task.file_info()),
+            rule=self.get_metadata(),
+        )

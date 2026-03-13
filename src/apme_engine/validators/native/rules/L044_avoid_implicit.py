@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import cast
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
@@ -6,6 +7,7 @@ from apme_engine.engine.models import (
     RuleResult,
     RunTargetType,
     Severity,
+    YAMLDict,
 )
 from apme_engine.engine.models import (
     RuleTag as Tag,
@@ -61,7 +63,11 @@ class AvoidImplicitRule(Rule):
             return None
         resolved = getattr(task.spec, "resolved_name", "") or ""
         if resolved not in MODULES_NEEDING_STATE:
-            return RuleResult(verdict=False, file=task.file_info(), rule=self.get_metadata())
+            return RuleResult(
+                verdict=False,
+                file=cast("tuple[str | int, ...] | None", task.file_info()),
+                rule=self.get_metadata(),
+            )
         module_options = getattr(task.spec, "module_options", None) or {}
         has_state = "state" in module_options
         verdict = not has_state
@@ -69,4 +75,9 @@ class AvoidImplicitRule(Rule):
         if verdict:
             detail["module"] = resolved
             detail["message"] = "state is not set; consider setting state explicitly"
-        return RuleResult(verdict=verdict, detail=detail, file=task.file_info(), rule=self.get_metadata())
+        return RuleResult(
+            verdict=verdict,
+            detail=cast("YAMLDict | None", detail),
+            file=cast("tuple[str | int, ...] | None", task.file_info()),
+            rule=self.get_metadata(),
+        )

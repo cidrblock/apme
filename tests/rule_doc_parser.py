@@ -2,12 +2,11 @@
 
 import re
 from pathlib import Path
-from typing import Any
 
 import yaml
 
 
-def parse_rule_doc(md_path: str | Path) -> dict[str, Any] | None:
+def parse_rule_doc(md_path: str | Path) -> dict[str, object] | None:
     """
     Parse a rule .md file. Returns dict with:
       - rule_id: str
@@ -67,7 +66,7 @@ def discover_rule_docs(
     native_rules_dir: str | Path,
     opa_bundle_dir: str | Path,
     ansible_rules_dir: str | Path | None = None,
-) -> list[tuple[str, dict[str, Any]]]:
+) -> list[tuple[str, dict[str, object]]]:
     """
     Discover all rule .md files and parse them. Returns list of (file_path, parsed_doc).
     Native: *.md next to .py in native_rules_dir (exclude *_test.md, README).

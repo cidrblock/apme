@@ -11,15 +11,16 @@ import jsonpickle
 import pytest
 
 from apme.v1 import common_pb2, validate_pb2
+from apme_engine.engine.models import YAMLDict
 
 
 class FakeGrpcContext:
-    """Minimal stub for grpc.ServicerContext."""
+    """Minimal stub for grpc.ServicerContext. Use cast when passing to servicers."""
 
-    def set_code(self, code: object) -> None:
+    def set_code(self, code: type) -> None:
         pass
 
-    def set_details(self, details: object) -> None:
+    def set_details(self, details: str) -> None:
         pass
 
 
@@ -27,7 +28,7 @@ class TestOpaValidatorServicer:
     async def test_validate_posts_to_opa_rest(self) -> None:
         from apme_engine.daemon.opa_validator_server import OpaValidatorServicer
 
-        hierarchy: dict[str, object] = {"hierarchy": [{"tree_type": "playbook", "nodes": []}]}
+        hierarchy: YAMLDict = {"hierarchy": [{"tree_type": "playbook", "nodes": []}]}
         violations = [{"rule_id": "L024", "level": "warning", "message": "m", "file": "f.yml", "line": 1, "path": "p"}]
 
         request = validate_pb2.ValidateRequest(
@@ -43,7 +44,7 @@ class TestOpaValidatorServicer:
         mock_response.content = b'{"result": [{"rule_id": "L024"}]}'
 
         with patch.object(servicer._client, "post", new_callable=AsyncMock, return_value=mock_response) as mock_post:
-            resp = await servicer.Validate(request, FakeGrpcContext())
+            resp = await servicer.Validate(request, FakeGrpcContext())  # type: ignore[arg-type]
 
         mock_post.assert_called_once()
         call_args = mock_post.call_args
@@ -74,7 +75,7 @@ class TestOpaValidatorServicer:
         mock_response.content = b'{"result": []}'
 
         with patch.object(servicer._client, "post", new_callable=AsyncMock, return_value=mock_response):
-            resp = await servicer.Validate(request, FakeGrpcContext())
+            resp = await servicer.Validate(request, FakeGrpcContext())  # type: ignore[arg-type]
 
         assert resp.HasField("diagnostics")  # type: ignore[attr-defined]
         diag = resp.diagnostics  # type: ignore[attr-defined]
@@ -104,7 +105,7 @@ class TestOpaValidatorServicer:
         mock_response.content = b'{"result": []}'
 
         with patch.object(servicer._client, "post", new_callable=AsyncMock, return_value=mock_response):
-            resp = await servicer.Validate(request, FakeGrpcContext())
+            resp = await servicer.Validate(request, FakeGrpcContext())  # type: ignore[arg-type]
         assert len(resp.violations) == 0  # type: ignore[attr-defined]
         assert resp.request_id == "test-req-2"  # type: ignore[attr-defined]
         assert resp.HasField("diagnostics")  # type: ignore[attr-defined]
@@ -122,7 +123,7 @@ class TestOpaValidatorServicer:
 
         servicer = OpaValidatorServicer()
         with patch.object(servicer._client, "post", new_callable=AsyncMock, return_value=mock_response):
-            resp = await servicer.Validate(request, FakeGrpcContext())
+            resp = await servicer.Validate(request, FakeGrpcContext())  # type: ignore[arg-type]
         assert len(resp.violations) == 0  # type: ignore[attr-defined]
 
     async def test_health_opa_up(self) -> None:
@@ -133,7 +134,7 @@ class TestOpaValidatorServicer:
 
         servicer = OpaValidatorServicer()
         with patch.object(servicer._client, "get", new_callable=AsyncMock, return_value=mock_response):
-            resp = await servicer.Health(common_pb2.HealthRequest(), FakeGrpcContext())
+            resp = await servicer.Health(common_pb2.HealthRequest(), FakeGrpcContext())  # type: ignore[arg-type]
         assert resp.status == "ok"
 
     async def test_health_opa_down(self) -> None:
@@ -141,7 +142,7 @@ class TestOpaValidatorServicer:
 
         servicer = OpaValidatorServicer()
         with patch.object(servicer._client, "get", new_callable=AsyncMock, side_effect=ConnectionError("refused")):
-            resp = await servicer.Health(common_pb2.HealthRequest(), FakeGrpcContext())
+            resp = await servicer.Health(common_pb2.HealthRequest(), FakeGrpcContext())  # type: ignore[arg-type]
         assert "unreachable" in resp.status
 
 
@@ -151,7 +152,7 @@ class TestNativeValidatorServicer:
         from apme_engine.validators.native import NativeRuleTiming, NativeRunResult
 
         mock_scandata = type("Scandata", (), {"contexts": []})()
-        hierarchy: dict[str, object] = {"hierarchy": []}
+        hierarchy: YAMLDict = {"hierarchy": []}
         request = validate_pb2.ValidateRequest(
             request_id="native-1",
             hierarchy_payload=json.dumps(hierarchy).encode(),
@@ -176,7 +177,7 @@ class TestNativeValidatorServicer:
 
         servicer = NativeValidatorServicer()
         with patch("apme_engine.daemon.native_validator_server._run_native", return_value=mock_result):
-            resp = await servicer.Validate(request, FakeGrpcContext())
+            resp = await servicer.Validate(request, FakeGrpcContext())  # type: ignore[arg-type]
 
         assert len(resp.violations) == 1  # type: ignore[attr-defined]
         assert resp.violations[0].rule_id == "native:L028"  # type: ignore[attr-defined]
@@ -187,9 +188,10 @@ class TestNativeValidatorServicer:
         from apme_engine.validators.native import NativeRuleTiming, NativeRunResult
 
         mock_scandata = type("Scandata", (), {"contexts": []})()
+        hierarchy: YAMLDict = {"hierarchy": []}
         request = validate_pb2.ValidateRequest(
             request_id="diag-native-1",
-            hierarchy_payload=json.dumps({"hierarchy": []}).encode(),
+            hierarchy_payload=json.dumps(hierarchy).encode(),
             scandata=jsonpickle.encode(mock_scandata).encode(),
         )
 
@@ -206,7 +208,7 @@ class TestNativeValidatorServicer:
 
         servicer = NativeValidatorServicer()
         with patch("apme_engine.daemon.native_validator_server._run_native", return_value=mock_result):
-            resp = await servicer.Validate(request, FakeGrpcContext())
+            resp = await servicer.Validate(request, FakeGrpcContext())  # type: ignore[arg-type]
 
         assert resp.HasField("diagnostics")  # type: ignore[attr-defined]
         diag = resp.diagnostics  # type: ignore[attr-defined]
@@ -233,7 +235,7 @@ class TestNativeValidatorServicer:
 
         mock_result = NativeRunResult(violations=[], rule_timings=[])
         with patch("apme_engine.daemon.native_validator_server._run_native", return_value=mock_result):
-            resp = await servicer.Validate(request, FakeGrpcContext())
+            resp = await servicer.Validate(request, FakeGrpcContext())  # type: ignore[arg-type]
         assert len(resp.violations) == 0  # type: ignore[attr-defined]
 
     async def test_validate_bad_scandata_returns_empty(self) -> None:
@@ -245,14 +247,14 @@ class TestNativeValidatorServicer:
             scandata=b"not-valid-jsonpickle{{{",
         )
         servicer = NativeValidatorServicer()
-        resp = await servicer.Validate(request, FakeGrpcContext())
+        resp = await servicer.Validate(request, FakeGrpcContext())  # type: ignore[arg-type]
         assert len(resp.violations) == 0  # type: ignore[attr-defined]
 
     async def test_health_returns_ok(self) -> None:
         from apme_engine.daemon.native_validator_server import NativeValidatorServicer
 
         servicer = NativeValidatorServicer()
-        resp = await servicer.Health(common_pb2.HealthRequest(), FakeGrpcContext())
+        resp = await servicer.Health(common_pb2.HealthRequest(), FakeGrpcContext())  # type: ignore[arg-type]
         assert resp.status == "ok"
 
 
@@ -271,7 +273,7 @@ class TestGitleaksValidatorServicerDiagnostics:
 
         servicer = GitleaksValidatorServicer()
         with patch("apme_engine.daemon.gitleaks_validator_server._run_scan", return_value=(mock_violations, 1)):
-            resp = await servicer.Validate(request, FakeGrpcContext())
+            resp = await servicer.Validate(request, FakeGrpcContext())  # type: ignore[arg-type]
 
         assert resp.HasField("diagnostics")  # type: ignore[attr-defined]
         diag = resp.diagnostics  # type: ignore[attr-defined]
@@ -289,7 +291,7 @@ class TestGitleaksValidatorServicerDiagnostics:
 
         request = validate_pb2.ValidateRequest(request_id="diag-gl-2")
         servicer = GitleaksValidatorServicer()
-        resp = await servicer.Validate(request, FakeGrpcContext())
+        resp = await servicer.Validate(request, FakeGrpcContext())  # type: ignore[arg-type]
         assert len(resp.violations) == 0  # type: ignore[attr-defined]
 
 
@@ -340,7 +342,7 @@ class TestAnsibleValidatorServicerMigration:
 
         servicer = AnsibleValidatorServicer()
         with patch("apme_engine.daemon.ansible_validator_server._run_ansible_validate", return_value=mock_result):
-            resp = await servicer.Validate(request, FakeGrpcContext())
+            resp = await servicer.Validate(request, FakeGrpcContext())  # type: ignore[arg-type]
 
         assert resp.HasField("diagnostics")  # type: ignore[attr-defined]
         diag = resp.diagnostics  # type: ignore[attr-defined]
@@ -636,12 +638,16 @@ class TestCliDiagnosticsDisplay:
         result = _diag_to_dict(sd)
         assert result["engine_parse_ms"] == 5.0
         assert result["total_ms"] == 50.0
-        assert len(result["validators"]) == 1
-        v = result["validators"][0]
+        validators = result["validators"]
+        assert isinstance(validators, list) and len(validators) == 1
+        v = validators[0]
+        assert isinstance(v, dict)
         assert v["validator_name"] == "native"
         assert v["total_ms"] == 10.5
-        assert len(v["rule_timings"]) == 1
-        assert v["rule_timings"][0]["rule_id"] == "L028"
+        rule_timings = v.get("rule_timings")
+        assert isinstance(rule_timings, list) and len(rule_timings) == 1
+        rt0 = rule_timings[0]
+        assert isinstance(rt0, dict) and rt0.get("rule_id") == "L028"
         assert v["metadata"] == {"foo": "bar"}
 
     def test_print_diagnostics_v_no_crash(self, capsys: pytest.CaptureFixture[str]) -> None:

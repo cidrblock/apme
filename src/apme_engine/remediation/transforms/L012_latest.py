@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
-
+from apme_engine.engine.models import ViolationDict
 from apme_engine.engine.yaml_utils import FormattedYAML
 from apme_engine.remediation.registry import TransformResult
-from apme_engine.remediation.transforms._helpers import find_task_at_line, get_module_key
+from apme_engine.remediation.transforms._helpers import find_task_at_line, get_module_key, violation_line_to_int
 
 
-def fix_latest(content: str, violation: dict[str, Any]) -> TransformResult:
+def fix_latest(content: str, violation: ViolationDict) -> TransformResult:
     """Replace ``state: latest`` with ``state: present``."""
     yaml = FormattedYAML(typ="rt", pure=True, version=(1, 1))
 
@@ -18,9 +17,7 @@ def fix_latest(content: str, violation: dict[str, Any]) -> TransformResult:
     except Exception:
         return TransformResult(content=content, applied=False)
 
-    line = violation.get("line", 0)
-    if isinstance(line, (list, tuple)):
-        line = line[0] if line else 0
+    line = violation_line_to_int(violation)
     task = find_task_at_line(data, line)
     if task is None:
         return TransformResult(content=content, applied=False)

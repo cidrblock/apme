@@ -1,7 +1,9 @@
 """Tests for validator abstraction (ScanContext, OpaValidator, NativeValidator)."""
 
 from pathlib import Path
+from typing import cast
 
+from apme_engine.engine.models import YAMLDict
 from apme_engine.validators.base import ScanContext
 from apme_engine.validators.native import NativeValidator
 from apme_engine.validators.opa import OpaValidator
@@ -9,14 +11,14 @@ from apme_engine.validators.opa import OpaValidator
 
 class TestScanContext:
     def test_scan_context_defaults(self) -> None:
-        ctx = ScanContext(hierarchy_payload={"scan_id": "x"})
+        ctx = ScanContext(hierarchy_payload=cast(YAMLDict, {"scan_id": "x"}))
         assert ctx.hierarchy_payload["scan_id"] == "x"
         assert ctx.scandata is None
         assert ctx.root_dir == ""
 
     def test_scan_context_with_scandata(self) -> None:
         mock = object()
-        ctx = ScanContext(hierarchy_payload={}, scandata=mock, root_dir="/tmp")
+        ctx = ScanContext(hierarchy_payload=cast(YAMLDict, {}), scandata=mock, root_dir="/tmp")
         assert ctx.scandata is mock
         assert ctx.root_dir == "/tmp"
 
@@ -27,7 +29,7 @@ class TestOpaValidator:
     ) -> None:
         from unittest.mock import patch
 
-        ctx = ScanContext(hierarchy_payload=sample_hierarchy_payload)
+        ctx = ScanContext(hierarchy_payload=cast(YAMLDict, sample_hierarchy_payload))
         v = OpaValidator(str(opa_bundle_path))
         with patch("apme_engine.validators.opa.run_opa", return_value=[]) as mock_opa:
             result = v.run(ctx)
@@ -42,7 +44,7 @@ class TestOpaValidator:
         from unittest.mock import patch
 
         (tmp_path / "bundle").mkdir()
-        ctx = ScanContext(hierarchy_payload=sample_hierarchy_payload)
+        ctx = ScanContext(hierarchy_payload=cast(YAMLDict, sample_hierarchy_payload))
         v = OpaValidator(str(tmp_path / "bundle"))
         violations = [{"rule_id": "r1", "level": "high", "message": "msg", "file": "f", "line": 1, "path": "p"}]
         with patch("apme_engine.validators.opa.run_opa", return_value=violations):
@@ -52,17 +54,17 @@ class TestOpaValidator:
 
 class TestNativeValidator:
     def test_native_empty_context_returns_empty(self) -> None:
-        ctx = ScanContext(hierarchy_payload={}, scandata=None)
+        ctx = ScanContext(hierarchy_payload=cast(YAMLDict, {}), scandata=None)
         v = NativeValidator()
         assert v.run(ctx) == []
 
     def test_native_no_scandata_returns_empty(self) -> None:
-        ctx = ScanContext(hierarchy_payload={"scan_id": "x"}, scandata=None)
+        ctx = ScanContext(hierarchy_payload=cast(YAMLDict, {"scan_id": "x"}), scandata=None)
         v = NativeValidator()
         assert v.run(ctx) == []
 
     def test_native_scandata_without_contexts_returns_empty(self) -> None:
         mock_scandata = type("Scandata", (), {"contexts": []})()
-        ctx = ScanContext(hierarchy_payload={}, scandata=mock_scandata)
+        ctx = ScanContext(hierarchy_payload=cast(YAMLDict, {}), scandata=mock_scandata)
         v = NativeValidator()
         assert v.run(ctx) == []

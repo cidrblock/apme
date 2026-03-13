@@ -12,10 +12,13 @@ import json
 import os
 import subprocess
 import time
+from collections.abc import Generator
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import pytest
+
+from apme_engine.engine.models import ViolationDict, YAMLDict
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 POD_NAME = "apme-pod"
@@ -25,8 +28,8 @@ POD_STARTUP_TIMEOUT = 90
 SERVICE_SETTLE_SECONDS = 5
 
 
-def _run(cmd: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(cmd, capture_output=True, text=True, **kwargs)
+def _run(cmd: list[str], **kwargs: str | bool | int | float | None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(cmd, capture_output=True, text=True, **kwargs)  # type: ignore[arg-type]
 
 
 def _podman(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -49,7 +52,7 @@ def _container_logs(name: str) -> str:
 
 
 @pytest.fixture(scope="module")  # type: ignore[untyped-decorator]
-def pod() -> Any:
+def pod() -> Generator[None, None, None]:
     """Build images (unless skipped), start the pod, yield, then tear down."""
     skip_build = os.environ.get("APME_E2E_SKIP_BUILD", "0") == "1"
     skip_teardown = os.environ.get("APME_E2E_SKIP_TEARDOWN", "0") == "1"
@@ -82,7 +85,7 @@ def pod() -> Any:
 
 
 @pytest.fixture(scope="module")  # type: ignore[untyped-decorator]
-def scan_result(pod: Any) -> dict[str, Any]:
+def scan_result(pod: None) -> YAMLDict:
     """Run a scan of the test playbook via the CLI container and return parsed JSON."""
     test_dir = str(REPO_ROOT / "tests" / "integration")
     r = _run(
@@ -108,14 +111,15 @@ def scan_result(pod: Any) -> dict[str, Any]:
     )
     assert r.returncode == 0, f"Scan failed (rc={r.returncode}):\n{r.stdout}\n{r.stderr}"
     try:
-        return cast(dict[str, Any], json.loads(r.stdout))
+        return cast(YAMLDict, json.loads(r.stdout))
     except json.JSONDecodeError:
         pytest.fail(f"Scan output is not valid JSON:\n{r.stdout}")
         return {}  # unreachable; pytest.fail raises
 
 
-def _violation_rule_ids(scan_result: dict[str, Any]) -> set[str]:
-    return {v.get("rule_id", "") for v in scan_result.get("violations", [])}
+def _violation_rule_ids(scan_result: YAMLDict) -> set[str]:
+    violations = cast(list[ViolationDict], scan_result.get("violations", []))
+    return {str(v.get("rule_id", "")) for v in violations}
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +129,7 @@ def _violation_rule_ids(scan_result: dict[str, Any]) -> set[str]:
 
 @pytest.mark.integration
 class TestHealthCheck:
-    def test_overall_ok(self, pod: Any) -> None:
+    def test_overall_ok(self, pod: None) -> None:
         r = _run(
             [
                 "podman",
@@ -154,8 +158,9 @@ class TestHealthCheck:
 
 @pytest.mark.integration
 class TestScanViolations:
-    def test_violations_returned(self, scan_result: dict[str, Any]) -> None:
-        count = scan_result.get("count", 0)
+    def test_violations_returned(self, scan_result: YAMLDict) -> None:
+        raw_count = scan_result.get("count", 0)
+        count = int(raw_count) if isinstance(raw_count, (int, float, str)) else 0
         assert count > 0, f"Expected >0 violations, got {count}"
 
     # OPA rules
@@ -169,7 +174,7 @@ class TestScanViolations:
             ("R118", "inbound transfer (annotation-based)"),
         ],
     )  # type: ignore[untyped-decorator]
-    def test_opa_rule(self, scan_result: dict[str, Any], rule_id: str, desc: str) -> None:
+    def test_opa_rule(self, scan_result: YAMLDict, rule_id: str, desc: str) -> None:
         assert rule_id in _violation_rule_ids(scan_result), f"{rule_id} ({desc}) not found"
 
     # Native rules
@@ -181,11 +186,11 @@ class TestScanViolations:
             ("native:L046", "free-form args"),
         ],
     )  # type: ignore[untyped-decorator]
-    def test_native_rule(self, scan_result: dict[str, Any], rule_id: str, desc: str) -> None:
+    def test_native_rule(self, scan_result: YAMLDict, rule_id: str, desc: str) -> None:
         assert rule_id in _violation_rule_ids(scan_result), f"{rule_id} ({desc}) not found"
 
     # Modernize rules
-    def test_m001_fqcn_resolution(self, scan_result: dict[str, Any]) -> None:
+    def test_m001_fqcn_resolution(self, scan_result: YAMLDict) -> None:
         assert "M001" in _violation_rule_ids(scan_result), "M001 (FQCN resolution) not found"
 
     # Ansible validator rules
@@ -196,7 +201,7 @@ class TestScanViolations:
             ("L059", "argspec validation - mock/patch"),
         ],
     )  # type: ignore[untyped-decorator]
-    def test_ansible_rule(self, scan_result: dict[str, Any], rule_id: str, desc: str) -> None:
+    def test_ansible_rule(self, scan_result: YAMLDict, rule_id: str, desc: str) -> None:
         assert rule_id in _violation_rule_ids(scan_result), f"{rule_id} ({desc}) not found"
 
 
@@ -207,14 +212,19 @@ class TestScanViolations:
 
 @pytest.mark.integration
 class TestNoDuplicates:
-    def test_no_duplicate_violations(self, scan_result: dict[str, Any]) -> None:
+    def test_no_duplicate_violations(self, scan_result: YAMLDict) -> None:
         seen: set[tuple[str, str, int | tuple[int, ...]]] = set()
         dups: list[tuple[str, str, int | tuple[int, ...]]] = []
-        for v in scan_result.get("violations", []):
+        violations = cast(list[ViolationDict], scan_result.get("violations", []))
+        for v in violations:
             line = v.get("line")
             if isinstance(line, list):
-                line = tuple(line)
-            key = (v.get("rule_id", ""), v.get("file", ""), line)
+                line = tuple(line)  # type: ignore[assignment]
+            key = (
+                str(v.get("rule_id", "")),
+                str(v.get("file", "")),
+                line if isinstance(line, (int, tuple)) else 0,
+            )
             if key in seen:
                 dups.append(key)
             seen.add(key)
@@ -228,27 +238,27 @@ class TestNoDuplicates:
 
 @pytest.mark.integration
 class TestContainerLogs:
-    def test_primary_logged_opa_count(self, scan_result: dict[str, Any]) -> None:
+    def test_primary_logged_opa_count(self, scan_result: YAMLDict) -> None:
         logs = _container_logs("primary")
         assert "Opa=" in logs, f"Primary did not log OPA count:\n{logs[-500:]}"
 
-    def test_primary_logged_native_count(self, scan_result: dict[str, Any]) -> None:
+    def test_primary_logged_native_count(self, scan_result: YAMLDict) -> None:
         logs = _container_logs("primary")
         assert "Native=" in logs, f"Primary did not log Native count:\n{logs[-500:]}"
 
-    def test_opa_wrapper_logged(self, scan_result: dict[str, Any]) -> None:
+    def test_opa_wrapper_logged(self, scan_result: YAMLDict) -> None:
         logs = _container_logs("opa")
         assert "OPA returned" in logs, f"OPA wrapper did not log:\n{logs[-500:]}"
 
-    def test_native_validator_logged(self, scan_result: dict[str, Any]) -> None:
+    def test_native_validator_logged(self, scan_result: YAMLDict) -> None:
         logs = _container_logs("native")
         assert "Native validator returned" in logs, f"Native did not log:\n{logs[-500:]}"
 
-    def test_ansible_introspection(self, scan_result: dict[str, Any]) -> None:
+    def test_ansible_introspection(self, scan_result: YAMLDict) -> None:
         logs = _container_logs("ansible")
         assert "introspecting" in logs, f"Ansible did not run introspection:\n{logs[-500:]}"
 
-    def test_ansible_argspec(self, scan_result: dict[str, Any]) -> None:
+    def test_ansible_argspec(self, scan_result: YAMLDict) -> None:
         logs = _container_logs("ansible")
         assert "argspec" in logs, f"Ansible did not run argspec:\n{logs[-500:]}"
 
@@ -262,7 +272,7 @@ SECRETS_FIXTURE = REPO_ROOT / "tests" / "integration" / "test_secrets_playbook.y
 
 @pytest.mark.integration
 class TestGitleaks:
-    def test_gitleaks_container_healthy(self, pod: Any) -> None:
+    def test_gitleaks_container_healthy(self, pod: None) -> None:
         r = _run(
             [
                 "podman",
@@ -285,11 +295,11 @@ class TestGitleaks:
             f"Gitleaks not reported in health check:\n{combined}"
         )
 
-    def test_gitleaks_logged(self, scan_result: dict[str, Any]) -> None:
+    def test_gitleaks_logged(self, scan_result: YAMLDict) -> None:
         logs = _container_logs("gitleaks")
         assert "Gitleaks validator" in logs, f"Gitleaks did not log:\n{logs[-500:]}"
 
-    def test_primary_logged_gitleaks_count(self, scan_result: dict[str, Any]) -> None:
+    def test_primary_logged_gitleaks_count(self, scan_result: YAMLDict) -> None:
         logs = _container_logs("primary")
         assert "Gitleaks=" in logs, f"Primary did not log Gitleaks count:\n{logs[-500:]}"
 
@@ -303,7 +313,7 @@ FORMAT_FIXTURE = REPO_ROOT / "tests" / "integration" / "test_format_playbook.yml
 
 @pytest.mark.integration
 class TestFormat:
-    def test_format_check_detects_issues(self, pod: Any) -> None:
+    def test_format_check_detects_issues(self, pod: None) -> None:
         """format --check on messy fixture exits 1."""
         test_dir = str(FORMAT_FIXTURE.parent)
         r = _run(
@@ -327,7 +337,7 @@ class TestFormat:
         )
         assert r.returncode == 1, f"Expected exit 1 for messy file:\n{r.stdout}\n{r.stderr}"
 
-    def test_format_diff_shows_transforms(self, pod: Any) -> None:
+    def test_format_diff_shows_transforms(self, pod: None) -> None:
         """format (no --apply) shows unified diff with expected transforms."""
         test_dir = str(FORMAT_FIXTURE.parent)
         r = _run(
@@ -351,7 +361,7 @@ class TestFormat:
         assert r.returncode == 0
         assert "@@" in r.stdout or "---" in r.stdout, f"Expected unified diff output:\n{r.stdout[:500]}"
 
-    def test_format_apply_then_check_passes(self, pod: Any, tmp_path: Path) -> None:
+    def test_format_apply_then_check_passes(self, pod: None, tmp_path: Path) -> None:
         """format --apply writes file; subsequent --check exits 0."""
         import shutil
 

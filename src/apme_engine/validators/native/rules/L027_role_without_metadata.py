@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import cast
 
 from apme_engine.engine.models import (
     AnsibleRunContext,
@@ -34,4 +35,8 @@ class RoleWithoutMetadataRule(Rule):
 
         verdict = not getattr(role.spec, "metadata", None)
 
-        return RuleResult(verdict=verdict, file=role.file_info(), rule=self.get_metadata())
+        return RuleResult(
+            verdict=verdict,
+            file=cast("tuple[str | int, ...] | None", role.file_info()),
+            rule=self.get_metadata(),
+        )

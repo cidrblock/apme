@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
-from typing import Any, NamedTuple
+from typing import NamedTuple
+
+from apme_engine.engine.models import ViolationDict
 
 
 class TransformResult(NamedTuple):
@@ -11,7 +13,7 @@ class TransformResult(NamedTuple):
     applied: bool
 
 
-TransformFn = Callable[[str, dict[str, Any]], TransformResult]
+TransformFn = Callable[[str, ViolationDict], TransformResult]
 
 
 class TransformRegistry:
@@ -41,7 +43,7 @@ class TransformRegistry:
     def rule_ids(self) -> list[str]:
         return sorted(self._transforms)
 
-    def apply(self, rule_id: str, content: str, violation: dict[str, Any]) -> TransformResult:
+    def apply(self, rule_id: str, content: str, violation: ViolationDict) -> TransformResult:
         fn = self._transforms.get(rule_id)
         if fn is None:
             return TransformResult(content=content, applied=False)
