@@ -130,3 +130,20 @@ gh api graphql -f query='mutation {
 6. Update the PR description to include the new commit(s).
 7. If CI failure is unrelated to your changes (e.g., flaky test, transient
    network issue), fix it anyway — the PR owns the green build.
+
+### After pushing fixes: check for a new Copilot review
+
+Copilot may run again on new commits. Re-check whether it left a new review or
+line comments so you can reply and resolve any new threads.
+
+```bash
+# New Copilot review (replace N with PR number, ISO8601 with last push time)
+gh api repos/ansible/apme/pulls/N/reviews --jq '.[] | select(.user.login == "copilot-pull-request-reviewer[bot]" and .submitted_at > "ISO8601") | {submitted_at, state, body: .body[0:200]}'
+
+# New Copilot line comments (replace N and ISO8601)
+gh api repos/ansible/apme/pulls/N/comments --jq '.[] | select(.user.login == "Copilot" and .created_at > "ISO8601") | {id, created_at, path, body: .body[0:150]}'
+```
+
+If both return nothing, no new Copilot activity. Otherwise, address new
+comments (reply with how it was resolved + commit hash, then resolve threads)
+and repeat this check after the next push.
