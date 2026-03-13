@@ -1,3 +1,5 @@
+"""Find modules, task blocks, playbooks, and roles in Ansible content."""
+
 from __future__ import annotations
 
 import json
@@ -42,9 +44,21 @@ github_workflows_dir = ".github/workflows"
 
 
 class Singleton(type):
+    """Metaclass that ensures a single instance per class."""
+
     _instances: dict[type, object] = {}
 
     def __call__(cls, *args: object, **kwargs: object) -> object:
+        """Return the single instance for this class.
+
+        Args:
+            *args: Positional arguments forwarded to the constructor.
+            **kwargs: Keyword arguments forwarded to the constructor.
+
+        Returns:
+            The singleton instance for cls.
+
+        """
         if cls not in Singleton._instances:
             Singleton._instances[cls] = super().__call__(*args, **kwargs)
         return Singleton._instances[cls]
@@ -52,11 +66,23 @@ class Singleton(type):
 
 @dataclass(frozen=True)
 class TaskKeywordSet(metaclass=Singleton):
+    """Singleton set of Ansible task keywords (block, include, etc.).
+
+    Attributes:
+        task_keywords: Frozen set of recognized task keyword strings.
+    """
+
     task_keywords: set[str] = field(default_factory=set)
 
 
 @dataclass(frozen=True)
 class BuiltinModuleSet(metaclass=Singleton):
+    """Singleton set of Ansible builtin module names.
+
+    Attributes:
+        builtin_modules: Set of builtin module name strings.
+    """
+
     builtin_modules: set[str] = field(default_factory=set)
 
 
@@ -69,10 +95,25 @@ with open(p / "builtin-modules.txt") as f:
 
 
 def get_builtin_module_names() -> set[str]:
+    """Return the set of known Ansible builtin module names.
+
+    Returns:
+        Set of module name strings.
+
+    """
     return BuiltinModuleSet().builtin_modules
 
 
 def find_module_name(data_block: YAMLDict) -> str:
+    """Determine the module name from a task dict (FQCN or short name).
+
+    Args:
+        data_block: Single task dict (module key -> args).
+
+    Returns:
+        Module name string, or empty if not found.
+
+    """
     keys = [k for k in data_block]
     task_keywords = TaskKeywordSet().task_keywords
     builtin_modules = BuiltinModuleSet().builtin_modules
@@ -112,6 +153,18 @@ def get_task_blocks(
     task_dict_list: list[YAMLDict] | None = None,
     jsonpath_prefix: str = "",
 ) -> tuple[list[tuple[YAMLDict, str]] | None, str | None]:
+    """Load YAML and extract flattened task blocks with jsonpath.
+
+    Args:
+        fpath: Path to a playbook/tasks file (optional).
+        yaml_str: Raw YAML string (optional).
+        task_dict_list: Pre-parsed task list (optional).
+        jsonpath_prefix: Prefix for jsonpath in results.
+
+    Returns:
+        Tuple of (list of (task_dict, jsonpath) or None, yaml_str or None).
+
+    """
     d = None
     yaml_lines = ""
     if yaml_str:
@@ -162,6 +215,17 @@ def flatten_block_tasks(
     jsonpath_prefix: str = "",
     module_defaults: YAMLDict | None = None,
 ) -> list[tuple[YAMLDict, str]]:
+    """Flatten block/rescue/always into a list of (task_dict, jsonpath).
+
+    Args:
+        task_dict: Single task dict (may contain block/rescue/always).
+        jsonpath_prefix: Prefix for jsonpath.
+        module_defaults: Defaults to merge for tasks in block.
+
+    Returns:
+        List of (task_dict, jsonpath) for each leaf task.
+
+    """
     if module_defaults is None:
         module_defaults = {}
     if task_dict is None:
@@ -225,6 +289,17 @@ def flatten_block_tasks(
 def identify_lines_with_jsonpath(
     fpath: str = "", yaml_str: str = "", jsonpath: str = ""
 ) -> tuple[str | None, tuple[int, int] | None]:
+    """Resolve a jsonpath into the YAML source and return the line range.
+
+    Args:
+        fpath: Path to YAML file (optional).
+        yaml_str: Raw YAML string (optional).
+        jsonpath: Jsonpath to the block (e.g. .0.tasks.1).
+
+    Returns:
+        Tuple of (yaml_fragment, (start_line, end_line)) or (None, None).
+
+    """
     if not jsonpath:
         return None, None
 
@@ -274,6 +349,17 @@ def identify_lines_with_jsonpath(
 
 
 def find_child_yaml_block(yaml_str: str, key: str = "", line_num_offset: int = -1) -> list[tuple[str, tuple[int, int]]]:
+    """Split YAML by top-level key or list items and return (block_str, (start, end)).
+
+    Args:
+        yaml_str: Raw YAML string.
+        key: Optional key (e.g. tasks, block) to split on; else split on list items.
+        line_num_offset: Line number offset for the returned ranges.
+
+    Returns:
+        List of (block_yaml, (start_line, end_line)).
+
+    """
     skip_condition_funcs: list[Callable[[str], bool]] = [
         # for YAML separator
         lambda x: x.strip() == "---",
@@ -391,6 +477,16 @@ def find_child_yaml_block(yaml_str: str, key: str = "", line_num_offset: int = -
 
 
 def search_module_files(path: str, module_dir_paths: list[str] | None = None) -> list[str]:
+    """Find Python module files (with DOCUMENTATION) under path and optional dirs.
+
+    Args:
+        path: Root path to search.
+        module_dir_paths: Additional directories to search.
+
+    Returns:
+        Sorted list of module file paths.
+
+    """
     if module_dir_paths is None:
         module_dir_paths = []
     file_list = []
@@ -423,6 +519,15 @@ def search_module_files(path: str, module_dir_paths: list[str] | None = None) ->
 
 
 def find_module_dirs(role_root_dir: str) -> list[str]:
+    """Return existing library/plugins/modules dirs under a role root.
+
+    Args:
+        role_root_dir: Path to the role root.
+
+    Returns:
+        List of existing module directory paths.
+
+    """
     module_dirs = []
     for module_dir_pattern in module_dir_patterns:
         moddir = os.path.join(role_root_dir, module_dir_pattern)
@@ -432,6 +537,16 @@ def find_module_dirs(role_root_dir: str) -> list[str]:
 
 
 def search_taskfiles_for_playbooks(path: str, taskfile_dir_paths: list[str] | None = None) -> list[str]:
+    """Find YAML files that look like task files (not playbooks) under path.
+
+    Args:
+        path: Root path to search.
+        taskfile_dir_paths: Additional task/playbooks dirs to search.
+
+    Returns:
+        List of candidate taskfile paths.
+
+    """
     # must copy the input here; otherwise, the added items are kept forever
     if taskfile_dir_paths is None:
         taskfile_dir_paths = []
@@ -463,6 +578,15 @@ def search_taskfiles_for_playbooks(path: str, taskfile_dir_paths: list[str] | No
 
 
 def search_inventory_files(path: str) -> list[str]:
+    """Find group_vars and host_vars files under path.
+
+    Args:
+        path: Root path to search.
+
+    Returns:
+        List of inventory var file paths.
+
+    """
     inventory_file_patterns = [
         os.path.join(path, "**/group_vars", "*"),
         os.path.join(path, "**/host_vars", "*"),
@@ -471,6 +595,18 @@ def search_inventory_files(path: str) -> list[str]:
 
 
 def find_best_repo_root_path(path: str) -> str:
+    """Infer repository root from MANIFEST/galaxy/meta or playbook locations.
+
+    Args:
+        path: Directory to start from.
+
+    Returns:
+        Path to the inferred repo root.
+
+    Raises:
+        ValueError: If no playbook files are found.
+
+    """
     base_path = path
 
     manifest_json_path = os.path.join(base_path, "MANIFEST.json")
@@ -528,6 +664,15 @@ def find_best_repo_root_path(path: str) -> str:
 
 
 def find_collection_name_of_repo(path: str) -> str:
+    """Read galaxy.yml or MANIFEST.json and return namespace.name.
+
+    Args:
+        path: Repository root path.
+
+    Returns:
+        Collection name (namespace.name) or empty string.
+
+    """
     galaxy_yml_pattern = os.path.join(path, "**/galaxy.yml")
     manifest_json_pattern = os.path.join(path, "**/MANIFEST.json")
     found_metadata_files = safe_glob([galaxy_yml_pattern, manifest_json_pattern], recursive=True)
@@ -569,16 +714,45 @@ def find_collection_name_of_repo(path: str) -> str:
 
 
 def find_all_ymls(root_dir: str) -> list[str]:
+    """Glob all .yml/.yaml files under root_dir.
+
+    Args:
+        root_dir: Root directory to search.
+
+    Returns:
+        List of YAML file paths.
+
+    """
     patterns = [os.path.join(root_dir, "**", "*.ya?ml")]
     return safe_glob(patterns)
 
 
 def find_all_files(root_dir: str) -> list[str]:
+    """Glob all files (non-dirs) under root_dir.
+
+    Args:
+        root_dir: Root directory to search.
+
+    Returns:
+        List of file paths.
+
+    """
     patterns = [os.path.join(root_dir, "**", "*")]
     return safe_glob(patterns, type=["file"])
 
 
 def _get_body_data(body: str = "", data: YAMLValue | None = None, fpath: str = "") -> tuple[str, YAMLValue | None, str]:
+    """Load body and parsed data from fpath if not provided.
+
+    Args:
+        body: Optional raw YAML string.
+        data: Optional parsed YAML value.
+        fpath: Path to read from if body/data missing.
+
+    Returns:
+        Tuple of (body, data, fpath).
+
+    """
     if fpath and not body and not data:
         try:
             with open(fpath) as file:
@@ -593,6 +767,17 @@ def _get_body_data(body: str = "", data: YAMLValue | None = None, fpath: str = "
 
 
 def could_be_playbook_detail(body: str = "", data: YAMLValue | None = None, fpath: str = "") -> bool:
+    """Return True if content looks like a playbook (list of plays with hosts).
+
+    Args:
+        body: Optional raw YAML string.
+        data: Optional parsed YAML value.
+        fpath: Path to read from if body/data missing.
+
+    Returns:
+        True if data is a list and first item has hosts or import_playbook.
+
+    """
     body, data, fpath = _get_body_data(body, data, fpath)
 
     if not body:
@@ -617,6 +802,17 @@ def could_be_playbook_detail(body: str = "", data: YAMLValue | None = None, fpat
 
 
 def could_be_taskfile(body: str = "", data: YAMLValue | None = None, fpath: str = "") -> bool:
+    """Return True if content looks like a task file (list of tasks, not import_playbook).
+
+    Args:
+        body: Optional raw YAML string.
+        data: Optional parsed YAML value.
+        fpath: Path to read from if body/data missing.
+
+    Returns:
+        True if data looks like a task list.
+
+    """
     body, data, fpath = _get_body_data(body, data, fpath)
 
     if not body:
@@ -643,10 +839,16 @@ def could_be_taskfile(body: str = "", data: YAMLValue | None = None, fpath: str 
     return False
 
 
-# this function is only for empty files
-# if a target file has some contents, it should be checked with
-# some dedicated functions like `could_be_taskfile()`.
 def label_empty_file_by_path(fpath: str) -> str:
+    """Label an empty file as taskfile or playbook based on path only.
+
+    Args:
+        fpath: Path to the file.
+
+    Returns:
+        'taskfile', 'playbook', or empty string.
+
+    """
     taskfile_dir = ["/tasks/", "/handlers/"]
     for t_d in taskfile_dir:
         if t_d in fpath:
@@ -661,6 +863,15 @@ def label_empty_file_by_path(fpath: str) -> str:
 
 
 def get_role_info_from_path(fpath: str) -> tuple[str, str]:
+    """Extract role name and role root path from a file path under roles/ or targets/.
+
+    Args:
+        fpath: Path to a file inside a role.
+
+    Returns:
+        Tuple of (role_name, role_path).
+
+    """
     patterns = [
         "/roles/",
         "/tests/integration/targets/",
@@ -719,22 +930,59 @@ def get_role_info_from_path(fpath: str) -> tuple[str, str]:
     return role_name, role_path
 
 
-# TODO: implement this
 def get_project_info_for_file(fpath: str, root_dir: str) -> tuple[str, str]:
+    """Return project name and root dir for a file under root_dir.
+
+    Args:
+        fpath: Path to a file.
+        root_dir: Project root directory.
+
+    Returns:
+        Tuple of (project_name, root_dir).
+
+    """
     return os.path.basename(root_dir), root_dir
 
 
 def is_meta_yml(yml_path: str) -> bool:
+    """Return True if path looks like role meta (e.g. .../meta/filename).
+
+    Args:
+        yml_path: Path to a YAML file.
+
+    Returns:
+        True if path contains /meta/ as parent of filename.
+
+    """
     parts = yml_path.split("/")
     return bool(len(parts) > 2 and parts[-2] == "meta")
 
 
 def is_vars_yml(yml_path: str) -> bool:
+    """Return True if path is under vars/ or defaults/.
+
+    Args:
+        yml_path: Path to a YAML file.
+
+    Returns:
+        True if parent directory is vars or defaults.
+
+    """
     parts = yml_path.split("/")
     return bool(len(parts) > 2 and parts[-2] in ["vars", "defaults"])
 
 
 def count_top_level_element(yml_body: str = "") -> int:
+    """Count top-level YAML elements (by indent) in the body.
+
+    Args:
+        yml_body: Raw YAML string.
+
+    Returns:
+        Count of top-level elements, or -1 if none.
+
+    """
+
     def _is_skip_line(line: str) -> bool:
         # skip empty line
         if not line.strip():
@@ -776,6 +1024,17 @@ def count_top_level_element(yml_body: str = "") -> int:
 def label_yml_file(
     yml_path: str = "", yml_body: str = "", task_num_thresh: int = 50
 ) -> tuple[str, int, dict[str, str] | None]:
+    """Classify YAML as playbook, taskfile, or others; optionally enforce task count limit.
+
+    Args:
+        yml_path: Path to YAML file (optional).
+        yml_body: Raw YAML string (optional).
+        task_num_thresh: Max tasks/elements; exceed returns error.
+
+    Returns:
+        Tuple of (label, name_count, error_dict or None).
+
+    """
     body = ""
     data = None
     error = None
@@ -832,6 +1091,17 @@ def label_yml_file(
 def get_yml_label(
     file_path: str, root_path: str, task_num_threshold: int = -1
 ) -> tuple[str, YAMLDict | None, YAMLDict | None]:
+    """Get label and optional metadata for a YAML file under root_path.
+
+    Args:
+        file_path: Absolute path to the file.
+        root_path: Project root path.
+        task_num_threshold: Max tasks for classification; -1 to disable.
+
+    Returns:
+        Tuple of (label, metadata_dict or None, error_dict or None).
+
+    """
     relative_path = file_path.replace(root_path, "")
     if relative_path[-1] == "/":
         relative_path = relative_path[:-1]
@@ -855,6 +1125,16 @@ def get_yml_label(
 
 
 def get_yml_list(root_dir: str, task_num_threshold: int = -1) -> list[YAMLDict]:
+    """Build list of YAML file metadata (label, role_info, etc.) under root_dir.
+
+    Args:
+        root_dir: Root directory to scan for YAML files.
+        task_num_threshold: Max tasks per file for classification; -1 to disable.
+
+    Returns:
+        List of dicts with filepath, label, role_info, project_info, etc.
+
+    """
     found_ymls = find_all_ymls(root_dir)
     all_files = []
     for yml_path in found_ymls:
@@ -885,6 +1165,16 @@ def get_yml_list(root_dir: str, task_num_threshold: int = -1) -> list[YAMLDict]:
 
 
 def list_scan_target(root_dir: str, task_num_threshold: int = -1) -> list[YAMLDict]:
+    """List playbook and taskfile (and role) scan targets under root_dir.
+
+    Args:
+        root_dir: Root directory to scan.
+        task_num_threshold: Max tasks per file; -1 to disable.
+
+    Returns:
+        List of target dicts with filepath, path_from_root, scan_type.
+
+    """
     yml_list = get_yml_list(root_dir=root_dir, task_num_threshold=task_num_threshold)
     known_roles = set()
     all_targets = []
@@ -921,9 +1211,16 @@ def list_scan_target(root_dir: str, task_num_threshold: int = -1) -> list[YAMLDi
 
 
 def update_line_with_space(new_line_content: str, old_line_content: str, leading_spaces: int = 0) -> str:
-    """
-    Returns the line of the input lines with mutation, having spaces
-    exactly same as input yaml lines
+    """Return new_line_content with leading spaces matching old_line_content.
+
+    Args:
+        new_line_content: New line text (leading spaces stripped).
+        old_line_content: Reference line for indent.
+        leading_spaces: Override indent; 0 means use old_line_content indent.
+
+    Returns:
+        Line with leading spaces applied.
+
     """
     new_line_content = new_line_content.lstrip(" ")
     if not leading_spaces:
@@ -932,10 +1229,15 @@ def update_line_with_space(new_line_content: str, old_line_content: str, leading
 
 
 def populate_new_data_list(data: str, line_number_list: list[str]) -> list[str]:
-    """
-    Function to check diff in line between the
-    first mutated results, and then copy the in
-    between lines to mutated data lines
+    """Copy lines before the first mutated region from data into a new list.
+
+    Args:
+        data: Full file content.
+        line_number_list: List of line range specs (e.g. L1-5).
+
+    Returns:
+        Lines from start of file up to (but not including) first mutation.
+
     """
     input_line_number = 0
     for each in line_number_list:
@@ -946,9 +1248,14 @@ def populate_new_data_list(data: str, line_number_list: list[str]) -> list[str]:
 
 
 def check_and_add_diff_lines(start_line: int, stop_line: int, lines: list[str], data_copy: list[str]) -> None:
-    """
-    Function to check diff in line between the mutated results,
-    and then copy the in between lines to mutated data lines
+    """Append lines between start_line and stop_line from lines into data_copy.
+
+    Args:
+        start_line: Start index (1-based).
+        stop_line: End index.
+        lines: Source lines.
+        data_copy: List to append to (modified in place).
+
     """
     diff_in_line = stop_line - start_line
     data_copy.append("\n")
@@ -960,9 +1267,16 @@ def check_and_add_diff_lines(start_line: int, stop_line: int, lines: list[str], 
 def check_diff_and_copy_olddata_to_newdata(
     line_number_list: list[str], lines: list[str], new_data: list[str]
 ) -> list[str]:
-    """
-    Function to find the old lines which weren't mutated by ARI rules,
-    it need to be copied to new content as is
+    """Append remaining old lines after the last mutation to new_data.
+
+    Args:
+        line_number_list: List of mutated line range specs.
+        lines: Original file lines.
+        new_data: List to append remaining lines to.
+
+    Returns:
+        new_data (modified in place and returned).
+
     """
     if line_number_list and isinstance(line_number_list, list):
         new_content_last_set = line_number_list[-1]
@@ -975,9 +1289,17 @@ def check_diff_and_copy_olddata_to_newdata(
 
 
 def update_and_append_new_line(new_line: str, old_line: str, leading_spaces: int, data_copy: list[str]) -> str:
-    """
-    Function to get the leading space for the new ARI mutated line, with
-    its equivaltent old line with space similar to the old line
+    """Adjust new_line indent to match old_line and append to data_copy.
+
+    Args:
+        new_line: New content line.
+        old_line: Reference line for indent.
+        leading_spaces: Override indent.
+        data_copy: List to append the adjusted line to.
+
+    Returns:
+        Empty string (result appended to data_copy).
+
     """
     line_with_adjusted_space = update_line_with_space(new_line, old_line, leading_spaces)
     data_copy.append(line_with_adjusted_space)
@@ -985,6 +1307,16 @@ def update_and_append_new_line(new_line: str, old_line: str, leading_spaces: int
 
 
 def update_the_yaml_target(file_path: str, line_number_list: list[str], new_content_list: list[str]) -> None:
+    """Apply ARI mutations to a YAML file by line ranges and write back.
+
+    Args:
+        file_path: Path to the YAML file.
+        line_number_list: List of line range specs (e.g. L1-5).
+        new_content_list: New content for each range.
+
+    Raises:
+        IndexError: If line_number_list and new_content_list length mismatch or invalid range.
+    """
     try:
         # Read the original YAML file
         with open(file_path) as file:

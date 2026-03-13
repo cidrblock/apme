@@ -1,3 +1,5 @@
+"""Native rule L033: detect variables re-defined without conditions."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -16,6 +18,18 @@ from apme_engine.engine.models import (
 
 @dataclass
 class UnconditionalOverrideRule(Rule):
+    """Rule for variables re-defined without conditions.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "L033"
     description: str = "A variable is re-defined without any conditions"
     enabled: bool = True
@@ -25,11 +39,27 @@ class UnconditionalOverrideRule(Rule):
     tags: tuple[str, ...] = (Tag.VARIABLE,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check for unconditional variable re-definition and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with variables detail, or None.
+        """
         task = ctx.current
         if task is None:
             return None

@@ -1,3 +1,5 @@
+"""Native rule P002: validate module argument keys and set annotations."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -18,15 +20,44 @@ from apme_engine.engine.models import RuleTag as Tag
 
 
 def is_set_fact(module_fqcn: str) -> bool:
+    """Check if module is ansible.builtin.set_fact.
+
+    Args:
+        module_fqcn: Fully qualified module name.
+
+    Returns:
+        True if module is set_fact.
+    """
     return module_fqcn == "ansible.builtin.set_fact"
 
 
 def is_meta(module_fqcn: str) -> bool:
+    """Check if module is ansible.builtin.meta.
+
+    Args:
+        module_fqcn: Fully qualified module name.
+
+    Returns:
+        True if module is meta.
+    """
     return module_fqcn == "ansible.builtin.meta"
 
 
 @dataclass
 class ModuleArgumentKeyValidationRule(Rule):
+    """Rule to validate module argument keys and set annotations.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+        precedence: Evaluation order.
+    """
+
     rule_id: str = "P002"
     description: str = "Validate module argument keys and set annotations"
     enabled: bool = True
@@ -37,11 +68,27 @@ class ModuleArgumentKeyValidationRule(Rule):
     precedence: int = 0
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Validate module argument keys and set annotations on task.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            None (sets annotations on task).
+        """
         task = ctx.current
         if task is None or not isinstance(task, TaskCall):
             return None

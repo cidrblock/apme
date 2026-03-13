@@ -1,3 +1,5 @@
+"""Native rule L055: detect role meta video_links with invalid URLs."""
+
 import re
 from dataclasses import dataclass
 from typing import cast
@@ -19,6 +21,18 @@ URL_PATTERN = re.compile(r"^https?://\S+$")
 
 @dataclass
 class MetaVideoLinksRule(Rule):
+    """Rule for role meta video_links to be valid URLs.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "L055"
     description: str = "Role meta video_links should be valid URLs"
     enabled: bool = True
@@ -28,11 +42,27 @@ class MetaVideoLinksRule(Rule):
     tags: tuple[str, ...] = (Tag.DEPENDENCY,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a role target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a role.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Role)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check video_links validity and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with invalid_links detail, or None.
+        """
         role = ctx.current
         if role is None:
             return None

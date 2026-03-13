@@ -1,3 +1,5 @@
+"""Engine data models: load metadata, objects, runs, annotations, and rule results."""
+
 from __future__ import annotations
 
 import builtins
@@ -51,26 +53,49 @@ if TYPE_CHECKING:
 
 
 class PlaybookFormatError(Exception):
-    pass
+    """Raised when playbook structure or format is invalid."""
 
 
 class TaskFormatError(Exception):
-    pass
+    """Raised when task structure or format is invalid."""
 
 
 class FatalRuleResultError(Exception):
-    pass
+    """Raised when a rule reports a fatal result that should stop processing."""
 
 
 class JSONSerializable:
+    """Mixin for classes that can serialize to and from JSON via jsonpickle."""
+
     def dump(self) -> str:
+        """Return JSON string representation.
+
+        Returns:
+            JSON string from to_json().
+
+        """
         return self.to_json()
 
     def to_json(self) -> str:
+        """Serialize this instance to a JSON string.
+
+        Returns:
+            JSON-encoded string via jsonpickle.
+
+        """
         return str(jsonpickle.encode(self, make_refs=False))
 
     @classmethod
     def from_json(cls: type[JSONSerializable], json_str: str) -> JSONSerializable:
+        """Deserialize an instance from a JSON string.
+
+        Args:
+            json_str: JSON-encoded string from to_json().
+
+        Returns:
+            New instance populated from the JSON.
+
+        """
         instance = cls()
         loaded: object = jsonpickle.decode(json_str)
         if hasattr(loaded, "__dict__"):
@@ -79,11 +104,31 @@ class JSONSerializable:
 
 
 class Resolver(Protocol):
-    def apply(self, target: Resolvable) -> None: ...
+    """Protocol for objects that apply resolution to Resolvable targets."""
+
+    def apply(self, target: Resolvable) -> None:
+        """Apply resolution to a single Resolvable target.
+
+        Args:
+            target: The Resolvable to resolve.
+
+        """
+        ...
 
 
 class Resolvable:
+    """Mixin for objects that can be resolved by a Resolver (e.g. resolve keys, refs)."""
+
     def resolve(self, resolver: Resolver) -> None:
+        """Apply resolver to this instance and recursively to resolver_targets.
+
+        Args:
+            resolver: Resolver with an apply() method.
+
+        Raises:
+            ValueError: If resolver has no apply() method or apply is not callable.
+
+        """
         if not hasattr(resolver, "apply"):
             raise ValueError("this resolver does not have apply() method")
         if not callable(resolver.apply):
@@ -108,10 +153,30 @@ class Resolvable:
 
     @property
     def resolver_targets(self) -> list[Resolvable | str] | None:
+        """Return child Resolvable objects; str entries are skipped.
+
+        Returns:
+            List of child Resolvable instances, or None.
+
+        Raises:
+            NotImplementedError: Subclasses must implement this property.
+
+        """
         raise NotImplementedError
 
 
 class LoadType:
+    """Constants for load target types (project, collection, role, playbook, taskfile).
+
+    Attributes:
+        PROJECT: Project load type.
+        COLLECTION: Collection load type.
+        ROLE: Role load type.
+        PLAYBOOK: Playbook load type.
+        TASKFILE: Taskfile load type.
+        UNKNOWN: Unknown load type.
+    """
+
     PROJECT = "project"
     COLLECTION = "collection"
     ROLE = "role"
@@ -122,6 +187,28 @@ class LoadType:
 
 @dataclass
 class Load(JSONSerializable):
+    """Load metadata for a project, collection, role, playbook, or taskfile scan target.
+
+    Attributes:
+        target_name: Human-readable name of the load target.
+        target_type: One of project, collection, role, playbook, taskfile.
+        path: Filesystem path to the target.
+        loader_version: Version of the loader that produced this load.
+        playbook_yaml: Raw YAML of playbook content when applicable.
+        playbook_only: Whether only playbook content was loaded.
+        taskfile_yaml: Raw YAML of taskfile content when applicable.
+        taskfile_only: Whether only taskfile content was loaded.
+        base_dir: Base directory for the load.
+        include_test_contents: Whether to include test content in the load.
+        yaml_label_list: Labels assigned to YAML files.
+        timestamp: When the load was produced.
+        roles: List of role paths.
+        playbooks: List of playbook paths.
+        taskfiles: List of taskfile paths.
+        modules: List of module paths.
+        files: List of other file paths.
+    """
+
     target_name: str = ""
     target_type: str = ""
     path: str = ""
@@ -145,19 +232,50 @@ class Load(JSONSerializable):
 
 @dataclass
 class Object(JSONSerializable):
+    """Base object with type and key; used for playbook/role/task/module specs.
+
+    Attributes:
+        type: Kind of object (e.g. module, role, playbook).
+        key: Unique key for lookup and resolution.
+    """
+
     type: str = ""
     key: str = ""
 
 
 @dataclass
 class ObjectList(JSONSerializable):
+    """List of Object/CallObject with key-indexed dict for lookup.
+
+    Attributes:
+        items: Ordered list of Object or CallObject instances.
+    """
+
     items: list[Object | CallObject] = field(default_factory=list)
     _dict: dict[str, Object | CallObject] = field(default_factory=dict)
 
     def dump(self, fpath: str = "") -> str:
+        """Return JSON string; optionally write to fpath.
+
+        Args:
+            fpath: Optional path to write JSON to disk.
+
+        Returns:
+            Newline-separated JSON string.
+
+        """
         return self.to_json(fpath=fpath)
 
     def to_json(self, fpath: str = "") -> str:
+        """Serialize items to newline-separated JSON; optionally write to fpath.
+
+        Args:
+            fpath: Optional path to write JSON to disk.
+
+        Returns:
+            Newline-separated JSON string.
+
+        """
         lines: list[str] = [jsonpickle.encode(obj, make_refs=False) for obj in self.items]
         json_str = "\n".join(lines)
         if fpath != "":
@@ -165,10 +283,26 @@ class ObjectList(JSONSerializable):
         return json_str
 
     def to_one_line_json(self) -> str:
+        """Serialize items to a single JSON string.
+
+        Returns:
+            Single-line JSON string of all items.
+
+        """
         return str(jsonpickle.encode(self.items, make_refs=False))
 
     @classmethod
     def from_json(cls: type[ObjectList], json_str: str = "", fpath: str = "") -> ObjectList:
+        """Load instance from JSON string or from file at fpath.
+
+        Args:
+            json_str: Newline-separated JSON string.
+            fpath: Path to read JSON from (used if json_str is empty).
+
+        Returns:
+            ObjectList populated from the JSON.
+
+        """
         instance = cls()
         if fpath != "":
             json_str = Path(fpath).read_text()
@@ -179,12 +313,28 @@ class ObjectList(JSONSerializable):
         return instance
 
     def add(self, obj: Object | CallObject, update_dict: bool = True) -> None:
+        """Append an item and optionally update the key index.
+
+        Args:
+            obj: Object or CallObject to add.
+            update_dict: Whether to add the item to the key index immediately.
+
+        """
         self.items.append(obj)
         if update_dict:
             self._add_dict_item(obj)
         return
 
     def merge(self, obj_list: ObjectList) -> None:
+        """Extend this list with items from another ObjectList.
+
+        Args:
+            obj_list: ObjectList whose items to append.
+
+        Raises:
+            ValueError: If obj_list is not an ObjectList instance.
+
+        """
         if not isinstance(obj_list, ObjectList):
             raise ValueError(f"obj_list must be an instance of ObjectList, but got {type(obj_list).__name__}")
         self.items.extend(obj_list.items)
@@ -192,37 +342,100 @@ class ObjectList(JSONSerializable):
         return
 
     def find_by_attr(self, key: str, val: YAMLValue) -> list[Object | CallObject]:
+        """Return items whose attribute key equals val.
+
+        Args:
+            key: Attribute name to check.
+            val: Expected value.
+
+        Returns:
+            Matching items.
+
+        """
         found = [obj for obj in self.items if obj.__dict__.get(key, None) == val]
         return found
 
     def find_by_type(self, type_name: str) -> list[Object | CallObject]:
+        """Return items whose type attribute equals type_name.
+
+        Args:
+            type_name: Type string to match.
+
+        Returns:
+            Matching items.
+
+        """
         return [obj for obj in self.items if hasattr(obj, "type") and obj.type == type_name]
 
     def find_by_key(self, key: str) -> Object | CallObject | None:
+        """Return the item with the given key or None.
+
+        Args:
+            key: Unique key to look up.
+
+        Returns:
+            Matching item or None.
+
+        """
         return self._dict.get(key, None)
 
     def contains(self, key: str = "", obj: Object | None = None) -> bool:
+        """Return True if an item with the given key (or obj.key) exists.
+
+        Args:
+            key: Key string to search for.
+            obj: Alternatively, an Object whose key is used.
+
+        Returns:
+            True if found.
+
+        """
         if obj is not None:
             key = obj.key
         return self.find_by_key(key) is not None
 
     def update_dict(self) -> None:
+        """Rebuild the key index from items."""
         self._update_dict()
 
     def _update_dict(self) -> None:
+        """Rebuild _dict from current items."""
         for obj in self.items:
             self._dict[obj.key] = obj
 
     def _add_dict_item(self, obj: Object | CallObject) -> None:
+        """Add a single item to the key index.
+
+        Args:
+            obj: Item to index.
+
+        """
         self._dict[obj.key] = obj
 
     @property
     def resolver_targets(self) -> list[Object | CallObject]:
+        """Return items for resolver traversal.
+
+        Returns:
+            The items list.
+
+        """
         return self.items
 
 
 @dataclass
 class CallObject(JSONSerializable):
+    """Object representing a call (e.g. module call) with spec, caller, depth, node_id.
+
+    Attributes:
+        type: Kind of call (e.g. modulecall, rolecall).
+        key: Unique key for this call.
+        called_from: Key of the caller (parent call).
+        spec: The Object spec being invoked.
+        depth: Depth in the call tree.
+        node_id: Dot-separated node id in the tree.
+    """
+
     type: str = ""
     key: str = ""
     called_from: str = ""
@@ -232,6 +445,17 @@ class CallObject(JSONSerializable):
 
     @classmethod
     def from_spec(cls: builtins.type[CallObject], spec: Object, caller: CallObject | None, index: int) -> CallObject:
+        """Build a CallObject from a spec, optional caller, and index (for node_id).
+
+        Args:
+            spec: The Object spec being called.
+            caller: Parent CallObject, or None if root.
+            index: Sibling index for node_id computation.
+
+        Returns:
+            New CallObject linked to spec and caller.
+
+        """
         instance = cls()
         instance.spec = spec
         caller_key = "None"
@@ -252,6 +476,16 @@ class CallObject(JSONSerializable):
 
 
 class RunTargetType:
+    """Constants for run target kinds (playbook, play, role, taskfile, task).
+
+    Attributes:
+        Playbook: Playbook call type.
+        Play: Play call type.
+        Role: Role call type.
+        TaskFile: Taskfile call type.
+        Task: Task call type.
+    """
+
     Playbook = "playbookcall"
     Play = "playcall"
     Role = "rolecall"
@@ -261,36 +495,96 @@ class RunTargetType:
 
 @dataclass
 class RunTarget:
+    """Base for a single run target (playbook/play/role/taskfile/task) with annotations.
+
+    Attributes:
+        type: Kind of run target (playbookcall, playcall, rolecall, taskfilecall, taskcall).
+        spec: Underlying Object (from CallObject in subclasses).
+        key: Unique key for this target.
+        annotations: List of annotations (e.g. risk annotations) on this target.
+    """
+
     type: str = ""
     spec: Object = field(default_factory=Object)  # from CallObject in subclasses
     key: str = ""
     annotations: list[Annotation] = field(default_factory=list)
 
     def file_info(self) -> tuple[str, str | None]:
+        """Return (defined_in path, line info) for this target's spec.
+
+        Returns:
+            Tuple of (file path, line info string or None).
+
+        """
         file = getattr(self.spec, "defined_in", "") if self.spec else ""
         lines: str | None = None
         return file, lines
 
     def has_annotation_by_condition(self, cond: AnnotationCondition) -> bool:
+        """Return True if any annotation matches the condition.
+
+        Args:
+            cond: Condition to test against annotations.
+
+        Returns:
+            True if any annotation matches.
+
+        """
         return False
 
     def get_annotation_by_condition(self, cond: AnnotationCondition) -> Annotation | RiskAnnotation | None:
+        """Return the first annotation matching the condition or None.
+
+        Args:
+            cond: Condition to test against annotations.
+
+        Returns:
+            First matching annotation or None.
+
+        """
         return None
 
 
 @dataclass
 class RunTargetList:
+    """List of RunTarget with iteration and indexing.
+
+    Attributes:
+        items: List of RunTarget instances.
+    """
+
     items: list[RunTarget] = field(default_factory=list)
 
     _i: int = 0
 
     def __len__(self) -> int:
+        """Return number of items.
+
+        Returns:
+            Count of RunTarget items.
+
+        """
         return len(self.items)
 
     def __iter__(self) -> RunTargetList:
+        """Return iterator over items.
+
+        Returns:
+            Self as the iterator.
+
+        """
         return self
 
     def __next__(self) -> RunTarget:
+        """Return next item; raises StopIteration when exhausted.
+
+        Returns:
+            Next RunTarget.
+
+        Raises:
+            StopIteration: When all items have been yielded.
+
+        """
         if self._i == len(self.items):
             self._i = 0
             raise StopIteration()
@@ -299,11 +593,38 @@ class RunTargetList:
         return item
 
     def __getitem__(self, i: int) -> RunTarget:
+        """Return item at index i.
+
+        Args:
+            i: Zero-based index.
+
+        Returns:
+            RunTarget at position i.
+
+        """
         return self.items[i]
 
 
 @dataclass
 class File:
+    """Represents a file (playbook, task, vars) with path, body, label, and annotations.
+
+    Attributes:
+        type: Always "file".
+        name: File path or name.
+        key: Unique key for lookup.
+        local_key: Local key within role/collection.
+        role: Role name if file belongs to a role.
+        collection: Collection name if file belongs to a collection.
+        body: Raw file content.
+        data: Parsed YAML/value when applicable.
+        encrypted: Whether content is encrypted.
+        error: Error message if load failed.
+        label: Classification (playbook, taskfile, others).
+        defined_in: Path where this file is defined.
+        annotations: Map of annotation key to value.
+    """
+
     type: str = "file"
     name: str = ""
     key: str = ""
@@ -321,18 +642,39 @@ class File:
     annotations: dict[str, YAMLValue] = field(default_factory=dict)
 
     def set_key(self) -> None:
+        """Set key from name/role/collection via keyutil."""
         set_file_key(self)
 
     def children_to_key(self) -> File:
+        """Return self (File has no keyed children).
+
+        Returns:
+            This File instance.
+
+        """
         return self
 
     @property
     def resolver_targets(self) -> None:
+        """No child targets to resolve."""
         return None
 
 
 @dataclass
 class ModuleArgument:
+    """Ansible module argument metadata (name, type, default, required, etc.).
+
+    Attributes:
+        name: Argument name.
+        type: Argument type (e.g. str, list).
+        elements: Type of list elements when type is list.
+        default: Default value.
+        required: Whether the argument is required.
+        description: Help text for the argument.
+        choices: Allowed values when constrained.
+        aliases: Alternative names for this argument.
+    """
+
     name: str = ""
     type: str | None = None
     elements: str | None = None
@@ -343,6 +685,12 @@ class ModuleArgument:
     aliases: list[str] = field(default_factory=list)
 
     def available_keys(self) -> list[str]:
+        """Return name plus aliases for matching user-provided keys.
+
+        Returns:
+            List of valid key strings for this argument.
+
+        """
         keys = [self.name]
         if self.aliases:
             keys.extend(self.aliases)
@@ -351,6 +699,25 @@ class ModuleArgument:
 
 @dataclass
 class Module(Object, Resolvable):
+    """Ansible module spec: FQCN, args, documentation, defined_in.
+
+    Attributes:
+        type: Always "module".
+        name: Short or FQCN name.
+        fqcn: Fully qualified collection name.
+        key: Unique key for lookup.
+        local_key: Local key within collection/role.
+        collection: Collection name.
+        role: Role name if from a role.
+        documentation: Module DOCUMENTATION string.
+        examples: Module EXAMPLES string.
+        arguments: List of ModuleArgument.
+        defined_in: Path to the module file.
+        builtin: Whether this is a builtin module.
+        used_in: List of paths where this module is used (resolved later).
+        annotations: Map of annotation key to value.
+    """
+
     type: str = "module"
     name: str = ""
     fqcn: str = ""
@@ -368,23 +735,60 @@ class Module(Object, Resolvable):
     annotations: dict[str, YAMLValue] = field(default_factory=dict)
 
     def set_key(self) -> None:
+        """Set key from name/collection via keyutil."""
         set_module_key(self)
 
     def children_to_key(self) -> Module:
+        """Return self (Module has no keyed children).
+
+        Returns:
+            This Module instance.
+
+        """
         return self
 
     @property
     def resolver_targets(self) -> None:
+        """No child targets to resolve."""
         return None
 
 
 @dataclass
 class ModuleCall(CallObject, Resolvable):
+    """Call object for a module invocation.
+
+    Attributes:
+        type: Always "modulecall".
+
+    """
+
     type: str = "modulecall"
 
 
 @dataclass
 class Collection(Object, Resolvable):
+    """Collection spec: playbooks, taskfiles, roles, modules, metadata.
+
+    Attributes:
+        type: Always "collection".
+        name: Collection name (namespace.name).
+        path: Path to the collection root.
+        key: Unique key for lookup.
+        local_key: Local key.
+        metadata: Collection metadata dict.
+        meta_runtime: Runtime meta dict.
+        files: Files dict.
+        playbooks: List of Playbook or key.
+        taskfiles: List of TaskFile or key.
+        roles: List of Role or key.
+        modules: List of Module or key.
+        dependency: Dependency info.
+        requirements: Requirements info.
+        annotations: Map of annotation key to value.
+        variables: Variables dict.
+        options: Options dict.
+    """
+
     type: str = "collection"
     name: str = ""
     path: str = ""
@@ -406,9 +810,16 @@ class Collection(Object, Resolvable):
     options: YAMLDict = field(default_factory=dict)
 
     def set_key(self) -> None:
+        """Set key and sort playbooks/taskfiles/roles/modules by key."""
         set_collection_key(self)
 
     def children_to_key(self) -> Collection:
+        """Sort child refs by key and return self.
+
+        Returns:
+            This Collection instance with children sorted.
+
+        """
         module_keys = [m.key if isinstance(m, Module) else m for m in self.modules]
         self.modules = cast(list["Module | str"], sorted(module_keys))
 
@@ -424,6 +835,12 @@ class Collection(Object, Resolvable):
 
     @property
     def resolver_targets(self) -> list[Resolvable | str]:
+        """Playbooks, taskfiles, roles, modules (may be keys until resolved).
+
+        Returns:
+            Combined list of child objects or key strings.
+
+        """
         return cast(
             list["Resolvable" | str],
             list(self.playbooks) + list(self.taskfiles) + list(self.roles) + list(self.modules),
@@ -432,52 +849,171 @@ class Collection(Object, Resolvable):
 
 @dataclass
 class CollectionCall(CallObject, Resolvable):
+    """Call object for a collection invocation.
+
+    Attributes:
+        type: Always "collectioncall".
+
+    """
+
     type: str = "collectioncall"
 
 
 @dataclass
 class TaskCallsInTree(JSONSerializable):
+    """Root key and list of TaskCall in a tree.
+
+    Attributes:
+        root_key: Key of the root node in the tree.
+        taskcalls: Ordered list of TaskCall instances in the tree.
+
+    """
+
     root_key: str = ""
     taskcalls: list[TaskCall] = field(default_factory=list)
 
 
 @dataclass
 class VariablePrecedence:
+    """Variable precedence level (name and order for Ansible precedence).
+
+    Attributes:
+        name: Precedence level name (e.g. role_defaults).
+        order: Numeric order for comparison; higher wins.
+
+    """
+
     name: str = ""
     order: int = -1
 
     def __str__(self) -> str:
+        """Return precedence name.
+
+        Returns:
+            The name string.
+
+        """
         return self.name
 
     def __repr__(self) -> str:
+        """Return precedence name.
+
+        Returns:
+            The name string.
+
+        """
         return self.name
 
     def __eq__(self, __o: object) -> bool:
+        """Compare by order.
+
+        Args:
+            __o: Other object to compare.
+
+        Returns:
+            True if orders are equal, NotImplemented if types differ.
+
+        """
         if not isinstance(__o, VariablePrecedence):
             return NotImplemented
         return self.order == __o.order
 
     def __ne__(self, __o: object) -> bool:
+        """Compare by order.
+
+        Args:
+            __o: Other object to compare.
+
+        Returns:
+            True if orders differ.
+
+        """
         return not self.__eq__(__o)
 
     def __lt__(self, __o: object) -> bool:
+        """Compare by order.
+
+        Args:
+            __o: Other object to compare.
+
+        Returns:
+            True if self.order < __o.order.
+
+        """
         if not isinstance(__o, VariablePrecedence):
             return NotImplemented
         return self.order < __o.order
 
     def __le__(self, __o: object) -> bool:
+        """Compare by order.
+
+        Args:
+            __o: Other object to compare.
+
+        Returns:
+            True if self.order <= __o.order.
+
+        """
         if not isinstance(__o, VariablePrecedence):
             return NotImplemented
         return self.__lt__(__o) or self.__eq__(__o)
 
     def __gt__(self, __o: object) -> bool:
+        """Compare by order.
+
+        Args:
+            __o: Other object to compare.
+
+        Returns:
+            True if self.order > __o.order.
+
+        """
         return not self.__le__(__o)
 
     def __ge__(self, __o: object) -> bool:
+        """Compare by order.
+
+        Args:
+            __o: Other object to compare.
+
+        Returns:
+            True if self.order >= __o.order.
+
+        """
         return not self.__lt__(__o)
 
 
 class VariableType:
+    """Ansible variable precedence types (command line, role defaults, play vars, etc.).
+
+    Attributes:
+        Unknown: Unknown variable type.
+        CommandLineValues: Command line values precedence.
+        RoleDefaults: Role defaults precedence.
+        InventoryFileOrScriptGroupVars: Inventory group vars precedence.
+        InventoryGroupVarsAll: Inventory group vars all precedence.
+        PlaybookGroupVarsAll: Playbook group vars all precedence.
+        InventoryGroupVarsAny: Inventory group vars any precedence.
+        PlaybookGroupVarsAny: Playbook group vars any precedence.
+        InventoryFileOrScriptHostVars: Inventory host vars precedence.
+        InventoryHostVarsAny: Inventory host vars any precedence.
+        PlaybookHostVarsAny: Playbook host vars any precedence.
+        HostFacts: Host facts precedence.
+        PlayVars: Play vars precedence.
+        PlayVarsPrompt: Play vars prompt precedence.
+        PlayVarsFiles: Play vars files precedence.
+        RoleVars: Role vars precedence.
+        BlockVars: Block vars precedence.
+        TaskVars: Task vars precedence.
+        IncludeVars: Include vars precedence.
+        SetFacts: Set facts precedence.
+        RegisteredVars: Registered vars precedence.
+        RoleParams: Role params precedence.
+        IncludeParams: Include params precedence.
+        ExtraVars: Extra vars precedence.
+        LoopVars: Loop vars precedence.
+    """
+
     # When resolving variables, sometimes find unknown variables (e.g. undefined variable)
     # so we consider it as one type of variable
     Unknown = VariablePrecedence("unknown", -100)
@@ -519,6 +1055,17 @@ immutable_var_types = [VariableType.LoopVars]
 
 @dataclass
 class Variable:
+    """Single variable with name, value, precedence type, setter, used_in.
+
+    Attributes:
+        name: Variable name.
+        value: Resolved or raw value.
+        type: Variable precedence (e.g. role_defaults, play_vars).
+        elements: Nested variables when value is structured.
+        setter: Task or location that set this variable.
+        used_in: Task or location where this variable is used.
+    """
+
     name: str = ""
     value: YAMLValue = None
     type: VariablePrecedence | None = None
@@ -528,15 +1075,32 @@ class Variable:
 
     @property
     def is_mutable(self) -> bool:
+        """True if this variable can be overridden (not loop/immutable).
+
+        Returns:
+            True if the variable precedence allows override.
+
+        """
         return self.type not in immutable_var_types if self.type else True
 
 
 @dataclass
 class VariableDict:
+    """Map variable name to list of Variable (by precedence)."""
+
     _dict: dict[str, list[Variable]] = field(default_factory=dict)
 
     @staticmethod
     def print_table(data: dict[str, list[Variable]]) -> str:
+        """Format variable data as a tabulate table string.
+
+        Args:
+            data: Map from variable name to list of Variable by precedence.
+
+        Returns:
+            Tabulated string.
+
+        """
         d = VariableDict(_dict=data)
         table = []
         type_labels = []
@@ -567,6 +1131,14 @@ class VariableDict:
 
 
 class ArgumentsType:
+    """Argument container type: simple, list, or dict.
+
+    Attributes:
+        SIMPLE: Simple argument type.
+        LIST: List argument type.
+        DICT: Dict argument type.
+    """
+
     SIMPLE = "simple"
     LIST = "list"
     DICT = "dict"
@@ -574,6 +1146,17 @@ class ArgumentsType:
 
 @dataclass
 class Arguments:
+    """Task/module arguments: raw, vars, resolved/templated value, mutability.
+
+    Attributes:
+        type: One of simple, list, dict.
+        raw: Raw argument value (pre-resolution).
+        vars: List of Variable referenced in the value.
+        resolved: Whether the value has been resolved.
+        templated: Resolved/templated value when applicable.
+        is_mutable: Whether the value contains mutable variable refs.
+    """
+
     type: str = ArgumentsType.SIMPLE
     raw: YAMLValue = None
     vars: list[Variable] = field(default_factory=list)
@@ -582,6 +1165,15 @@ class Arguments:
     is_mutable: bool = False
 
     def get(self, key: str = "") -> Arguments | None:
+        """Return a sub-Arguments for the given key (or self if key is empty).
+
+        Args:
+            key: Sub-key into the raw dict; empty returns self-level.
+
+        Returns:
+            Sub-Arguments or None if key is not present.
+
+        """
         sub_raw: YAMLValue = None
         sub_templated: YAMLValue = None
         if key == "":
@@ -626,6 +1218,14 @@ class Arguments:
 
 
 class LocationType:
+    """Location kind: file, dir, or url.
+
+    Attributes:
+        FILE: File location type.
+        DIR: Directory location type.
+        URL: URL location type.
+    """
+
     FILE = "file"
     DIR = "dir"
     URL = "url"
@@ -633,6 +1233,14 @@ class LocationType:
 
 @dataclass
 class Location:
+    """Path/URL location with optional variable refs.
+
+    Attributes:
+        type: One of file, dir, url.
+        value: Path or URL string.
+        vars: Variables referenced in the value.
+    """
+
     type: str = ""
     value: str = ""
     vars: list[Variable] = field(default_factory=list)
@@ -640,24 +1248,63 @@ class Location:
     _args: Arguments | None = None
 
     def __post_init__(self) -> None:
+        """Populate value and vars from _args if provided."""
         if self._args:
             self.value = str(self._args.raw) if self._args.raw is not None else ""
             self.vars = self._args.vars
 
     @property
     def is_mutable(self) -> bool:
+        """True if location has variable refs.
+
+        Returns:
+            True if vars is non-empty.
+
+        """
         return len(self.vars) > 0
 
     @property
     def is_empty(self) -> bool:
+        """True if type and value are empty.
+
+        Returns:
+            True if both type and value are falsy.
+
+        """
         return not self.type and not self.value
 
     def is_inside(self, loc: Location) -> bool:
+        """Return True if this location is inside the given location.
+
+        Args:
+            loc: Outer location to check against.
+
+        Returns:
+            True if this location's path starts with loc's path.
+
+        Raises:
+            ValueError: If loc is not a Location instance.
+
+        """
         if not isinstance(loc, Location):
             raise ValueError(f"is_inside() expect Location but given {type(loc)}")
         return loc.contains(self)
 
     def contains(self, target: Location | list[Location], any_mode: bool = False, all_mode: bool = True) -> bool:
+        """Return True if target path is under this location; list uses any_mode or all_mode.
+
+        Args:
+            target: Single Location or list of Locations.
+            any_mode: If True, return True when any target is contained.
+            all_mode: If True (default), return True only when all targets are contained.
+
+        Returns:
+            True if target(s) satisfy the containment check.
+
+        Raises:
+            ValueError: If target is invalid type or mode is invalid.
+
+        """
         if isinstance(target, list):
             if any_mode:
                 return self.contains_any(target_list=target)
@@ -675,9 +1322,27 @@ class Location:
         return bool(target_path.startswith(my_path))
 
     def contains_any(self, target_list: list[Location]) -> bool:
+        """Return True if this location contains any of the targets.
+
+        Args:
+            target_list: Locations to check.
+
+        Returns:
+            True if at least one target is contained.
+
+        """
         return any(self.contains(target) for target in target_list)
 
     def contains_all(self, target_list: list[Location]) -> bool:
+        """Return True if this location contains all of the targets.
+
+        Args:
+            target_list: Locations to check.
+
+        Returns:
+            True if every target is contained.
+
+        """
         count = 0
         for target in target_list:
             if self.contains(target):
@@ -686,11 +1351,21 @@ class Location:
 
 
 class AnnotationDetail:
-    pass
+    """Base for risk annotation detail (transfer, package install, file change, etc.)."""
 
 
 @dataclass
 class NetworkTransferDetail(AnnotationDetail):
+    """Source and destination locations for network transfer annotations.
+
+    Attributes:
+        src: Source Location.
+        dest: Destination Location.
+        is_mutable_src: True if src contains variable refs.
+        is_mutable_dest: True if dest contains variable refs.
+
+    """
+
     src: Location | None = None
     dest: Location | None = None
     is_mutable_src: bool = False
@@ -700,6 +1375,7 @@ class NetworkTransferDetail(AnnotationDetail):
     _dest_arg: Arguments | None = None
 
     def __post_init__(self) -> None:
+        """Build src/dest Locations from _src_arg/_dest_arg if provided."""
         if self._src_arg:
             self.src = Location(_args=self._src_arg)
             if self._src_arg.is_mutable:
@@ -713,18 +1389,35 @@ class NetworkTransferDetail(AnnotationDetail):
 
 @dataclass
 class InboundTransferDetail(NetworkTransferDetail):
+    """Inbound transfer (e.g. get_url) annotation detail."""
+
     def __post_init__(self) -> None:
+        """Delegate to NetworkTransferDetail.__post_init__."""
         super().__post_init__()
 
 
 @dataclass
 class OutboundTransferDetail(NetworkTransferDetail):
+    """Outbound transfer (e.g. copy) annotation detail."""
+
     def __post_init__(self) -> None:
+        """Delegate to NetworkTransferDetail.__post_init__."""
         super().__post_init__()
 
 
 @dataclass
 class PackageInstallDetail(AnnotationDetail):
+    """Package install (yum, dnf, apt) annotation: pkg, version, options.
+
+    Attributes:
+        pkg: Package name or Arguments.
+        version: Version string, Arguments, or list of Variables.
+        is_mutable_pkg: True if pkg contains variable refs.
+        disable_validate_certs: True if validate_certs is disabled.
+        allow_downgrade: True if allow_downgrade is set.
+
+    """
+
     pkg: str | Arguments = ""
     version: str | Arguments | list[Variable] = ""
     is_mutable_pkg: bool = False
@@ -737,6 +1430,7 @@ class PackageInstallDetail(AnnotationDetail):
     _validate_certs_arg: Arguments | None = None
 
     def __post_init__(self) -> None:
+        """Build pkg/version from _pkg_arg/_version_arg if provided."""
         if self._pkg_arg:
             self.pkg = cast(str | Arguments, self._pkg_arg.raw)
             if self._pkg_arg.is_mutable:
@@ -751,6 +1445,15 @@ class PackageInstallDetail(AnnotationDetail):
 
 @dataclass
 class KeyConfigChangeDetail(AnnotationDetail):
+    """Key/config change (e.g. lineinfile state=absent) annotation detail.
+
+    Attributes:
+        is_deletion: True when state is absent.
+        is_mutable_key: True if key contains variable refs.
+        key: Config key string or list of Variables.
+
+    """
+
     is_deletion: bool = False
     is_mutable_key: bool = False
     key: str | list[Variable] = ""
@@ -759,6 +1462,7 @@ class KeyConfigChangeDetail(AnnotationDetail):
     _state_arg: Arguments | None = None
 
     def __post_init__(self) -> None:
+        """Build key from _key_arg and check deletion state."""
         if self._key_arg:
             self.key = self._key_arg.vars
             if self._key_arg and self._key_arg.is_mutable:
@@ -769,6 +1473,19 @@ class KeyConfigChangeDetail(AnnotationDetail):
 
 @dataclass
 class FileChangeDetail(AnnotationDetail):
+    """File change (path, src, mode, state, unsafe_write) annotation detail.
+
+    Attributes:
+        path: Destination path Location.
+        src: Source path Location.
+        is_mutable_path: True if path has variable refs.
+        is_mutable_src: True if src has variable refs.
+        is_unsafe_write: True when unsafe_writes is enabled.
+        is_deletion: True when state is absent.
+        is_insecure_permissions: True when mode is 0777 or 1777.
+
+    """
+
     path: Location | None = None
     src: Location | None = None
     is_mutable_path: bool = False
@@ -784,6 +1501,7 @@ class FileChangeDetail(AnnotationDetail):
     _unsafe_write_arg: Arguments | None = None
 
     def __post_init__(self) -> None:
+        """Build path/src Locations and check mode/state/unsafe_writes."""
         if self._mode_arg and self._mode_arg.raw in ["1777", "0777"]:
             self.is_insecure_permissions = True
         if self._state_arg and self._state_arg.raw == "absent":
@@ -806,13 +1524,28 @@ non_execution_programs: list[str] = ["tar", "gunzip", "unzip", "mv", "cp"]
 
 @dataclass
 class CommandExecDetail(AnnotationDetail):
+    """Command execution annotation: command args and extracted exec file locations.
+
+    Attributes:
+        command: Arguments wrapping the shell/command string.
+        exec_files: Locations of executable files parsed from the command.
+
+    """
+
     command: Arguments | None = None
     exec_files: list[Location] = field(default_factory=list)
 
     def __post_init__(self) -> None:
+        """Parse command into exec_files on construction."""
         self.exec_files = self.extract_exec_files()
 
     def extract_exec_files(self) -> list[Location]:
+        """Parse command arguments and extract executable file Locations.
+
+        Returns:
+            List of Location pointing to extracted exec files.
+
+        """
         cmd_str: str | list[str] | YAMLDict = cast(
             "str | list[str] | YAMLDict", "" if not self.command else (self.command.raw or "")
         )
@@ -871,6 +1604,15 @@ class CommandExecDetail(AnnotationDetail):
 
 
 def _convert_to_bool(a: YAMLValue) -> bool | None:
+    """Convert YAML value to bool; supports bool and 'true'/'yes' strings.
+
+    Args:
+        a: Value to convert.
+
+    Returns:
+        Boolean or None if type is unsupported.
+
+    """
     if type(a) is bool:
         return bool(a)
     if type(a) is str:
@@ -880,6 +1622,15 @@ def _convert_to_bool(a: YAMLValue) -> bool | None:
 
 @dataclass
 class Annotation(JSONSerializable):
+    """Base annotation: key, value, rule_id, type.
+
+    Attributes:
+        key: Annotation key.
+        value: Annotation value.
+        rule_id: Rule that produced this annotation.
+        type: Annotation subtype (e.g. variable_annotation, risk_annotation).
+    """
+
     key: str = ""
     value: YAMLValue = None
 
@@ -891,15 +1642,37 @@ class Annotation(JSONSerializable):
 
 @dataclass
 class VariableAnnotation(Annotation):
+    """Annotation for variable usage (option_value from task args).
+
+    Attributes:
+        type: Always "variable_annotation".
+        option_value: Arguments holding the variable reference.
+    """
+
     type: str = "variable_annotation"
     option_value: Arguments = field(default_factory=lambda: Arguments())
 
 
 class RiskType:
-    pass
+    """Base for risk type constants."""
 
 
 class DefaultRiskType(RiskType):
+    """Default risk categories (cmd_exec, inbound, outbound, file_change, etc.).
+
+    Attributes:
+        NONE: No risk.
+        CMD_EXEC: Command execution risk.
+        INBOUND: Inbound transfer risk.
+        OUTBOUND: Outbound transfer risk.
+        FILE_CHANGE: File change risk.
+        SYSTEM_CHANGE: System change risk.
+        NETWORK_CHANGE: Network change risk.
+        CONFIG_CHANGE: Config change risk.
+        PACKAGE_INSTALL: Package install risk.
+        PRIVILEGE_ESCALATION: Privilege escalation risk.
+    """
+
     NONE = ""
     CMD_EXEC = "cmd_exec"
     INBOUND = "inbound_transfer"
@@ -914,6 +1687,13 @@ class DefaultRiskType(RiskType):
 
 @dataclass
 class RiskAnnotation(Annotation, NetworkTransferDetail, CommandExecDetail):
+    """Risk annotation combining base annotation with transfer/exec detail.
+
+    Attributes:
+        type: Always "risk_annotation".
+        risk_type: Category of risk (e.g. cmd_exec, inbound_transfer).
+    """
+
     type: str = "risk_annotation"
     risk_type: str | RiskType = ""
 
@@ -923,6 +1703,16 @@ class RiskAnnotation(Annotation, NetworkTransferDetail, CommandExecDetail):
         risk_type: str | RiskType,
         detail: AnnotationDetail,
     ) -> RiskAnnotation:
+        """Build a RiskAnnotation from risk_type and detail (copies detail attrs).
+
+        Args:
+            risk_type: Risk category string or RiskType.
+            detail: AnnotationDetail whose attributes are copied.
+
+        Returns:
+            New RiskAnnotation instance.
+
+        """
         anno = cls()
         anno.risk_type = risk_type
         # Walk MRO to collect annotations from all parent classes of the detail
@@ -937,6 +1727,15 @@ class RiskAnnotation(Annotation, NetworkTransferDetail, CommandExecDetail):
         return anno
 
     def equal_to(self, anno: RiskAnnotation) -> bool:
+        """Return True if type, risk_type, and __dict__ match the other annotation.
+
+        Args:
+            anno: Other RiskAnnotation to compare.
+
+        Returns:
+            True if fully equal.
+
+        """
         if self.type != anno.type:
             return False
         if self.risk_type != anno.risk_type:
@@ -948,30 +1747,86 @@ class RiskAnnotation(Annotation, NetworkTransferDetail, CommandExecDetail):
 
 @dataclass
 class FindCondition:
+    """Condition for matching risk annotations in search."""
+
     def check(self, anno: RiskAnnotation) -> bool:
+        """Return True if the annotation matches this condition.
+
+        Args:
+            anno: Annotation to test.
+
+        Returns:
+            True if matched.
+
+        Raises:
+            NotImplementedError: Subclasses must implement this method.
+
+        """
         raise NotImplementedError
 
 
 @dataclass
 class AnnotationCondition:
+    """Composite condition: risk type and optional attribute checks.
+
+    Attributes:
+        type: Risk type to match.
+        attr_conditions: List of (attr_name, expected_value) to match.
+    """
+
     type: str | RiskType = ""
     attr_conditions: list[tuple[str, YAMLValue]] = field(default_factory=list)
 
     def risk_type(self, risk_type: str | RiskType) -> AnnotationCondition:
+        """Set risk type and return self for chaining.
+
+        Args:
+            risk_type: Risk category to match.
+
+        Returns:
+            Self for chaining.
+
+        """
         self.type = risk_type
         return self
 
     def attr(self, key: str, val: YAMLValue) -> AnnotationCondition:
+        """Add an attribute condition and return self for chaining.
+
+        Args:
+            key: Attribute name.
+            val: Expected value.
+
+        Returns:
+            Self for chaining.
+
+        """
         self.attr_conditions.append((key, val))
         return self
 
 
 @dataclass
 class AttributeCondition(FindCondition):
+    """Match annotation by attribute name and optional value.
+
+    Attributes:
+        attr: Attribute name to check.
+        result: Expected value (None means "truthy").
+    """
+
     attr: str | None = None
     result: YAMLValue = None
 
     def check(self, anno: RiskAnnotation) -> bool:
+        """Return True if the annotation attribute matches.
+
+        Args:
+            anno: Annotation to test.
+
+        Returns:
+            True if attr value matches expected result.
+
+        """
         if self.attr and hasattr(anno, self.attr):
             anno_value = getattr(anno, self.attr, None)
             if anno_value == self.result:
@@ -982,16 +1837,46 @@ class AttributeCondition(FindCondition):
 
 
 class _RiskAnnotationChecker(Protocol):
-    def __call__(self, anno: RiskAnnotation, **kwargs: YAMLValue) -> bool | None: ...
+    """Protocol for checker callables that take a RiskAnnotation and return bool or None."""
+
+    def __call__(self, anno: RiskAnnotation, **kwargs: YAMLValue) -> bool | None:
+        """Check a risk annotation.
+
+        Args:
+            anno: Annotation to check.
+            **kwargs: Extra arguments for the checker.
+
+        Returns:
+            True/False/None result.
+
+        """
+        ...
 
 
 @dataclass
 class FunctionCondition(FindCondition):
+    """Match annotation by calling a checker function with optional args.
+
+    Attributes:
+        func: Callable that takes (anno, **kwargs) and returns bool or None.
+        args: Kwargs to pass to func.
+        result: Expected return value for a match.
+    """
+
     func: _RiskAnnotationChecker | None = None
     args: YAMLDict | YAMLList | None = None
     result: bool | None = None
 
     def check(self, anno: RiskAnnotation) -> bool:
+        """Return True if func(anno) equals expected result.
+
+        Args:
+            anno: Annotation to test.
+
+        Returns:
+            True if func returns expected result.
+
+        """
         if self.func is not None and callable(self.func):
             kwargs: YAMLDict = self.args if isinstance(self.args, dict) else {}
             result = self.func(anno, **kwargs)
@@ -1002,14 +1887,35 @@ class FunctionCondition(FindCondition):
 
 @dataclass
 class RiskAnnotationList:
+    """List of RiskAnnotation with iteration, after, filter, and find helpers.
+
+    Attributes:
+        items: List of RiskAnnotation instances.
+    """
+
     items: list[RiskAnnotation] = field(default_factory=list)
 
     _i: int = 0
 
     def __iter__(self) -> RiskAnnotationList:
+        """Return iterator over items.
+
+        Returns:
+            Self as the iterator.
+
+        """
         return self
 
     def __next__(self) -> RiskAnnotation:
+        """Return next item; raises StopIteration when exhausted.
+
+        Returns:
+            Next RiskAnnotation.
+
+        Raises:
+            StopIteration: When all items have been yielded.
+
+        """
         if self._i == len(self.items):
             self._i = 0
             raise StopIteration()
@@ -1018,9 +1924,27 @@ class RiskAnnotationList:
         return anno
 
     def after(self, anno: RiskAnnotation) -> RiskAnnotationList:
+        """Return new list containing items after the given annotation.
+
+        Args:
+            anno: Annotation to find; items from this one onward are returned.
+
+        Returns:
+            New RiskAnnotationList starting from anno.
+
+        """
         return get_annotations_after(self, anno)
 
     def filter(self, risk_type: str | RiskType = "") -> RiskAnnotationList:
+        """Return new list filtered by risk_type (or copy if empty).
+
+        Args:
+            risk_type: Risk category to keep; empty keeps all.
+
+        Returns:
+            Filtered RiskAnnotationList.
+
+        """
         current = self
         if risk_type:
             current = filter_annotations_by_type(current, risk_type)
@@ -1031,10 +1955,33 @@ class RiskAnnotationList:
         risk_type: str | RiskType = "",
         condition: FindCondition | list[FindCondition] | None = None,
     ) -> RiskAnnotationList:
+        """Return new list of annotations matching risk_type and condition.
+
+        Args:
+            risk_type: Risk category to match.
+            condition: Single or list of FindConditions.
+
+        Returns:
+            Matching RiskAnnotationList.
+
+        """
         return search_risk_annotations(self, risk_type, condition)
 
 
 def get_annotations_after(anno_list: RiskAnnotationList, anno: RiskAnnotation) -> RiskAnnotationList:
+    """Return a new list with all items after the first matching annotation.
+
+    Args:
+        anno_list: Source list.
+        anno: Annotation to find.
+
+    Returns:
+        New RiskAnnotationList from anno onward.
+
+    Raises:
+        ValueError: If anno is not found in anno_list.
+
+    """
     sub_list = []
     found = False
     for anno_i in anno_list:
@@ -1048,6 +1995,16 @@ def get_annotations_after(anno_list: RiskAnnotationList, anno: RiskAnnotation) -
 
 
 def filter_annotations_by_type(anno_list: RiskAnnotationList, risk_type: str | RiskType) -> RiskAnnotationList:
+    """Return a new list containing only annotations with the given risk_type.
+
+    Args:
+        anno_list: Source list.
+        risk_type: Risk category to keep.
+
+    Returns:
+        Filtered RiskAnnotationList.
+
+    """
     sub_list: list[RiskAnnotation] = []
     for anno_i in anno_list:
         if anno_i.risk_type == risk_type:
@@ -1060,6 +2017,17 @@ def search_risk_annotations(
     risk_type: str | RiskType = "",
     condition: FindCondition | list[FindCondition] | None = None,
 ) -> RiskAnnotationList:
+    """Return a new list of annotations matching risk_type and condition(s).
+
+    Args:
+        anno_list: Source list to search.
+        risk_type: Risk category to match; empty matches all.
+        condition: Single or list of FindConditions.
+
+    Returns:
+        Matching RiskAnnotationList.
+
+    """
     matched = []
     for risk_anno in anno_list:
         if not isinstance(risk_anno, RiskAnnotation):
@@ -1077,6 +2045,14 @@ def search_risk_annotations(
 
 
 class ExecutableType:
+    """Executable target type: Module, Role, or TaskFile.
+
+    Attributes:
+        MODULE_TYPE: Module executable type.
+        ROLE_TYPE: Role executable type.
+        TASKFILE_TYPE: Taskfile executable type.
+    """
+
     MODULE_TYPE = "Module"
     ROLE_TYPE = "Role"
     TASKFILE_TYPE = "TaskFile"
@@ -1084,6 +2060,16 @@ class ExecutableType:
 
 @dataclass
 class BecomeInfo:
+    """Become (privilege escalation) options: enabled, user, method, flags.
+
+    Attributes:
+        enabled: Whether become is enabled.
+        become: Raw become value.
+        user: become_user value.
+        method: become_method (e.g. sudo).
+        flags: become_flags.
+    """
+
     enabled: bool = False
     become: str = ""
     user: str = ""
@@ -1092,6 +2078,15 @@ class BecomeInfo:
 
     @staticmethod
     def from_options(options: YAMLDict) -> BecomeInfo | None:
+        """Build BecomeInfo from play/task options dict; None if no become key.
+
+        Args:
+            options: Dict of play/task options.
+
+        Returns:
+            BecomeInfo instance or None if no become key.
+
+        """
         if "become" in options:
             become = options.get("become", "")
             enabled = False
@@ -1106,6 +2101,39 @@ class BecomeInfo:
 
 @dataclass
 class Task(Object, Resolvable):
+    """Single task: module, options, become, variables, yaml_lines, jsonpath, etc.
+
+    Attributes:
+        type: Always "task".
+        name: Task name (optional).
+        module: Module FQCN or short name.
+        index: Task index in the play.
+        play_index: Play index.
+        defined_in: Path to the file defining this task.
+        key: Unique key for lookup.
+        local_key: Local key within role/collection.
+        role: Role name if in a role.
+        collection: Collection name.
+        become: Privilege escalation info.
+        variables: Variables available to the task.
+        module_defaults: Module defaults applied.
+        registered_variables: Registered vars from previous tasks.
+        set_facts: Set_fact vars from this task.
+        loop: Loop config.
+        options: Task-level options (when, tags, etc.).
+        module_options: Module argument dict.
+        executable: Executable name (module/role/taskfile).
+        executable_type: One of Module, Role, TaskFile.
+        collections_in_play: Collections in scope.
+        yaml_lines: Raw YAML fragment for this task.
+        line_num_in_file: [begin, end] line numbers.
+        jsonpath: Jsonpath to this task in the playbook.
+        resolved_name: FQCN or path after resolution.
+        possible_candidates: List of (fqcn, defined_in_path) for resolution.
+        module_info: Resolved module metadata.
+        include_info: Include role/taskfile metadata.
+    """
+
     type: str = "task"
     name: str | None = ""
     module: str = ""
@@ -1152,6 +2180,18 @@ class Task(Object, Resolvable):
         previous_task_line: int = -1,
         jsonpath: str = "",
     ) -> None:
+        """Set yaml_lines and line_num_in_file from file or jsonpath/task match.
+
+        Args:
+            fullpath: Path to the file containing the task.
+            yaml_lines: Raw YAML string (used if fullpath not provided).
+            task_name: Task name to match in the YAML.
+            module_name: Module FQCN or short name to match.
+            module_options: Module args dict or string to match.
+            task_options: Task-level options for reconstruction.
+            previous_task_line: Skip lines before this line number (1-based).
+            jsonpath: Jsonpath to locate the task block directly.
+        """
         if not task_name and not module_options:
             return
 
@@ -1229,6 +2269,15 @@ class Task(Object, Resolvable):
             if reconstructed_yaml:
 
                 def remove_comment_lines(s: str) -> str:
+                    """Strip lines starting with # from a YAML string.
+
+                    Args:
+                        s: Multi-line string.
+
+                    Returns:
+                        String with comment lines removed.
+
+                    """
                     lines = s.splitlines()
                     updated = []
                     for line in lines:
@@ -1238,6 +2287,16 @@ class Task(Object, Resolvable):
                     return "\n".join(updated)
 
                 def calc_dist(s1: str, s2: str) -> int:
+                    """Compute Levenshtein distance between two YAML strings (comments stripped).
+
+                    Args:
+                        s1: First YAML string.
+                        s2: Second YAML string.
+
+                    Returns:
+                        Integer edit distance.
+
+                    """
                     us1 = remove_comment_lines(s1)
                     us2 = remove_comment_lines(s2)
                     dist = int(Levenshtein.distance(us1, us2))
@@ -1258,6 +2317,15 @@ class Task(Object, Resolvable):
         return
 
     def _find_task_block(self, yaml_lines: list[str], start_line_num: int) -> tuple[str | None, list[int] | None]:
+        """Extract the task block (YAML fragment and [begin, end] line numbers) starting at start_line_num.
+
+        Args:
+            yaml_lines: List of YAML source lines.
+            start_line_num: Zero-based line index where the task starts.
+
+        Returns:
+            Tuple of (YAML fragment string, [begin, end] line numbers) or (None, None).
+        """
         if not yaml_lines:
             return None, None
 
@@ -1335,9 +2403,16 @@ class Task(Object, Resolvable):
         line_num_in_file = [begin_line_num + 1, end_line_num + 1]
         return result_yaml, line_num_in_file
 
-    # this keeps original contents like comments, indentation
-    # and quotes for string as much as possible
     def yaml(self, original_module: str = "", use_yaml_lines: bool = True) -> str:
+        """Return task as YAML string; preserves comments/indent when use_yaml_lines and parseable.
+
+        Args:
+            original_module: Original module key when renaming module.
+            use_yaml_lines: If True, use yaml_lines when parseable; else build from spec.
+
+        Returns:
+            Task as YAML string.
+        """
         task_data_wrapper: list[YAMLDict] | None = None
         task_data: YAMLDict | None = None
         if use_yaml_lines:
@@ -1410,10 +2485,12 @@ class Task(Object, Resolvable):
         new_yaml = str(ariyaml.dump(cast(YAMLValue, wrapper)))
         return new_yaml
 
-    # this makes a yaml from task contents such as spec.module,
-    # spec.options, spec.module_options in a fixed format
-    # NOTE: this will lose comments and indentations in the original YAML
     def formatted_yaml(self) -> str:
+        """Build YAML from task spec (name, module, options); loses original comments/indent.
+
+        Returns:
+            Task as formatted YAML string.
+        """
         task_data: YAMLDict = {}
         if self.name:
             task_data["name"] = self.name
@@ -1428,6 +2505,14 @@ class Task(Object, Resolvable):
         return str(ariyaml.dump(cast(YAMLValue, data)))
 
     def str2double_quoted_scalar(self, v: YAMLValue) -> YAMLValue:
+        """Recursively wrap string values in DoubleQuotedScalarString for ruamel output.
+
+        Args:
+            v: Dict, list, or string value to process.
+
+        Returns:
+            Same structure with string values wrapped in DoubleQuotedScalarString.
+        """
         if isinstance(v, dict):
             for key, val in v.items():
                 new_val = self.str2double_quoted_scalar(val)
@@ -1443,13 +2528,29 @@ class Task(Object, Resolvable):
         return v
 
     def set_key(self, parent_key: str = "", parent_local_key: str = "") -> None:
+        """Set key from task identity and parent via keyutil.
+
+        Args:
+            parent_key: Key of the parent object.
+            parent_local_key: Local key of the parent within role/collection.
+        """
         set_task_key(self, parent_key, parent_local_key)
 
     def children_to_key(self) -> Task:
+        """Return self (Task has no keyed children).
+
+        Returns:
+            Self.
+        """
         return self
 
     @property
     def defined_vars(self) -> YAMLDict:
+        """Merge variables, registered_variables, and set_facts.
+
+        Returns:
+            Merged dict of variables available to the task.
+        """
         d_vars = self.variables
         d_vars.update(self.registered_variables)
         d_vars.update(self.set_facts)
@@ -1457,26 +2558,56 @@ class Task(Object, Resolvable):
 
     @property
     def tags(self) -> YAMLValue:
+        """Return tags from options.
+
+        Returns:
+            Tags value or None.
+        """
         return self.options.get("tags", None)
 
     @property
     def when(self) -> YAMLValue:
+        """Return when from options.
+
+        Returns:
+            When condition value or None.
+        """
         return self.options.get("when", None)
 
     @property
     def action(self) -> str:
+        """Return executable (module/role/taskfile name).
+
+        Returns:
+            Executable name.
+        """
         return self.executable
 
     @property
     def resolved_action(self) -> str:
+        """Return resolved_name (FQCN or path after resolution).
+
+        Returns:
+            Resolved FQCN or path.
+        """
         return self.resolved_name
 
     @property
     def line_number(self) -> list[int]:
+        """Return [begin, end] line numbers in file.
+
+        Returns:
+            List of [begin, end] line numbers (1-based).
+        """
         return self.line_num_in_file
 
     @property
     def id(self) -> str:
+        """Return stable id from defined_in, index, play_index.
+
+        Returns:
+            JSON string with path, index, play_index.
+        """
         return json.dumps(
             {
                 "path": self.defined_in,
@@ -1487,21 +2618,40 @@ class Task(Object, Resolvable):
 
     @property
     def resolver_targets(self) -> None:
+        """No child targets to resolve."""
         return None
 
 
 @dataclass
 class MutableContent:
+    """Mutable task YAML wrapper: edit task spec and regenerate YAML."""
+
     _yaml: str = ""
     _task_spec: Task | None = None
 
     def _require_task_spec(self) -> Task:
+        """Return _task_spec or raise if missing.
+
+        Returns:
+            The task spec.
+
+        Raises:
+            ValueError: If _task_spec is None.
+        """
         if self._task_spec is None:
             raise ValueError("MutableContent has no task spec")
         return self._task_spec
 
     @staticmethod
     def from_task_spec(task_spec: Task) -> MutableContent:
+        """Build MutableContent from a Task (copy of spec, yaml_lines as _yaml).
+
+        Args:
+            task_spec: Task to wrap for editing.
+
+        Returns:
+            MutableContent instance.
+        """
         mc = MutableContent(
             _yaml=task_spec.yaml_lines,
             _task_spec=deepcopy(task_spec),
@@ -1509,7 +2659,14 @@ class MutableContent:
         return mc
 
     def set_task_name(self, task_name: str) -> MutableContent:
-        # if `name` is None or empty string, Task.yaml() won't output the field
+        """Set task name and refresh _yaml; return self for chaining.
+
+        Args:
+            task_name: New task name.
+
+        Returns:
+            Self for chaining.
+        """
         spec = self._require_task_spec()
         spec.name = task_name
         self._yaml = spec.yaml()
@@ -1517,10 +2674,19 @@ class MutableContent:
         return self
 
     def get_task_name(self) -> str | None:
+        """Return current task name or None.
+
+        Returns:
+            Task name or None.
+        """
         return self._task_spec.name if self._task_spec else None
 
     def omit_task_name(self) -> MutableContent:
-        # if `name` is None or empty string, Task.yaml() won't output the field
+        """Clear task name and refresh _yaml; return self for chaining.
+
+        Returns:
+            Self for chaining.
+        """
         spec = self._require_task_spec()
         spec.name = None
         self._yaml = spec.yaml()
@@ -1528,6 +2694,14 @@ class MutableContent:
         return self
 
     def set_module_name(self, module_name: str) -> MutableContent:
+        """Set module (FQCN) and refresh _yaml; return self for chaining.
+
+        Args:
+            module_name: New module FQCN.
+
+        Returns:
+            Self for chaining.
+        """
         spec = self._require_task_spec()
         original_module = deepcopy(spec.module)
         spec.module = module_name
@@ -1536,6 +2710,15 @@ class MutableContent:
         return self
 
     def replace_key(self, old_key: str, new_key: str) -> MutableContent:
+        """Replace a task option key and refresh _yaml.
+
+        Args:
+            old_key: Existing option key.
+            new_key: New option key.
+
+        Returns:
+            Self for chaining.
+        """
         spec = self._require_task_spec()
         if old_key in spec.options:
             value = spec.options[old_key]
@@ -1546,6 +2729,15 @@ class MutableContent:
         return self
 
     def replace_value(self, old_value: str, new_value: str) -> MutableContent:
+        """Replace a task option value and refresh _yaml.
+
+        Args:
+            old_value: Value to match.
+            new_value: Replacement value.
+
+        Returns:
+            Self for chaining.
+        """
         spec = self._require_task_spec()
         original_new_value = deepcopy(new_value)
         need_restore = False
@@ -1569,6 +2761,14 @@ class MutableContent:
         return self
 
     def remove_key(self, key: str) -> MutableContent:
+        """Remove a task option key and refresh _yaml.
+
+        Args:
+            key: Option key to remove.
+
+        Returns:
+            Self for chaining.
+        """
         spec = self._require_task_spec()
         if key in spec.options:
             spec.options.pop(key)
@@ -1577,6 +2777,15 @@ class MutableContent:
         return self
 
     def set_new_module_arg_key(self, key: str, value: YAMLValue) -> MutableContent:
+        """Add or set a module argument and refresh _yaml.
+
+        Args:
+            key: Module argument key.
+            value: Module argument value.
+
+        Returns:
+            Self for chaining.
+        """
         spec = self._require_task_spec()
         original_value = deepcopy(value)
         need_restore = False
@@ -1591,6 +2800,14 @@ class MutableContent:
         return self
 
     def remove_module_arg_key(self, key: str) -> MutableContent:
+        """Remove a module argument and refresh _yaml.
+
+        Args:
+            key: Module argument key to remove.
+
+        Returns:
+            Self for chaining.
+        """
         spec = self._require_task_spec()
         if key in spec.module_options:
             spec.module_options.pop(key)
@@ -1599,6 +2816,15 @@ class MutableContent:
         return self
 
     def replace_module_arg_key(self, old_key: str, new_key: str) -> MutableContent:
+        """Replace a module argument key and refresh _yaml.
+
+        Args:
+            old_key: Existing module argument key.
+            new_key: New module argument key.
+
+        Returns:
+            Self for chaining.
+        """
         spec = self._require_task_spec()
         if old_key in spec.module_options:
             value = spec.module_options[old_key]
@@ -1611,6 +2837,16 @@ class MutableContent:
     def replace_module_arg_value(
         self, key: str = "", old_value: YAMLValue = None, new_value: YAMLValue = None
     ) -> MutableContent:
+        """Replace a module argument value and refresh _yaml.
+
+        Args:
+            key: Module argument key (optional; if empty, match all keys).
+            old_value: Value to match.
+            new_value: Replacement value.
+
+        Returns:
+            Self for chaining.
+        """
         spec = self._require_task_spec()
         original_new_value = deepcopy(new_value)
         need_restore = False
@@ -1635,6 +2871,14 @@ class MutableContent:
         return self
 
     def replace_with_dict(self, new_dict: YAMLDict) -> MutableContent:
+        """Replace the entire task spec with a new dict and refresh _yaml.
+
+        Args:
+            new_dict: New task block dict.
+
+        Returns:
+            Self for chaining.
+        """
         spec = self._require_task_spec()
         from .model_loader import load_task
 
@@ -1655,6 +2899,14 @@ class MutableContent:
         return self
 
     def replace_module_arg_with_dict(self, new_dict: YAMLDict) -> MutableContent:
+        """Replace the entire module arguments dict and refresh _yaml.
+
+        Args:
+            new_dict: New module arguments dict.
+
+        Returns:
+            Self for chaining.
+        """
         spec = self._require_task_spec()
         spec.module_options = new_dict
         self._yaml = spec.yaml()
@@ -1663,17 +2915,41 @@ class MutableContent:
     # this keeps original contents like comments, indentation
     # and quotes for string as much as possible
     def yaml(self) -> str:
+        """Return current YAML string (preserves comments, indentation, quotes).
+
+        Returns:
+            Current YAML string.
+        """
         return self._yaml
 
     # this makes a yaml from task contents such as spec.module,
     # spec.options, spec.module_options in a fixed format
     # NOTE: this will lose comments and indentations in the original YAML
     def formatted_yaml(self) -> str:
+        """Return formatted YAML from task spec (may lose comments/indentation).
+
+        Returns:
+            Formatted YAML string from task spec.
+        """
         return self._require_task_spec().formatted_yaml()
 
 
 @dataclass
 class TaskCall(CallObject, RunTarget):
+    """Call target for a single task with spec and annotations.
+
+    Attributes:
+        type: Always "taskcall".
+        annotations: List of annotations (e.g. from annotators).
+        args: Task arguments.
+        variable_set: Variables set by this task.
+        variable_use: Variables used by this task.
+        become: Privilege escalation info.
+        module_defaults: Module defaults applied.
+        module: Resolved Module when applicable.
+        content: MutableContent for editing task YAML.
+    """
+
     type: str = "taskcall"
     # annotations are used for storing generic analysis data
     # any Annotators in "annotators" dir can add them to this object
@@ -1688,12 +2964,30 @@ class TaskCall(CallObject, RunTarget):
     content: MutableContent | None = None
 
     def get_annotation_by_type(self, type_str: str = "") -> list[Annotation]:
+        """Return annotations matching the given type.
+
+        Args:
+            type_str: Annotation type to match.
+
+        Returns:
+            List of matching annotations.
+        """
         matched = [an for an in self.annotations if an.type == type_str]
         return matched
 
     def get_annotation_by_type_and_attr(
         self, type_str: str = "", key: str = "", val: YAMLValue = None
     ) -> list[Annotation]:
+        """Return annotations matching type and attribute value.
+
+        Args:
+            type_str: Annotation type to match.
+            key: Attribute name to check.
+            val: Attribute value to match.
+
+        Returns:
+            List of matching annotations.
+        """
         matched = [
             an
             for an in self.annotations
@@ -1702,6 +2996,13 @@ class TaskCall(CallObject, RunTarget):
         return matched
 
     def set_annotation(self, key: str, value: YAMLValue, rule_id: str) -> None:
+        """Set or add annotation by key.
+
+        Args:
+            key: Annotation key.
+            value: Annotation value.
+            rule_id: Rule ID that set this annotation.
+        """
         end_to_set = False
         for an in self.annotations:
             if not hasattr(an, "key"):
@@ -1715,6 +3016,16 @@ class TaskCall(CallObject, RunTarget):
         return
 
     def get_annotation(self, key: str, __default: YAMLValue = None, rule_id: str = "") -> YAMLValue:
+        """Return annotation value by key, optionally filtered by rule_id.
+
+        Args:
+            key: Annotation key.
+            __default: Default if not found.
+            rule_id: Optional rule ID filter.
+
+        Returns:
+            Annotation value or default.
+        """
         value = __default
         for an in self.annotations:
             if not hasattr(an, "key"):
@@ -1727,10 +3038,26 @@ class TaskCall(CallObject, RunTarget):
         return value
 
     def has_annotation_by_condition(self, cond: AnnotationCondition) -> bool:
+        """Return whether any annotation matches the condition.
+
+        Args:
+            cond: Condition to match.
+
+        Returns:
+            True if any annotation matches.
+        """
         anno = self.get_annotation_by_condition(cond)
         return bool(anno)
 
     def get_annotation_by_condition(self, cond: AnnotationCondition) -> Annotation | RiskAnnotation | None:
+        """Return first annotation matching the condition.
+
+        Args:
+            cond: Condition to match.
+
+        Returns:
+            First matching annotation or None.
+        """
         _annotations: list[Annotation] = list(self.annotations)
         if cond.type:
             _annotations = [an for an in _annotations if isinstance(an, RiskAnnotation) and an.risk_type == cond.type]
@@ -1742,6 +3069,11 @@ class TaskCall(CallObject, RunTarget):
         return None
 
     def file_info(self) -> tuple[str, str]:
+        """Return (defined_in path, line info) for this task.
+
+        Returns:
+            Tuple of (file path, line info string).
+        """
         file = self.spec.defined_in  # type: ignore[attr-defined]
         lines = "?"
         if len(self.spec.line_number) == 2:  # type: ignore[attr-defined]
@@ -1751,19 +3083,36 @@ class TaskCall(CallObject, RunTarget):
 
     @property
     def resolved_name(self) -> str:
+        """Return resolved module/action name from spec."""
         return getattr(self.spec, "resolved_name", "") if self.spec else ""
 
     @property
     def resolved_action(self) -> str:
+        """Return resolved action (alias for resolved_name)."""
         return self.resolved_name
 
     @property
     def action_type(self) -> str:
+        """Return executable type (Module, Role, TaskFile) from spec."""
         return getattr(self.spec, "executable_type", "") if self.spec else ""
 
 
 @dataclass
 class AnsibleRunContext:
+    """Ordered sequence of run targets for rule evaluation.
+
+    Attributes:
+        sequence: Ordered list of RunTarget.
+        root_key: Key of the root target.
+        parent: Parent Object when built from a tree.
+        ram_client: Optional RAM client for lookups.
+        scan_metadata: Metadata for the scan.
+        current: Current RunTarget during iteration.
+        last_item: Whether this is the last item in a loop.
+        vars: Variables context (optional).
+        host_info: Host info (optional).
+    """
+
     sequence: RunTargetList = field(default_factory=RunTargetList)
     root_key: str = ""
     parent: Object | None = None
@@ -1782,12 +3131,30 @@ class AnsibleRunContext:
     host_info: YAMLDict | None = None
 
     def __len__(self) -> int:
+        """Return number of run targets in the sequence.
+
+        Returns:
+            Length of sequence.
+        """
         return len(self.sequence)
 
     def __iter__(self) -> AnsibleRunContext:
+        """Return self as iterator.
+
+        Returns:
+            Self as the iterator.
+        """
         return self
 
     def __next__(self) -> RunTarget:
+        """Return next run target; raise StopIteration when done.
+
+        Returns:
+            Next RunTarget.
+
+        Raises:
+            StopIteration: When iteration is complete.
+        """
         if self._i == len(self.sequence):
             self._i = 0
             self.current = None
@@ -1798,6 +3165,14 @@ class AnsibleRunContext:
         return t
 
     def __getitem__(self, i: int) -> RunTarget:
+        """Return run target at index.
+
+        Args:
+            i: Index.
+
+        Returns:
+            RunTarget at index.
+        """
         return self.sequence[i]
 
     @staticmethod
@@ -1808,6 +3183,18 @@ class AnsibleRunContext:
         ram_client: RAMClient | None = None,
         scan_metadata: YAMLDict | None = None,
     ) -> AnsibleRunContext:
+        """Build context from an ObjectList of RunTarget items.
+
+        Args:
+            tree: ObjectList containing RunTarget items.
+            parent: Parent Object when built from tree.
+            last_item: Whether this is the last item in a loop.
+            ram_client: Optional RAM client for lookups.
+            scan_metadata: Metadata for the scan.
+
+        Returns:
+            AnsibleRunContext instance.
+        """
         if not tree:
             return AnsibleRunContext(parent=parent, last_item=last_item, scan_metadata=scan_metadata or {})
         if len(tree.items) == 0:
@@ -1839,6 +3226,19 @@ class AnsibleRunContext:
         ram_client: RAMClient | None = None,
         scan_metadata: YAMLDict | None = None,
     ) -> AnsibleRunContext:
+        """Build context from a list of RunTarget items.
+
+        Args:
+            targets: List of RunTarget.
+            root_key: Key of the root target.
+            parent: Parent Object.
+            last_item: Whether this is the last item in a loop.
+            ram_client: Optional RAM client for lookups.
+            scan_metadata: Metadata for the scan.
+
+        Returns:
+            AnsibleRunContext instance.
+        """
         if not root_key and len(targets) > 0:
             root_key = (
                 getattr(targets[0].spec, "key", "") if hasattr(targets[0], "spec") else getattr(targets[0], "key", "")
@@ -1855,12 +3255,28 @@ class AnsibleRunContext:
         )
 
     def find(self, target: RunTarget) -> RunTarget | None:
+        """Find run target by key.
+
+        Args:
+            target: RunTarget whose key to match.
+
+        Returns:
+            Matching RunTarget or None.
+        """
         for t in self.sequence:
             if t.key == target.key:
                 return t
         return None
 
     def before(self, target: RunTarget) -> AnsibleRunContext:
+        """Return context of run targets before the given target.
+
+        Args:
+            target: RunTarget to stop before.
+
+        Returns:
+            New AnsibleRunContext with targets before target.
+        """
         targets = []
         for rt in self.sequence:
             if rt.key == target.key:
@@ -1876,6 +3292,14 @@ class AnsibleRunContext:
         )
 
     def search(self, cond: AnnotationCondition) -> AnsibleRunContext:
+        """Return context of task targets matching the annotation condition.
+
+        Args:
+            cond: Annotation condition to match.
+
+        Returns:
+            New AnsibleRunContext with matching task targets.
+        """
         targets = [t for t in self.sequence if t.type == RunTargetType.Task and t.has_annotation_by_condition(cond)]
         return AnsibleRunContext.from_targets(
             targets,
@@ -1887,11 +3311,27 @@ class AnsibleRunContext:
         )
 
     def is_end(self, target: RunTarget) -> bool:
+        """Return whether target is the last item in the sequence.
+
+        Args:
+            target: RunTarget to check.
+
+        Returns:
+            True if target is the last item.
+        """
         if len(self) == 0:
             return False
         return target.key == self.sequence[-1].key
 
     def is_last_task(self, target: RunTarget) -> bool:
+        """Return whether target is the last task in the sequence.
+
+        Args:
+            target: RunTarget to check.
+
+        Returns:
+            True if target is the last task.
+        """
         if len(self) == 0:
             return False
         taskcalls = self.taskcalls
@@ -1900,11 +3340,24 @@ class AnsibleRunContext:
         return target.key == taskcalls[-1].key
 
     def is_begin(self, target: RunTarget) -> bool:
+        """Return whether target is the first item in the sequence.
+
+        Args:
+            target: RunTarget to check.
+
+        Returns:
+            True if target is the first item.
+        """
         if len(self) == 0:
             return False
         return target.key == self.sequence[0].key
 
     def copy(self) -> AnsibleRunContext:
+        """Return a shallow copy of this context.
+
+        Returns:
+            New AnsibleRunContext with same sequence and metadata.
+        """
         return AnsibleRunContext.from_targets(
             targets=self.sequence.items,
             root_key=self.root_key,
@@ -1916,6 +3369,11 @@ class AnsibleRunContext:
 
     @property
     def info(self) -> YAMLDict:
+        """Return object info by root_key.
+
+        Returns:
+            Dict with object info or empty dict.
+        """
         if not self.root_key:
             return {}
         info = cast(YAMLDict, dict(get_obj_info_by_key(self.root_key)))
@@ -1923,14 +3381,29 @@ class AnsibleRunContext:
 
     @property
     def taskcalls(self) -> list[RunTarget]:
+        """Return run targets that are tasks.
+
+        Returns:
+            List of task RunTarget items.
+        """
         return [t for t in self.sequence if t.type == RunTargetType.Task]
 
     @property
     def tasks(self) -> list[RunTarget]:
+        """Return taskcalls (alias).
+
+        Returns:
+            List of task RunTarget items.
+        """
         return self.taskcalls
 
     @property
     def annotations(self) -> RiskAnnotationList:
+        """Return all RiskAnnotations from task targets in the sequence.
+
+        Returns:
+            RiskAnnotationList of annotations.
+        """
         anno_list: list[RiskAnnotation] = []
         for tc in self.taskcalls:
             for a in tc.annotations:
@@ -1941,6 +3414,26 @@ class AnsibleRunContext:
 
 @dataclass
 class TaskFile(Object, Resolvable):
+    """Task file (tasks/main.yml, etc.) with tasks and metadata.
+
+    Attributes:
+        type: Always "taskfile".
+        name: Task file name.
+        defined_in: Path to the file.
+        key: Unique key for lookup.
+        local_key: Local key within role/collection.
+        tasks: List of Task or task keys.
+        role: Role name if in a role.
+        collection: Collection name.
+        yaml_lines: Raw YAML content.
+        used_in: Paths where this task file is used.
+        annotations: Annotation dict.
+        variables: Variables available.
+        module_defaults: Module defaults.
+        options: Task file options.
+        task_loading: Task loading metadata.
+    """
+
     type: str = "taskfile"
     name: str = ""
     defined_in: str = ""
@@ -1965,25 +3458,67 @@ class TaskFile(Object, Resolvable):
     task_loading: YAMLDict = field(default_factory=dict)
 
     def set_key(self) -> None:
+        """Set key from task file identity via keyutil."""
         set_taskfile_key(self)
 
     def children_to_key(self) -> TaskFile:
+        """Sort tasks by key and return self.
+
+        Returns:
+            Self.
+        """
         task_keys = [t.key if isinstance(t, Task) else t for t in self.tasks]
         self.tasks = cast(list["Task" | str], sorted(task_keys))
         return self
 
     @property
     def resolver_targets(self) -> list[Resolvable | str]:
+        """Return list of tasks as resolver targets.
+
+        Returns:
+            List of tasks.
+        """
         return list(self.tasks)
 
 
 @dataclass
 class TaskFileCall(CallObject, RunTarget):
+    """Call target for a task file.
+
+    Attributes:
+        type: Always "taskfilecall".
+    """
+
     type: str = "taskfilecall"
 
 
 @dataclass
 class Role(Object, Resolvable):
+    """Ansible role with playbooks, task files, handlers, modules.
+
+    Attributes:
+        type: Always "role".
+        name: Role name.
+        defined_in: Path to the role.
+        key: Unique key for lookup.
+        local_key: Local key within collection.
+        fqcn: Fully qualified collection name.
+        metadata: Role metadata.
+        collection: Collection name.
+        playbooks: List of Playbook or keys.
+        taskfiles: List of TaskFile or keys.
+        handlers: List of Task handlers.
+        modules: List of Module or keys.
+        dependency: Role dependencies.
+        requirements: Requirements metadata.
+        source: Collection/scm/galaxy source.
+        annotations: Annotation dict.
+        default_variables: Default variables.
+        variables: Variables.
+        loop: Loop config.
+        options: Role options.
+    """
+
     type: str = "role"
     name: str = ""
     defined_in: str = ""
@@ -2012,9 +3547,15 @@ class Role(Object, Resolvable):
     options: YAMLDict = field(default_factory=dict)
 
     def set_key(self) -> None:
+        """Set key from role identity via keyutil."""
         set_role_key(self)
 
     def children_to_key(self) -> Role:
+        """Sort modules, playbooks, taskfiles by key and return self.
+
+        Returns:
+            Self.
+        """
         module_keys = [m.key if isinstance(m, Module) else m for m in self.modules]
         self.modules = cast(list["Module" | str], sorted(module_keys))
 
@@ -2027,16 +3568,45 @@ class Role(Object, Resolvable):
 
     @property
     def resolver_targets(self) -> list[Resolvable | str]:
+        """Return taskfiles and modules as resolver targets.
+
+        Returns:
+            List of taskfiles and modules.
+        """
         return cast(list["Resolvable" | str], list(self.taskfiles) + list(self.modules))
 
 
 @dataclass
 class RoleCall(CallObject, RunTarget):
+    """Call target for a role.
+
+    Attributes:
+        type: Always "rolecall".
+    """
+
     type: str = "rolecall"
 
 
 @dataclass
 class RoleInPlay(Object, Resolvable):
+    """Role reference within a play (roles: block).
+
+    Attributes:
+        type: Always "roleinplay".
+        name: Role name.
+        options: Role options.
+        defined_in: Path to the playbook.
+        role_index: Index in the roles list.
+        play_index: Play index.
+        role: Role name.
+        collection: Collection name.
+        resolved_name: Resolved FQCN.
+        possible_candidates: Resolution candidates.
+        annotations: Annotation dict.
+        collections_in_play: Collections in scope.
+        role_info: Resolved role metadata.
+    """
+
     type: str = "roleinplay"
     name: str = ""
     options: YAMLDict = field(default_factory=dict)
@@ -2059,16 +3629,55 @@ class RoleInPlay(Object, Resolvable):
 
     @property
     def resolver_targets(self) -> None:
+        """No child targets to resolve.
+
+        Returns:
+            None.
+        """
         return None
 
 
 @dataclass
 class RoleInPlayCall(CallObject):
+    """Call target for a role in play.
+
+    Attributes:
+        type: Always "roleinplaycall".
+    """
+
     type: str = "roleinplaycall"
 
 
 @dataclass
 class Play(Object, Resolvable):
+    """Ansible play with tasks, roles, handlers.
+
+    Attributes:
+        type: Always "play".
+        name: Play name.
+        defined_in: Path to the playbook.
+        index: Play index.
+        key: Unique key for lookup.
+        local_key: Local key.
+        role: Role name.
+        collection: Collection name.
+        import_module: Import module.
+        import_playbook: Import playbook path.
+        pre_tasks: Pre-tasks list.
+        tasks: Tasks list.
+        post_tasks: Post-tasks list.
+        handlers: Handlers list.
+        roles: RoleInPlay list.
+        module_defaults: Module defaults.
+        options: Play options.
+        collections_in_play: Collections in scope.
+        become: Privilege escalation.
+        variables: Variables.
+        vars_files: Vars file paths.
+        jsonpath: Jsonpath to play.
+        task_loading: Task loading metadata.
+    """
+
     type: str = "play"
     name: str = ""
     defined_in: str = ""
@@ -2098,9 +3707,20 @@ class Play(Object, Resolvable):
     task_loading: YAMLDict = field(default_factory=dict)
 
     def set_key(self, parent_key: str = "", parent_local_key: str = "") -> None:
+        """Set key from play identity and parent via keyutil.
+
+        Args:
+            parent_key: Key of the parent object.
+            parent_local_key: Local key of the parent.
+        """
         set_play_key(self, parent_key, parent_local_key)
 
     def children_to_key(self) -> Play:
+        """Sort pre_tasks, tasks, post_tasks, handlers by key and return self.
+
+        Returns:
+            Self.
+        """
         pre_task_keys = [t.key if isinstance(t, Task) else t for t in self.pre_tasks]
         self.pre_tasks = cast(list["Task" | str], sorted(pre_task_keys))
 
@@ -2116,10 +3736,20 @@ class Play(Object, Resolvable):
 
     @property
     def id(self) -> str:
+        """Return stable id from defined_in and index.
+
+        Returns:
+            JSON string with path and index.
+        """
         return json.dumps({"path": self.defined_in, "index": self.index})
 
     @property
     def resolver_targets(self) -> list[Resolvable | str]:
+        """Return pre_tasks, tasks, and roles as resolver targets.
+
+        Returns:
+            List of pre_tasks, tasks, and roles.
+        """
         return cast(
             list["Resolvable" | str],
             list(self.pre_tasks) + list(self.tasks) + list(self.roles),
@@ -2128,11 +3758,35 @@ class Play(Object, Resolvable):
 
 @dataclass
 class PlayCall(CallObject, RunTarget):
+    """Call target for a play.
+
+    Attributes:
+        type: Always "playcall".
+    """
+
     type: str = "playcall"
 
 
 @dataclass
 class Playbook(Object, Resolvable):
+    """Ansible playbook with plays.
+
+    Attributes:
+        type: Always "playbook".
+        name: Playbook name.
+        defined_in: Path to the file.
+        key: Unique key for lookup.
+        local_key: Local key.
+        yaml_lines: Raw YAML content.
+        role: Role name.
+        collection: Collection name.
+        plays: List of Play or keys.
+        used_in: Paths where this playbook is used.
+        annotations: Annotation dict.
+        variables: Variables.
+        options: Playbook options.
+    """
+
     type: str = "playbook"
     name: str = ""
     defined_in: str = ""
@@ -2154,15 +3808,26 @@ class Playbook(Object, Resolvable):
     options: YAMLDict = field(default_factory=dict)
 
     def set_key(self) -> None:
+        """Set key from playbook identity via keyutil."""
         set_playbook_key(self)
 
     def children_to_key(self) -> Playbook:
+        """Sort plays by key and return self.
+
+        Returns:
+            Self.
+        """
         play_keys = [play.key if isinstance(play, Play) else play for play in self.plays]
         self.plays = cast(list["Play" | str], sorted(play_keys))
         return self
 
     @property
     def resolver_targets(self) -> list[Resolvable | str]:
+        """Return plays or roles+tasks as resolver targets.
+
+        Returns:
+            List of plays or roles and tasks.
+        """
         if "plays" in self.__dict__:
             return cast(list["Resolvable" | str], self.plays)
         return cast(
@@ -2173,10 +3838,24 @@ class Playbook(Object, Resolvable):
 
 @dataclass
 class PlaybookCall(CallObject, RunTarget):
+    """Call target for a playbook.
+
+    Attributes:
+        type: Always "playbookcall".
+    """
+
     type: str = "playbookcall"
 
 
 class InventoryType:
+    """Constants for inventory types (group_vars, host_vars).
+
+    Attributes:
+        GROUP_VARS_TYPE: Group vars inventory type.
+        HOST_VARS_TYPE: Host vars inventory type.
+        UNKNOWN_TYPE: Unknown inventory type.
+    """
+
     GROUP_VARS_TYPE = "group_vars"
     HOST_VARS_TYPE = "host_vars"
     UNKNOWN_TYPE = ""
@@ -2184,6 +3863,18 @@ class InventoryType:
 
 @dataclass
 class Inventory(JSONSerializable):
+    """Inventory (group_vars, host_vars) with variables.
+
+    Attributes:
+        type: Always "inventory".
+        name: Inventory name.
+        defined_in: Path to the inventory file.
+        inventory_type: One of group_vars, host_vars.
+        group_name: Group name when inventory_type is group_vars.
+        host_name: Host name when inventory_type is host_vars.
+        variables: Variables dict.
+    """
+
     type: str = "inventory"
     name: str = ""
     defined_in: str = ""
@@ -2195,6 +3886,32 @@ class Inventory(JSONSerializable):
 
 @dataclass
 class Repository(Object, Resolvable):
+    """Repository (project root) with playbooks, roles, modules, taskfiles.
+
+    Attributes:
+        type: Always "repository".
+        name: Repository name.
+        path: Repository path.
+        key: Unique key for lookup.
+        local_key: Local key.
+        my_collection_name: Collection name if this is a collection repo.
+        playbooks: List of Playbook or keys.
+        roles: List of Role or keys.
+        target_playbook_path: Target playbook for playbook scan.
+        target_taskfile_path: Target taskfile for taskfile scan.
+        requirements: Requirements metadata.
+        installed_collections_path: Path to installed collections.
+        installed_collections: List of Collection or keys.
+        installed_roles_path: Path to installed roles.
+        installed_roles: List of Role or keys.
+        modules: List of Module or keys.
+        taskfiles: List of TaskFile or keys.
+        inventories: List of Inventory or keys.
+        files: List of File or keys.
+        version: Version string.
+        annotations: Annotation dict.
+    """
+
     type: str = "repository"
     name: str = ""
     path: str = ""
@@ -2232,9 +3949,15 @@ class Repository(Object, Resolvable):
     annotations: dict[str, YAMLValue] = field(default_factory=dict)
 
     def set_key(self) -> None:
+        """Set key from repository identity via keyutil."""
         set_repository_key(self)
 
     def children_to_key(self) -> Repository:
+        """Sort modules, playbooks, taskfiles, roles by key and return self.
+
+        Returns:
+            Self.
+        """
         module_keys = [m.key if isinstance(m, Module) else m for m in self.modules]
         self.modules = cast(list["Module" | str], sorted(module_keys))
 
@@ -2250,6 +3973,11 @@ class Repository(Object, Resolvable):
 
     @property
     def resolver_targets(self) -> list[Resolvable | str]:
+        """Return playbooks, roles, modules, installed_roles, installed_collections.
+
+        Returns:
+            List of resolver targets.
+        """
         return cast(
             list["Resolvable" | str],
             list(self.playbooks)
@@ -2262,10 +3990,26 @@ class Repository(Object, Resolvable):
 
 @dataclass
 class RepositoryCall(CallObject):
+    """Call target for a repository.
+
+    Attributes:
+        type: Always "repositorycall".
+    """
+
     type: str = "repositorycall"
 
 
 def call_obj_from_spec(spec: Object, caller: CallObject | None, index: int = 0) -> CallObject | None:
+    """Create a CallObject from an Object spec and optional caller.
+
+    Args:
+        spec: The Object spec (Repository, Playbook, Play, RoleInPlay, Role, TaskFile, Task, or Module).
+        caller: Optional CallObject that invokes this spec.
+        index: Index for the call (default 0).
+
+    Returns:
+        The corresponding CallObject, or None if spec type is not supported.
+    """
     if isinstance(spec, Repository):
         return RepositoryCall.from_spec(spec, caller, index)
     elif isinstance(spec, Playbook):
@@ -2291,6 +4035,18 @@ def call_obj_from_spec(spec: Object, caller: CallObject | None, index: int = 0) 
 # this is not a Repository but one or multiple Role / Collection
 @dataclass
 class GalaxyArtifact(Repository):
+    """Galaxy artifact (Role or Collection) with search dicts for modules, tasks, etc.
+
+    Attributes:
+        type: "Role" or "Collection".
+        module_dict: Map from key to Module for lookup.
+        task_dict: Map from key to Task for lookup.
+        taskfile_dict: Map from key to TaskFile for lookup.
+        role_dict: Map from key to Role for lookup.
+        playbook_dict: Map from key to Playbook for lookup.
+        collection_dict: Map from key to Collection for lookup.
+    """
+
     type: str = ""  # Role or Collection
 
     # make it easier to search a module
@@ -2309,6 +4065,17 @@ class GalaxyArtifact(Repository):
 
 @dataclass
 class ModuleMetadata:
+    """Metadata for an Ansible module (fqcn, type, name, version, hash).
+
+    Attributes:
+        fqcn: Fully qualified collection name.
+        type: Module type.
+        name: Module name.
+        version: Version string.
+        hash: Content hash.
+        deprecated: Whether the module is deprecated.
+    """
+
     fqcn: str = ""
     # arguments: list = field(default_factory=list)
     type: str = ""
@@ -2319,6 +4086,15 @@ class ModuleMetadata:
 
     @staticmethod
     def from_module(m: Module, metadata: YAMLDict) -> ModuleMetadata:
+        """Build ModuleMetadata from a Module and metadata dict.
+
+        Args:
+            m: The Module instance.
+            metadata: Dict with type, name, version, hash keys.
+
+        Returns:
+            ModuleMetadata populated from the module and metadata.
+        """
         mm = ModuleMetadata()
         for key in mm.__dict__:
             if hasattr(m, key):
@@ -2333,6 +4109,15 @@ class ModuleMetadata:
 
     @staticmethod
     def from_routing(dst: str, metadata: YAMLDict) -> ModuleMetadata:
+        """Build ModuleMetadata from routing destination and metadata (deprecated).
+
+        Args:
+            dst: FQCN destination.
+            metadata: Dict with type, name, version, hash keys.
+
+        Returns:
+            ModuleMetadata with deprecated=True.
+        """
         mm = ModuleMetadata()
         mm.fqcn = dst
         mm.type = str(metadata.get("type", ""))
@@ -2344,6 +4129,14 @@ class ModuleMetadata:
 
     @staticmethod
     def from_dict(d: YAMLDict) -> ModuleMetadata:
+        """Build ModuleMetadata from a dict.
+
+        Args:
+            d: Dict with fqcn, type, name, version, hash keys.
+
+        Returns:
+            ModuleMetadata populated from the dict.
+        """
         mm = ModuleMetadata()
         mm.fqcn = str(d.get("fqcn", ""))
         mm.type = str(d.get("type", ""))
@@ -2353,6 +4146,14 @@ class ModuleMetadata:
         return mm
 
     def __eq__(self, mm: object) -> bool:
+        """Compare equality by fqcn, name, type, version, and hash.
+
+        Args:
+            mm: Object to compare (must be ModuleMetadata).
+
+        Returns:
+            True if equal, False otherwise.
+        """
         if not isinstance(mm, ModuleMetadata):
             return False
         return (
@@ -2366,6 +4167,16 @@ class ModuleMetadata:
 
 @dataclass
 class RoleMetadata:
+    """Metadata for an Ansible role.
+
+    Attributes:
+        fqcn: Fully qualified collection name.
+        type: Role type.
+        name: Role name.
+        version: Version string.
+        hash: Content hash.
+    """
+
     fqcn: str = ""
     type: str = ""
     name: str = ""
@@ -2374,6 +4185,15 @@ class RoleMetadata:
 
     @staticmethod
     def from_role(r: Role, metadata: YAMLDict) -> RoleMetadata:
+        """Build RoleMetadata from a Role and metadata dict.
+
+        Args:
+            r: The Role instance.
+            metadata: Dict with type, name, version, hash keys.
+
+        Returns:
+            RoleMetadata populated from the role and metadata.
+        """
         rm = RoleMetadata()
         for key in rm.__dict__:
             if hasattr(r, key):
@@ -2388,6 +4208,14 @@ class RoleMetadata:
 
     @staticmethod
     def from_dict(d: YAMLDict) -> RoleMetadata:
+        """Build RoleMetadata from a dict.
+
+        Args:
+            d: Dict with fqcn, type, name, version, hash keys.
+
+        Returns:
+            RoleMetadata populated from the dict.
+        """
         rm = RoleMetadata()
         rm.fqcn = str(d.get("fqcn", ""))
         rm.type = str(d.get("type", ""))
@@ -2397,6 +4225,14 @@ class RoleMetadata:
         return rm
 
     def __eq__(self, rm: object) -> bool:
+        """Compare equality by fqcn, name, type, version, and hash.
+
+        Args:
+            rm: Object to compare (must be RoleMetadata).
+
+        Returns:
+            True if equal, False otherwise.
+        """
         if not isinstance(rm, RoleMetadata):
             return False
         return (
@@ -2410,6 +4246,16 @@ class RoleMetadata:
 
 @dataclass
 class TaskFileMetadata:
+    """Metadata for a task file.
+
+    Attributes:
+        key: Task file key.
+        type: Task file type.
+        name: Task file name.
+        version: Version string.
+        hash: Content hash.
+    """
+
     key: str = ""
     type: str = ""
     name: str = ""
@@ -2418,6 +4264,15 @@ class TaskFileMetadata:
 
     @staticmethod
     def from_taskfile(tf: TaskFile, metadata: YAMLDict) -> TaskFileMetadata:
+        """Build TaskFileMetadata from a TaskFile and metadata dict.
+
+        Args:
+            tf: The TaskFile instance.
+            metadata: Dict with type, name, version, hash keys.
+
+        Returns:
+            TaskFileMetadata populated from the task file and metadata.
+        """
         tfm = TaskFileMetadata()
         for key in tfm.__dict__:
             if hasattr(tf, key):
@@ -2432,6 +4287,14 @@ class TaskFileMetadata:
 
     @staticmethod
     def from_dict(d: YAMLDict) -> TaskFileMetadata:
+        """Build TaskFileMetadata from a dict.
+
+        Args:
+            d: Dict with key, type, name, version, hash keys.
+
+        Returns:
+            TaskFileMetadata populated from the dict.
+        """
         tfm = TaskFileMetadata()
         tfm.key = str(d.get("key", ""))
         tfm.type = str(d.get("type", ""))
@@ -2441,6 +4304,14 @@ class TaskFileMetadata:
         return tfm
 
     def __eq__(self, tfm: object) -> bool:
+        """Compare equality by key, name, type, version, and hash.
+
+        Args:
+            tfm: Object to compare (must be TaskFileMetadata).
+
+        Returns:
+            True if equal, False otherwise.
+        """
         if not isinstance(tfm, TaskFileMetadata):
             return False
         return (
@@ -2454,6 +4325,17 @@ class TaskFileMetadata:
 
 @dataclass
 class ActionGroupMetadata:
+    """Metadata for an action group (module group).
+
+    Attributes:
+        group_name: Name of the action group.
+        group_modules: List of Module instances in the group.
+        type: Group type.
+        name: Group name.
+        version: Version string.
+        hash: Content hash.
+    """
+
     group_name: str = ""
     group_modules: list[Module] = field(default_factory=list)
     type: str = ""
@@ -2465,6 +4347,16 @@ class ActionGroupMetadata:
     def from_action_group(
         group_name: str, group_modules: list[Module], metadata: YAMLDict
     ) -> ActionGroupMetadata | None:
+        """Build ActionGroupMetadata from group name, modules, and metadata.
+
+        Args:
+            group_name: Name of the action group.
+            group_modules: List of Module instances.
+            metadata: Dict with type, name, version, hash keys.
+
+        Returns:
+            ActionGroupMetadata, or None if group_name or group_modules is empty.
+        """
         if not group_name:
             return None
 
@@ -2482,6 +4374,14 @@ class ActionGroupMetadata:
 
     @staticmethod
     def from_dict(d: YAMLDict) -> ActionGroupMetadata:
+        """Build ActionGroupMetadata from a dict.
+
+        Args:
+            d: Dict with group_name, group_modules, type, name, version, hash keys.
+
+        Returns:
+            ActionGroupMetadata populated from the dict.
+        """
         agm = ActionGroupMetadata()
         agm.group_name = str(d.get("group_name", ""))
         agm.group_modules = cast(list["Module"], d.get("group_modules", []))
@@ -2492,6 +4392,14 @@ class ActionGroupMetadata:
         return agm
 
     def __eq__(self, agm: object) -> bool:
+        """Compare equality by group_name, name, type, version, and hash.
+
+        Args:
+            agm: Object to compare (must be ActionGroupMetadata).
+
+        Returns:
+            True if equal, False otherwise.
+        """
         if not isinstance(agm, ActionGroupMetadata):
             return False
         return (
@@ -2505,6 +4413,17 @@ class ActionGroupMetadata:
 
 # following ansible-lint severity levels
 class Severity:
+    """Severity levels for rule results (ansible-lint compatible).
+
+    Attributes:
+        VERY_HIGH: Highest severity.
+        HIGH: High severity.
+        MEDIUM: Medium severity.
+        LOW: Low severity.
+        VERY_LOW: Very low severity.
+        NONE: No severity (informational).
+    """
+
     VERY_HIGH = "very_high"
     HIGH = "high"
     MEDIUM = "medium"
@@ -2524,6 +4443,20 @@ _severity_level_mapping = {
 
 
 class RuleTag:
+    """Rule tags for categorization (network, command, dependency, etc.).
+
+    Attributes:
+        NETWORK: Network-related rule.
+        COMMAND: Command-related rule.
+        DEPENDENCY: Dependency-related rule.
+        SYSTEM: System-related rule.
+        PACKAGE: Package-related rule.
+        CODING: Coding-related rule.
+        VARIABLE: Variable-related rule.
+        QUALITY: Quality-related rule.
+        DEBUG: Debug-related rule.
+    """
+
     NETWORK = "network"
     COMMAND = "command"
     DEPENDENCY = "dependency"
@@ -2537,6 +4470,18 @@ class RuleTag:
 
 @dataclass
 class RuleMetadata:
+    """Metadata for a rule (id, description, name, version, severity, tags).
+
+    Attributes:
+        rule_id: Unique rule identifier.
+        description: Rule description.
+        name: Rule name.
+        version: Version string.
+        commit_id: Commit ID.
+        severity: Severity level.
+        tags: Tags for categorization.
+    """
+
     rule_id: str = ""
     description: str = ""
     name: str = ""
@@ -2549,6 +4494,15 @@ class RuleMetadata:
 
 @dataclass
 class SpecMutation:
+    """Mutation for a spec object: key, changes, object, and rule.
+
+    Attributes:
+        key: Optional key for the mutation.
+        changes: List of changes.
+        object: Object being mutated.
+        rule: RuleMetadata for the rule that produced this mutation.
+    """
+
     key: str | None = None
     changes: list[YAMLValue] = field(default_factory=list)
     object: Object = field(default_factory=Object)
@@ -2557,6 +4511,18 @@ class SpecMutation:
 
 @dataclass
 class RuleResult:
+    """Result of applying a rule to a target.
+
+    Attributes:
+        rule: RuleMetadata for the rule that produced this result.
+        verdict: Whether the rule passed (True) or failed (False).
+        detail: Optional dict with additional details.
+        file: Optional file location tuple (path, line, etc.).
+        error: Optional error message.
+        matched: Whether the rule matched the target.
+        duration: Optional duration in seconds.
+    """
+
     rule: RuleMetadata | None = None
 
     verdict: bool = False
@@ -2568,21 +4534,42 @@ class RuleResult:
     duration: float | None = None
 
     def __post_init__(self) -> None:
+        """Normalize verdict to bool."""
         if self.verdict:
             self.verdict = True
         else:
             self.verdict = False
 
     def set_value(self, key: str, value: YAMLValue) -> None:
+        """Set a key in the detail dict.
+
+        Args:
+            key: Key to set.
+            value: Value to set.
+
+        """
         if self.detail is not None:
             self.detail[key] = value
 
     def get_detail(self) -> YAMLDict | None:
+        """Return the detail dict.
+
+        Returns:
+            The detail dict, or None if not set.
+        """
         return self.detail
 
 
 @dataclass
 class Rule(RuleMetadata):
+    """Base class for policy rules with match/process logic.
+
+    Attributes:
+        enabled: Whether the rule is enabled.
+        precedence: Evaluation order (lower evaluated earlier).
+        spec_mutation: Whether the rule mutates spec objects.
+    """
+
     # `enabled` represents if the rule is enabled or not
     enabled: bool = False
 
@@ -2595,6 +4582,15 @@ class Rule(RuleMetadata):
     spec_mutation: bool = False
 
     def __post_init__(self, rule_id: str = "", description: str = "") -> None:
+        """Initialize rule_id and description; validate both are set.
+
+        Args:
+            rule_id: Optional rule ID to set.
+            description: Optional description to set.
+
+        Raises:
+            ValueError: If rule_id or description is empty.
+        """
         if rule_id:
             self.rule_id = rule_id
         if description:
@@ -2607,12 +4603,42 @@ class Rule(RuleMetadata):
             raise ValueError("A rule must have a description")
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if this rule applies to the given context.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if the rule applies.
+
+        Raises:
+            ValueError: Base class method; must be overridden.
+        """
         raise ValueError("this is a base class method")
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Process the context and return a rule result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult or None.
+
+        Raises:
+            ValueError: Base class method; must be overridden.
+        """
         raise ValueError("this is a base class method")
 
     def print(self, result: RuleResult) -> str:
+        """Format a human-readable result string.
+
+        Args:
+            result: RuleResult to format.
+
+        Returns:
+            Formatted string with rule ID, severity, description, verdict, file, detail.
+        """
         output = (
             f"ruleID={self.rule_id}, severity={self.severity}, description={self.description}, result={result.verdict}"
         )
@@ -2624,14 +4650,35 @@ class Rule(RuleMetadata):
         return output
 
     def to_json(self, result: RuleResult) -> str:
+        """Serialize result detail to JSON.
+
+        Args:
+            result: RuleResult to serialize.
+
+        Returns:
+            JSON string of result.detail.
+        """
         return str(json.dumps(result.detail))
 
     def error(self, result: RuleResult) -> str | None:
+        """Return the error message from a result if any.
+
+        Args:
+            result: RuleResult to check.
+
+        Returns:
+            Error string or None.
+        """
         if result.error:
             return result.error
         return None
 
     def get_metadata(self) -> RuleMetadata:
+        """Return RuleMetadata for this rule.
+
+        Returns:
+            RuleMetadata with rule_id, description, name, version, commit_id, severity, tags.
+        """
         return RuleMetadata(
             rule_id=self.rule_id,
             description=self.description,
@@ -2645,13 +4692,33 @@ class Rule(RuleMetadata):
 
 @dataclass
 class NodeResult(JSONSerializable):
+    """Rule results for a single node (RunTarget).
+
+    Attributes:
+        node: The RunTarget or YAMLDict being evaluated.
+        rules: List of RuleResult for this node.
+    """
+
     node: RunTarget | YAMLDict | None = None
     rules: list[RuleResult] = field(default_factory=list)
 
     def results(self) -> list[RuleResult]:
+        """Return the list of RuleResult for this node.
+
+        Returns:
+            List of RuleResult.
+        """
         return self.rules
 
     def find_result(self, rule_id: str) -> RuleResult | None:
+        """Find the first result for a given rule ID.
+
+        Args:
+            rule_id: Rule ID to search for.
+
+        Returns:
+            RuleResult or None if not found.
+        """
         filtered = [r for r in self.rules if r.rule and r.rule.rule_id == rule_id]
         if not filtered:
             return None
@@ -2664,6 +4731,17 @@ class NodeResult(JSONSerializable):
         matched: bool | None = None,
         verdict: bool | None = None,
     ) -> list[RuleResult]:
+        """Filter results by rule_id, tag, matched, and/or verdict.
+
+        Args:
+            rule_id: Rule ID(s) to filter by.
+            tag: Tag(s) to filter by.
+            matched: Filter by matched status.
+            verdict: Filter by verdict (pass/fail).
+
+        Returns:
+            Filtered list of RuleResult.
+        """
         if not rule_id and not tag:
             return self.rules
 
@@ -2695,11 +4773,24 @@ class NodeResult(JSONSerializable):
 
 @dataclass
 class TargetResult(JSONSerializable):
+    """Rule results for a single target (playbook, role, or taskfile).
+
+    Attributes:
+        target_type: One of playbook, role, taskfile.
+        target_name: Name of the target.
+        nodes: List of NodeResult for each node in the target.
+    """
+
     target_type: str = ""  # playbook, role or taskfile
     target_name: str = ""
     nodes: list[NodeResult] = field(default_factory=list)
 
     def applied_rules(self) -> list[RuleResult]:
+        """Return all results where the rule matched the target.
+
+        Returns:
+            List of RuleResult with matched=True.
+        """
         results: list[RuleResult] = []
         for n in self.nodes:
             matched_rules = n.search_results(matched=True)
@@ -2708,6 +4799,11 @@ class TargetResult(JSONSerializable):
         return results
 
     def matched_rules(self) -> list[RuleResult]:
+        """Return all results where the rule verdict is True (passed).
+
+        Returns:
+            List of RuleResult with verdict=True.
+        """
         results: list[RuleResult] = []
         for n in self.nodes:
             matched_rules = n.search_results(verdict=True)
@@ -2716,36 +4812,110 @@ class TargetResult(JSONSerializable):
         return results
 
     def tasks(self) -> TargetResult:
+        """Filter to only task nodes.
+
+        Returns:
+            TargetResult with only TaskCall nodes.
+        """
         return self._filter(TaskCall)
 
     def task(self, name: str) -> NodeResult | None:
+        """Find a task node by name.
+
+        Args:
+            name: Task name to find.
+
+        Returns:
+            NodeResult or None if not found.
+        """
         return self._find_by_name(name=name, target_type=TaskCall)
 
     def roles(self) -> TargetResult:
+        """Filter to only role nodes.
+
+        Returns:
+            TargetResult with only RoleCall nodes.
+        """
         return self._filter(RoleCall)
 
     def role(self, name: str) -> NodeResult | None:
+        """Find a role node by name.
+
+        Args:
+            name: Role name to find.
+
+        Returns:
+            NodeResult or None if not found.
+        """
         return self._find_by_name(name=name, target_type=RoleCall)
 
     def playbooks(self) -> TargetResult:
+        """Filter to only playbook nodes.
+
+        Returns:
+            TargetResult with only PlaybookCall nodes.
+        """
         return self._filter(PlaybookCall)
 
     def playbook(self, name: str) -> NodeResult | None:
+        """Find a playbook node by name.
+
+        Args:
+            name: Playbook name to find.
+
+        Returns:
+            NodeResult or None if not found.
+        """
         return self._find_by_name(name=name, target_type=PlaybookCall)
 
     def plays(self) -> TargetResult:
+        """Filter to only play nodes.
+
+        Returns:
+            TargetResult with only PlayCall nodes.
+        """
         return self._filter(PlayCall)
 
     def play(self, name: str) -> NodeResult | None:
+        """Find a play node by name.
+
+        Args:
+            name: Play name to find.
+
+        Returns:
+            NodeResult or None if not found.
+        """
         return self._find_by_name(name=name, target_type=PlayCall)
 
     def taskfiles(self) -> TargetResult:
+        """Filter to only taskfile nodes.
+
+        Returns:
+            TargetResult with only TaskFileCall nodes.
+        """
         return self._filter(TaskFileCall)
 
     def taskfile(self, name: str) -> NodeResult | None:
+        """Find a taskfile node by name.
+
+        Args:
+            name: Taskfile name to find.
+
+        Returns:
+            NodeResult or None if not found.
+        """
         return self._find_by_name(name=name, target_type=TaskFileCall)
 
     def _find_by_name(self, name: str, target_type: type[RunTarget] | None = None) -> NodeResult | None:
+        """Find a node by name, optionally filtered by target type.
+
+        Args:
+            name: Name to match (from spec.name).
+            target_type: Optional RunTarget subclass to filter by.
+
+        Returns:
+            First matching NodeResult or None.
+        """
         nodes = deepcopy(self.nodes)
         if target_type:
             type_only_result = self._filter(target_type)
@@ -2758,18 +4928,47 @@ class TargetResult(JSONSerializable):
         return filtered_nodes[0]
 
     def _filter(self, target_type: type[RunTarget]) -> TargetResult:
+        """Filter nodes by RunTarget type.
+
+        Args:
+            target_type: RunTarget subclass to filter by.
+
+        Returns:
+            New TargetResult with only matching nodes.
+        """
         filtered_nodes = [nr for nr in self.nodes if isinstance(nr.node, target_type)]
         return TargetResult(target_type=self.target_type, target_name=self.target_name, nodes=filtered_nodes)
 
 
 @dataclass
 class ARIResult(JSONSerializable):
+    """Aggregated rule results for all targets in a scan.
+
+    Attributes:
+        targets: List of TargetResult for each scanned target.
+    """
+
     targets: list[TargetResult] = field(default_factory=list)
 
     def playbooks(self) -> ARIResult:
+        """Filter to only playbook targets.
+
+        Returns:
+            ARIResult with only playbook targets.
+        """
         return self._filter("playbook")
 
     def playbook(self, name: str = "", path: str = "", yaml_str: str = "") -> TargetResult | None:
+        """Find a playbook target by name, path, or yaml_str.
+
+        Args:
+            name: Playbook name to find.
+            path: path to derive name from (uses basename).
+            yaml_str: yaml_lines content to match.
+
+        Returns:
+            TargetResult or None if not found.
+        """
         if name:
             return self._find_by_name(name)
 
@@ -2784,15 +4983,43 @@ class ARIResult(JSONSerializable):
         return None
 
     def roles(self) -> ARIResult:
+        """Filter to only role targets.
+
+        Returns:
+            ARIResult with only role targets.
+        """
         return self._filter("role")
 
     def role(self, name: str) -> TargetResult | None:
+        """Find a role target by name.
+
+        Args:
+            name: Role name to find.
+
+        Returns:
+            TargetResult or None if not found.
+        """
         return self._find_by_name(name=name, type_str="role")
 
     def taskfiles(self) -> ARIResult:
+        """Filter to only taskfile targets.
+
+        Returns:
+            ARIResult with only taskfile targets.
+        """
         return self._filter("taskfile")
 
     def taskfile(self, name: str = "", path: str = "", yaml_str: str = "") -> TargetResult | None:
+        """Find a taskfile target by name, path, or yaml_str.
+
+        Args:
+            name: Taskfile name to find.
+            path: path to derive name from (uses basename).
+            yaml_str: yaml_lines content to match.
+
+        Returns:
+            TargetResult or None if not found.
+        """
         if name:
             return self._find_by_name(name=name, type_str="taskfile")
 
@@ -2809,6 +5036,17 @@ class ARIResult(JSONSerializable):
     def find_target(
         self, name: str = "", path: str = "", yaml_str: str = "", target_type: str = ""
     ) -> TargetResult | None:
+        """Find a target by name, path, or yaml_str.
+
+        Args:
+            name: Target name to find.
+            path: Path to derive name from (uses basename).
+            yaml_str: yaml_lines content to match.
+            target_type: Target type filter.
+
+        Returns:
+            TargetResult or None if not found.
+        """
         if name:
             return self._find_by_name(name=name, type_str=target_type)
 
@@ -2823,6 +5061,15 @@ class ARIResult(JSONSerializable):
         return None
 
     def _find_by_name(self, name: str, type_str: str = "") -> TargetResult | None:
+        """Find a target by name, optionally filtered by type.
+
+        Args:
+            name: Target name to match.
+            type_str: Optional target type filter.
+
+        Returns:
+            TargetResult or None if not found.
+        """
         targets = deepcopy(self.targets)
         if type_str:
             type_only_result = self._filter(type_str)
@@ -2835,6 +5082,15 @@ class ARIResult(JSONSerializable):
         return filtered_targets[0]
 
     def _find_by_yaml_str(self, yaml_str: str, type_str: str) -> TargetResult | None:
+        """Find a target by yaml_lines content.
+
+        Args:
+            yaml_str: yaml_lines content to match.
+            type_str: Target type filter.
+
+        Returns:
+            TargetResult or None if not found.
+        """
         type_only_result = self._filter(type_str)
         if not type_only_result:
             return None
@@ -2850,5 +5106,13 @@ class ARIResult(JSONSerializable):
         return filtered_targets[0]
 
     def _filter(self, type_str: str) -> ARIResult:
+        """Filter targets by type.
+
+        Args:
+            type_str: Target type (playbook, role, taskfile).
+
+        Returns:
+            New ARIResult with only matching targets.
+        """
         filtered_targets = [tr for tr in self.targets if tr.target_type == type_str]
         return ARIResult(targets=filtered_targets)

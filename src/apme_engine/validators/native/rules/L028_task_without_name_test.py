@@ -1,5 +1,4 @@
-# Colocated tests for L028 (TaskWithoutNameRule). Uses Python-object context from _test_helpers.
-
+"""Tests for native rule L028."""
 
 from apme_engine.validators.native.rules._test_helpers import (
     make_context,
@@ -10,6 +9,7 @@ from apme_engine.validators.native.rules.L028_task_without_name import TaskWitho
 
 
 def test_L028_fires_when_task_has_no_name() -> None:
+    """Verify L028 fires when task has no name."""
     spec = make_task_spec(module="copy")
     spec.name = ""
     task = make_task_call(spec)
@@ -23,6 +23,7 @@ def test_L028_fires_when_task_has_no_name() -> None:
 
 
 def test_L028_does_not_fire_when_task_has_name() -> None:
+    """Verify L028 does not fire when task has name."""
     spec = make_task_spec(name="Install package", module="ansible.builtin.apt")
     task = make_task_call(spec)
     ctx = make_context(task)
@@ -34,6 +35,7 @@ def test_L028_does_not_fire_when_task_has_name() -> None:
 
 
 def test_L028_does_not_fire_for_role() -> None:
+    """Verify L028 does not fire for role targets."""
     from apme_engine.validators.native.rules._test_helpers import make_role_call, make_role_spec
 
     spec = make_role_spec(name="foo")

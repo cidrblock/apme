@@ -1,3 +1,5 @@
+"""Native rule L027: detect roles used without metadata."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -15,6 +17,18 @@ from apme_engine.engine.models import (
 
 @dataclass
 class RoleWithoutMetadataRule(Rule):
+    """Rule for roles used without metadata.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "L027"
     description: str = "A role without metadata is used"
     enabled: bool = True
@@ -24,11 +38,29 @@ class RoleWithoutMetadataRule(Rule):
     tags: tuple[str, ...] = (Tag.DEPENDENCY,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Return True if the current target is a role.
+
+        Args:
+            ctx: Current Ansible run context.
+
+        Returns:
+            True if the current target is a role.
+
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Role)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check for roles without metadata and return verdict.
+
+        Args:
+            ctx: Current Ansible run context.
+
+        Returns:
+            RuleResult with verdict if role lacks metadata, None otherwise.
+
+        """
         role = ctx.current
         if role is None:
             return None

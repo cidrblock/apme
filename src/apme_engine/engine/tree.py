@@ -1,3 +1,5 @@
+"""Tree structures for Ansible call hierarchy (playbook -> play -> role -> task)."""
+
 from __future__ import annotations
 
 import json
@@ -43,6 +45,14 @@ obj_type_dict = {
 
 @dataclass
 class TreeNode:
+    """Tree node for representing hierarchical (src, dst) relationships.
+
+    Attributes:
+        key: Node identifier string.
+        children: List of child TreeNodes.
+        definition: Arbitrary definition data for the node.
+    """
+
     key: str = ""
 
     # children is a list of TreeNode
@@ -54,6 +64,17 @@ class TreeNode:
     # which is composed of multiple TreeNode
     @staticmethod
     def load(graph: list[tuple[str | None, str]] | None = None) -> TreeNode:
+        """Load a tree from a list of (src, dst) pairs.
+
+        Args:
+            graph: List of (src, dst) tuples; exactly one pair must have src None.
+
+        Returns:
+            Root TreeNode built from the graph.
+
+        Raises:
+            ValueError: If graph does not have exactly one root (src is None).
+        """
         if graph is None:
             graph = []
         root_key_cands = [pair[1] for pair in graph if pair[0] is None]
@@ -69,6 +90,11 @@ class TreeNode:
 
     # output list of (src, dst) to stdout or file
     def dump(self, path: str = "") -> None:
+        """Output list of (src, dst) pairs to stdout or file.
+
+        Args:
+            path: File path to write JSON; if empty, prints to stdout.
+        """
         src_dst_array = self.to_graph()
         if path == "":
             print(json.dumps(src_dst_array, indent=2))
@@ -78,22 +104,51 @@ class TreeNode:
                 file.write(tree_json)
 
     def to_str(self) -> str:
+        """Serialize tree to JSON string.
+
+        Returns:
+            JSON string of (src, dst) pairs.
+        """
         src_dst_array = self.to_graph()
         return json.dumps(src_dst_array)
 
     # return list of (src, dst)
     def to_graph(self) -> list[tuple[str | None, str]]:
+        """Return list of (src, dst) pairs representing the tree.
+
+        Returns:
+            List of (src, dst) tuples.
+        """
         return self.recursive_graph_dump(None, self)
 
     # return list of dst keys
     def to_keys(self) -> list[str]:
+        """Return list of dst keys from the tree.
+
+        Returns:
+            List of destination key strings.
+        """
         return [p[1] for p in self.to_graph()]
 
     # reutrn list of TreeNodes that are under this TreeNode
     def to_list(self) -> list[TreeNode]:
+        """Return list of TreeNodes under this node (including self).
+
+        Returns:
+            List of TreeNodes in depth-first order.
+        """
         return self.recursive_convert_to_list(self)
 
     def recursive_convert_to_list(self, node: TreeNode, nodelist: list[TreeNode] | None = None) -> list[TreeNode]:
+        """Recursively build list of nodes in depth-first order.
+
+        Args:
+            node: Current node to process.
+            nodelist: Accumulated list of nodes; defaults to empty list.
+
+        Returns:
+            List of TreeNodes including node and all descendants.
+        """
         if nodelist is None:
             nodelist = []
         current = [pair for pair in nodelist]
@@ -108,6 +163,16 @@ class TreeNode:
         src_dst_array: list[tuple[str | None, str]],
         parent_keys: set[str] | None = None,
     ) -> tuple[TreeNode, set[str]]:
+        """Recursively load tree from (src, dst) pairs.
+
+        Args:
+            node_key: Key of current node.
+            src_dst_array: List of (src, dst) tuples.
+            parent_keys: Set of ancestor keys to detect cycles; defaults to empty.
+
+        Returns:
+            Tuple of (TreeNode for node_key, updated parent_keys set).
+        """
         if parent_keys is None:
             parent_keys = set()
         n = TreeNode(key=node_key)
@@ -131,6 +196,16 @@ class TreeNode:
         node: TreeNode,
         src_dst_array: list[tuple[str | None, str]] | None = None,
     ) -> list[tuple[str | None, str]]:
+        """Recursively dump tree to list of (src, dst) pairs.
+
+        Args:
+            parent_node: Parent of node; None for root.
+            node: Current node to dump.
+            src_dst_array: Accumulated pairs; defaults to empty list.
+
+        Returns:
+            List of (src, dst) tuples.
+        """
         if src_dst_array is None:
             src_dst_array = []
         current = [pair for pair in src_dst_array]
@@ -147,6 +222,14 @@ class TreeNode:
     # return a list of (src, dst) which ends with the "end_key"
     # this could return multiple paths
     def path_to_root(self, end_key: str) -> list[TreeNode]:
+        """Return branches from root to nodes with end_key.
+
+        Args:
+            end_key: Key of target node(s).
+
+        Returns:
+            List of TreeNodes representing paths (each path is a branch).
+        """
         path_array = self.search_branch_to_key(end_key, self)
         return [nodelist2branch(nodelist) for nodelist in path_array]
 
@@ -156,6 +239,16 @@ class TreeNode:
         node: TreeNode,
         ancestors: list[TreeNode] | None = None,
     ) -> list[list[TreeNode]]:
+        """Find all branches from root to nodes matching search_key.
+
+        Args:
+            search_key: Key of target node(s).
+            node: Current node to search.
+            ancestors: Accumulated ancestor nodes.
+
+        Returns:
+            List of node lists, each a path from root to a matching node.
+        """
         if ancestors is None:
             ancestors = []
         current = [n for n in ancestors]
@@ -168,18 +261,34 @@ class TreeNode:
         return found
 
     def copy(self) -> TreeNode:
+        """Return a deep copy of this node and its children.
+
+        Returns:
+            Deep copy of this TreeNode.
+
+        """
         return deepcopy(self)
 
     @property
     def is_empty(self) -> bool:
+        """Return True if node has no key and no children."""
         return self.key == "" and len(self.children) == 0
 
     @property
     def has_definition(self) -> bool:
+        """Return True if definition dict is empty (no keys)."""
         return len(self.definition) == 0
 
 
 def nodelist2branch(nodelist: list[TreeNode]) -> TreeNode:
+    """Convert a list of TreeNodes into a single branch (parent-child chain).
+
+    Args:
+        nodelist: List of nodes in order from root to leaf.
+
+    Returns:
+        TreeNode branch with first node as root and rest as children.
+    """
     if len(nodelist) == 0:
         return TreeNode()
     t = nodelist[0].copy()
@@ -193,7 +302,14 @@ def nodelist2branch(nodelist: list[TreeNode]) -> TreeNode:
 
 
 def _safe_list(v: object) -> list[Object | CallObject]:
-    """Get a list from a value that might be list or ObjectList."""
+    """Get a list from a value that might be list or ObjectList.
+
+    Args:
+        v: Value that may be ObjectList, list, or other.
+
+    Returns:
+        List of Object or CallObject items.
+    """
     if isinstance(v, ObjectList):
         return v.items
     if isinstance(v, list):
@@ -202,12 +318,26 @@ def _safe_list(v: object) -> list[Object | CallObject]:
 
 
 def _safe_dict(v: object) -> dict[str, object]:
-    """Get a dict from a value that might be dict."""
+    """Get a dict from a value that might be dict.
+
+    Args:
+        v: Value that may be dict or other.
+
+    Returns:
+        The dict if v is dict, else empty dict.
+    """
     return v if isinstance(v, dict) else {}
 
 
 def _ram_match_object(match: object) -> Object | CallObject | None:
-    """Extract 'object' from a RAM search result dict if it's an Object/CallObject."""
+    """Extract 'object' from a RAM search result dict if it's an Object/CallObject.
+
+    Args:
+        match: RAM search result (typically a dict).
+
+    Returns:
+        Object or CallObject if present and valid, else None.
+    """
     if not isinstance(match, dict):
         return None
     obj = match.get("object")
@@ -215,7 +345,14 @@ def _ram_match_object(match: object) -> Object | CallObject | None:
 
 
 def _ram_match_defined_in(match: object) -> str:
-    """Extract 'defined_in' from a RAM search result for display."""
+    """Extract 'defined_in' from a RAM search result for display.
+
+    Args:
+        match: RAM search result (typically a dict).
+
+    Returns:
+        defined_in string or empty string.
+    """
     if not isinstance(match, dict):
         return ""
     di = match.get("defined_in")
@@ -223,7 +360,14 @@ def _ram_match_defined_in(match: object) -> str:
 
 
 def _ram_match_offspring(match: object) -> list[dict[str, object]]:
-    """Extract 'offspring_objects' from a RAM search result as list of dicts."""
+    """Extract 'offspring_objects' from a RAM search result as list of dicts.
+
+    Args:
+        match: RAM search result (typically a dict).
+
+    Returns:
+        List of offspring dicts.
+    """
     if not isinstance(match, dict):
         return []
     raw = match.get("offspring_objects", [])
@@ -233,6 +377,15 @@ def _ram_match_offspring(match: object) -> list[dict[str, object]]:
 
 
 def load_single_definition(defs: dict[str, object], key: str) -> ObjectList:
+    """Load ObjectList for a single definition key.
+
+    Args:
+        defs: Definitions dict keyed by type.
+        key: Type key (e.g. 'roles', 'modules').
+
+    Returns:
+        ObjectList of items for that key.
+    """
     obj_list = ObjectList()
     items = _safe_list(defs.get(key, []))
     for item in items:
@@ -242,6 +395,15 @@ def load_single_definition(defs: dict[str, object], key: str) -> ObjectList:
 
 
 def load_definitions(defs: dict[str, object], types: list[str]) -> list[ObjectList]:
+    """Load ObjectLists for multiple definition types.
+
+    Args:
+        defs: Definitions dict.
+        types: List of type keys to load.
+
+    Returns:
+        List of ObjectLists in same order as types.
+    """
     def_list = []
     for type_key in types:
         objs_per_type = load_single_definition(defs, type_key)
@@ -250,6 +412,14 @@ def load_definitions(defs: dict[str, object], types: list[str]) -> list[ObjectLi
 
 
 def load_all_definitions(definitions: dict[str, object]) -> dict[str, ObjectList]:
+    """Load all definition types from definitions structure.
+
+    Args:
+        definitions: Root definitions dict, possibly with 'mappings' or per-artifact defs.
+
+    Returns:
+        Dict mapping type keys to ObjectLists.
+    """
     _definitions: dict[str, object] = {}
     _definitions = {"root": definitions} if "mappings" in definitions else definitions
     loaded: dict[str, ObjectList] = {}
@@ -272,6 +442,15 @@ def make_dicts(
     root_definitions: dict[str, ObjectList],
     ext_definitions: dict[str, ObjectList],
 ) -> dict[str, dict[str, object]]:
+    """Merge root and ext definitions into type-keyed object dicts.
+
+    Args:
+        root_definitions: Root ObjectLists by type.
+        ext_definitions: External ObjectLists by type.
+
+    Returns:
+        Dict mapping type keys to key->object dicts.
+    """
     definitions: dict[str, ObjectList] = {
         "roles": ObjectList(),
         "modules": ObjectList(),
@@ -300,6 +479,16 @@ def load_module_redirects(
     ext_definitions: dict[str, ObjectList],
     module_dict: dict[str, object] | None = None,
 ) -> dict[str, str]:
+    """Build short module name -> full key redirect map from collections.
+
+    Args:
+        root_definitions: Root definitions including collections.
+        ext_definitions: External definitions including collections.
+        module_dict: Optional module key->object dict for lookup.
+
+    Returns:
+        Dict mapping short module names to full module keys.
+    """
     if module_dict is None:
         module_dict = {}
     collection_list = root_definitions.get("collections", ObjectList())
@@ -331,6 +520,15 @@ def load_module_redirects(
 
 
 def resolve(obj: Task | Play, dicts: dict[str, dict[str, object]]) -> tuple[Task | Play, bool]:
+    """Resolve executable/role references in Task or Play.
+
+    Args:
+        obj: Task or Play to resolve.
+        dicts: Type-keyed dicts of objects (modules, roles, taskfiles).
+
+    Returns:
+        Tuple of (modified obj, True if any resolution failed).
+    """
     failed = False
     if isinstance(obj, Task):
         task = obj
@@ -370,6 +568,16 @@ def resolve_module(
     module_dict: dict[str, object] | None = None,
     module_redirects: dict[str, str] | None = None,
 ) -> str:
+    """Resolve module name to full module key.
+
+    Args:
+        module_name: Short or FQCN module name.
+        module_dict: Optional module key->object dict.
+        module_redirects: Optional short name -> key redirect map.
+
+    Returns:
+        Full module key or empty string if not found.
+    """
     if module_redirects is None:
         module_redirects = {}
     if module_dict is None:
@@ -397,6 +605,17 @@ def resolve_role(
     my_collection_name: str = "",
     collections_in_play: list[str] | None = None,
 ) -> str:
+    """Resolve role name to full role key.
+
+    Args:
+        role_name: Short or FQCN role name.
+        role_dict: Optional role key->object dict.
+        my_collection_name: Collection context for short names.
+        collections_in_play: Collections to try for short names.
+
+    Returns:
+        Full role key or empty string if not found.
+    """
     if collections_in_play is None:
         collections_in_play = []
     if role_dict is None:
@@ -437,6 +656,16 @@ def resolve_taskfile(
     taskfile_dict: dict[str, object] | None = None,
     task_key: str = "",
 ) -> str:
+    """Resolve taskfile reference (path) to full taskfile key.
+
+    Args:
+        taskfile_ref: Path or reference to taskfile.
+        taskfile_dict: Optional taskfile key->object dict.
+        task_key: Key of calling task for context.
+
+    Returns:
+        Full taskfile key or empty string if not found.
+    """
     if taskfile_dict is None:
         taskfile_dict = {}
     type_prefix = "task "
@@ -479,6 +708,16 @@ def resolve_playbook(
     playbook_dict: dict[str, object] | None = None,
     play_key: str = "",
 ) -> str:
+    """Resolve playbook reference (path) to full playbook key.
+
+    Args:
+        playbook_ref: Path or reference to playbook.
+        playbook_dict: Optional playbook key->object dict.
+        play_key: Key of calling play for context.
+
+    Returns:
+        Full playbook key or empty string if not found.
+    """
     if playbook_dict is None:
         playbook_dict = {}
     type_prefix = "play "
@@ -504,12 +743,19 @@ def resolve_playbook(
 
 
 def init_builtin_modules() -> list[Module]:
+    """Load and return builtin Ansible modules.
+
+    Returns:
+        List of Module objects for builtin modules.
+    """
     builtin_module_dict = load_builtin_modules()
     modules = list(builtin_module_dict.values())
     return modules
 
 
 class TreeLoader:
+    """Loads and traverses Ansible object trees from definitions."""
+
     def __init__(
         self,
         root_definitions: dict[str, object],
@@ -519,6 +765,16 @@ class TreeLoader:
         target_taskfile_path: str | None = None,
         load_all_taskfiles: bool = False,
     ) -> None:
+        """Initialize TreeLoader.
+
+        Args:
+            root_definitions: Root definitions from ARI/parser.
+            ext_definitions: External definitions.
+            ram_client: Optional RAM client for external lookups.
+            target_playbook_path: Optional target playbook filter.
+            target_taskfile_path: Optional target taskfile filter.
+            load_all_taskfiles: Whether to load all taskfiles in roles.
+        """
         self.ram_client: RAMClient | None = ram_client
 
         self.org_root_definitions = root_definitions
@@ -617,6 +873,11 @@ class TreeLoader:
         return
 
     def run(self) -> tuple[list[ObjectList], ObjectList]:
+        """Build trees from playbook and role mappings.
+
+        Returns:
+            Tuple of (list of ObjectLists per tree, additional project objects).
+        """
         additional_objects = ObjectList()
         load_mapping = cast(Load | None, self.load_and_mapping) if self.load_and_mapping else None
         if load_mapping and load_mapping.target_type == LoadType.PROJECT:
@@ -676,6 +937,18 @@ class TreeLoader:
         index: int = 0,
         history: list[str] | None = None,
     ) -> ObjectList:
+        """Recursively collect call objects for a key and its children.
+
+        Args:
+            key: Object key to load.
+            caller: Optional caller CallObject.
+            handover: Optional handover dict for child context.
+            index: Call index.
+            history: Optional list of visited keys.
+
+        Returns:
+            ObjectList of CallObjects for this subtree.
+        """
         if history is None:
             history = []
         if handover is None:
@@ -803,6 +1076,17 @@ class TreeLoader:
         _objects: ObjectList,
         caller: CallObject | None = None,
     ) -> list[list[str | None]]:
+        """Recursively build graph of [caller_key, my_key] edges.
+
+        Args:
+            key: Object key to process.
+            graph: Accumulated graph edges.
+            _objects: ObjectList to add call objects to.
+            caller: Optional caller CallObject.
+
+        Returns:
+            Updated graph with new edges.
+        """
         current_graph = [g for g in graph]
         # if this key is already in the graph src, no need to trace children
         key_in_graph_src = [g for g in current_graph if g[0] == key]
@@ -835,6 +1119,18 @@ class TreeLoader:
 
     # get definition object from root/ext definitions
     def get_object(self, obj_key: str, search_ram: bool = False) -> Object | CallObject | None:
+        """Get definition object by key from root/ext definitions or RAM.
+
+        Args:
+            obj_key: Object key (e.g. playbook path, role key).
+            search_ram: Whether to query RAM for missing objects.
+
+        Returns:
+            Object or CallObject if found, else None.
+
+        Raises:
+            ValueError: If obj_key type cannot be detected.
+        """
         obj_type = detect_type(obj_key)
         if obj_type == "":
             raise ValueError(f'failed to detect object type from key "{obj_key}"')
@@ -858,6 +1154,7 @@ class TreeLoader:
         return None
 
     def add_builtin_modules(self) -> None:
+        """Add builtin Ansible modules to ext_definitions."""
         builtin_module_dict = load_builtin_modules()
         builtin_modules = list(builtin_module_dict.values())
         obj_list = ObjectList(items=[cast(Object | CallObject, m) for m in builtin_modules])
@@ -868,6 +1165,15 @@ class TreeLoader:
         obj: Object | CallObject,
         handover_from_upper_node: dict[str, object] | None = None,
     ) -> tuple[list[str], dict[str, str], dict[str, object]]:
+        """Get child keys for Playbook, Play, Role, TaskFile, or Task.
+
+        Args:
+            obj: Object to get children from.
+            handover_from_upper_node: Optional handover dict from parent.
+
+        Returns:
+            Tuple of (child keys, from_ram dict, handover dict).
+        """
         if handover_from_upper_node is None:
             handover_from_upper_node = {}
         if isinstance(obj, CallObject):
@@ -1159,6 +1465,14 @@ class TreeLoader:
         return children_keys, from_ram, handover
 
     def node_objects(self, tree: TreeNode) -> ObjectList:
+        """Load ObjectList for all keys in tree.
+
+        Args:
+            tree: TreeNode to traverse.
+
+        Returns:
+            ObjectList of objects for tree keys.
+        """
         loaded: dict[str, Object | CallObject] = {}
         obj_list = ObjectList()
         for k in tree.to_keys():
@@ -1175,11 +1489,28 @@ class TreeLoader:
 
 
 def is_templated(txt: str) -> bool:
+    """Check if string contains Jinja2 template syntax.
+
+    Args:
+        txt: String to check.
+
+    Returns:
+        True if '{{' appears in txt.
+    """
     return "{{" in txt
 
 
 # TODO: need to use variable manager
 def render_template(txt: str, variable_manager: object = None) -> str:
+    """Render template string to concrete path (simplified heuristic).
+
+    Args:
+        txt: Template string (e.g. with Jinja2).
+        variable_manager: Unused; for future variable resolution.
+
+    Returns:
+        Resolved path string.
+    """
     regex = r'[\'"]([^\'"]+\.ya?ml)[\'"]'
     matched = re.search(regex, txt)
     if matched:
@@ -1194,6 +1525,12 @@ def render_template(txt: str, variable_manager: object = None) -> str:
 
 
 def dump_node_objects(obj_list: ObjectList, path: str = "") -> None:
+    """Dump ObjectList to stdout or file.
+
+    Args:
+        obj_list: ObjectList to dump.
+        path: File path; if empty, prints to stdout.
+    """
     if path == "":
         lines = obj_list.dump()
         for line in lines:
@@ -1204,5 +1541,14 @@ def dump_node_objects(obj_list: ObjectList, path: str = "") -> None:
 
 
 def key_to_file_name(prefix: str, key: str) -> str:
+    """Convert key to filename with prefix.
+
+    Args:
+        prefix: Filename prefix.
+        key: Object key (spaces, slashes, dots replaced).
+
+    Returns:
+        Sanitized filename string.
+    """
     trans_table = str.maketrans({" ": "___", "/": "---", ".": "_dot_"})
     return prefix + "___" + key.translate(trans_table) + ".json"

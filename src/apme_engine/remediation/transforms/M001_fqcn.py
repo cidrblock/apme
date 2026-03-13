@@ -76,7 +76,15 @@ _BUILTIN_FQCN: dict[str, str] = {
 
 
 def _resolve_fqcn(violation: ViolationDict, current_key: str) -> str | None:
-    """Get the target FQCN from the violation or fall back to the static map."""
+    """Get the target FQCN from the violation or fall back to the static map.
+
+    Args:
+        violation: Violation dict (may have resolved_fqcn from ansible-core).
+        current_key: Current short module name.
+
+    Returns:
+        FQCN string, or None if not resolvable.
+    """
     fqcn = violation.get("resolved_fqcn")
     if fqcn is not None and str(fqcn) != current_key:
         return str(fqcn)
@@ -84,7 +92,15 @@ def _resolve_fqcn(violation: ViolationDict, current_key: str) -> str | None:
 
 
 def fix_fqcn(content: str, violation: ViolationDict) -> TransformResult:
-    """Rename a short module name to its FQCN."""
+    """Rename a short module name to its FQCN.
+
+    Args:
+        content: YAML file content.
+        violation: Violation dict with line and optional resolved_fqcn.
+
+    Returns:
+        TransformResult with modified content if applied.
+    """
     yaml = FormattedYAML(typ="rt", pure=True, version=(1, 1))
 
     try:

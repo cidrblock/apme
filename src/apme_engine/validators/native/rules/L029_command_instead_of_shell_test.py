@@ -1,5 +1,4 @@
-# Colocated tests for L029 (UseShellRule). Uses Python-object context from _test_helpers.
-
+"""Tests for native rule L029."""
 
 from apme_engine.engine.models import ExecutableType
 from apme_engine.validators.native.rules._test_helpers import (
@@ -11,6 +10,7 @@ from apme_engine.validators.native.rules.L029_command_instead_of_shell import Us
 
 
 def test_L029_fires_when_resolved_is_shell() -> None:
+    """Verify L029 fires when resolved module is shell."""
     spec = make_task_spec(
         module="shell",
         executable="shell",
@@ -28,6 +28,7 @@ def test_L029_fires_when_resolved_is_shell() -> None:
 
 
 def test_L029_does_not_fire_when_resolved_is_command() -> None:
+    """Verify L029 does not fire when resolved module is command."""
     spec = make_task_spec(
         module="command",
         executable="command",

@@ -18,6 +18,14 @@ from .rules import L057_syntax, L058_argspec_doc, L059_argspec_mock, M001_M004_i
 
 @dataclass
 class AnsibleRuleTiming:
+    """Per-rule timing for ansible validator.
+
+    Attributes:
+        rule_id: Rule identifier.
+        elapsed_ms: Elapsed time in milliseconds.
+        violations: Number of violations found.
+    """
+
     rule_id: str = ""
     elapsed_ms: float = 0.0
     violations: int = 0
@@ -25,12 +33,26 @@ class AnsibleRuleTiming:
 
 @dataclass
 class AnsibleRunResult:
+    """Result of ansible validator run.
+
+    Attributes:
+        violations: List of violation dicts.
+        rule_timings: Per-rule timing data.
+    """
+
     violations: list[dict[str, object]] = field(default_factory=list)
     rule_timings: list[AnsibleRuleTiming] = field(default_factory=list)
 
 
 def _extract_task_nodes(hierarchy_payload: YAMLDict | None) -> list[dict[str, object]]:
-    """Extract all taskcall nodes from the hierarchy payload."""
+    """Extract all taskcall nodes from the hierarchy payload.
+
+    Args:
+        hierarchy_payload: Hierarchy payload from scan context.
+
+    Returns:
+        List of taskcall node dicts.
+    """
     nodes: list[dict[str, object]] = []
     if hierarchy_payload is None:
         return nodes
@@ -67,15 +89,35 @@ class AnsibleValidator:
         venv_root: Path,
         env_extra: dict[str, str] | None = None,
     ):
+        """Initialize the ansible validator.
+
+        Args:
+            venv_root: Path to the ansible-core venv root.
+            env_extra: Optional extra environment variables for subprocesses.
+        """
         self._venv_root = venv_root
         self._env_extra = env_extra
 
     def run(self, context: ScanContext) -> list[dict[str, object]]:
-        """Run all ansible checks and return violation dicts."""
+        """Run all ansible checks and return violation dicts.
+
+        Args:
+            context: Scan context with hierarchy payload and root dir.
+
+        Returns:
+            List of violation dicts.
+        """
         return self.run_with_timing(context).violations
 
     def run_with_timing(self, context: ScanContext) -> AnsibleRunResult:
-        """Run all ansible checks and return violations + per-rule timing."""
+        """Run all ansible checks and return violations + per-rule timing.
+
+        Args:
+            context: Scan context with hierarchy payload and root dir.
+
+        Returns:
+            AnsibleRunResult with violations and rule timings.
+        """
         violations: list[dict[str, object]] = []
         rule_timings: list[AnsibleRuleTiming] = []
         root_dir = Path(context.root_dir) if context.root_dir else None

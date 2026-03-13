@@ -1,3 +1,5 @@
+"""Variable resolution for Ansible tasks using VariableAnnotator and Context."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -27,14 +29,35 @@ from apme_engine.engine.models import (
 
 
 class VariableAnnotator(Annotator):
+    """Annotator that resolves variables and module options for Ansible tasks.
+
+    Attributes:
+        type: Annotator type identifier for variable annotation.
+        context: Context with inventories and variable history.
+
+    """
+
     type: str = VariableAnnotation.type
     context: Context
 
     def __init__(self, context: Context) -> None:
+        """Initialize VariableAnnotator with context for variable resolution.
+
+        Args:
+            context: Context with inventories and variable history.
+        """
         super().__init__(context=context)
         self.context = context
 
     def run(self, taskcall: TaskCall) -> VariableAnnotatorResult:
+        """Resolve variables and module options for a task, updating taskcall in place.
+
+        Args:
+            taskcall: TaskCall to annotate with resolved variables and args.
+
+        Returns:
+            VariableAnnotatorResult (empty; annotations applied to taskcall).
+        """
         resolved = resolve_module_options(self.context, taskcall)
         resolved_module_options = resolved[0]
         resolved_variables = resolved[1]
@@ -115,11 +138,23 @@ class VariableAnnotator(Annotator):
 
 @dataclass
 class VariableAnnotatorResult(AnnotatorResult):
+    """Result container for VariableAnnotator (empty; annotations on taskcall)."""
+
     pass
 
 
 def tree_to_task_list(tree: ObjectList | object, node_objects: ObjectList) -> list[YAMLDict]:
-    """Convert tree (TreeNode-like with .key, .children) to task list. tree is unused/dead."""
+    """Convert tree (TreeNode-like with .key, .children) to task list.
+
+    The tree argument is unused; node_objects provides the actual structure.
+
+    Args:
+        tree: Unused; kept for API compatibility.
+        node_objects: ObjectList with items to traverse.
+
+    Returns:
+        List of task dicts (YAMLDict) from the tree.
+    """
     node_dict: dict[str, Object | CallObject] = {}
     for no in node_objects.items:
         node_dict[no.key] = no
@@ -191,6 +226,15 @@ def tree_to_task_list(tree: ObjectList | object, node_objects: ObjectList) -> li
 
 
 def resolve_variables(tree: ObjectList, additional: ObjectList) -> list[TaskCall]:
+    """Resolve variables for all TaskCalls in the tree using VariableAnnotator.
+
+    Args:
+        tree: ObjectList of call objects (playbook/role/task hierarchy).
+        additional: ObjectList with repository/inventory for context.
+
+    Returns:
+        List of TaskCalls with resolved variables and annotations.
+    """
     first_item = tree.items[0] if len(tree.items) > 0 else None
     tree_root_key = getattr(getattr(first_item, "spec", None), "key", "") if first_item else ""
     inventories = get_inventories(tree_root_key, additional)
@@ -217,6 +261,15 @@ def resolve_variables(tree: ObjectList, additional: ObjectList) -> list[TaskCall
 
 
 def get_inventories(tree_root_key: str, additional: ObjectList) -> list[Inventory]:
+    """Get inventory objects for a playbook or role from additional repositories.
+
+    Args:
+        tree_root_key: Key of the playbook or role root.
+        additional: ObjectList containing repositories with inventories.
+
+    Returns:
+        List of Inventory objects for the matching playbook/role.
+    """
     if tree_root_key == "":
         return []
     tree_root_type = detect_type(tree_root_key)

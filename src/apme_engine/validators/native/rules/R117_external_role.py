@@ -1,3 +1,5 @@
+"""Native rule R117: detect external role usage."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -14,11 +16,24 @@ from apme_engine.engine.models import RuleTag as Tag
 
 @dataclass
 class ExternalRoleRuleResult(RuleResult):
-    pass
+    """Result subclass for ExternalRoleRule."""
 
 
 @dataclass
 class ExternalRoleRule(Rule):
+    """Rule for external role usage.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+        result_type: Type of RuleResult to produce.
+    """
+
     rule_id: str = "R117"
     description: str = "An external role is used"
     enabled: bool = True
@@ -29,11 +44,27 @@ class ExternalRoleRule(Rule):
     result_type: type[RuleResult] = ExternalRoleRuleResult
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a role target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a role.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Role)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check for external role and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with verdict, or None.
+        """
         role = ctx.current
         if role is None:
             return None

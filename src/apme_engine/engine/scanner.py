@@ -1,3 +1,5 @@
+"""ARI scanner: evaluates collections, roles, playbooks, and taskfiles against rules."""
+
 from __future__ import annotations
 
 import contextlib
@@ -69,6 +71,19 @@ default_logger_key = "ari"
 
 @dataclass
 class Config:
+    """ARI scanner configuration loaded from file and environment.
+
+    Attributes:
+        path: Path to the config file.
+        data_dir: Directory for ARI data (collections, roles, etc.).
+        rules_dir: Directory containing rule definitions.
+        logger_key: Logger channel identifier.
+        log_level: Logging level (e.g., info, debug).
+        rules: List of rule IDs or paths to enable.
+        disable_default_rules: If True, do not load default rules from rules_dir.
+
+    """
+
     path: str = ""
 
     data_dir: str = ""
@@ -81,6 +96,11 @@ class Config:
     _data: YAMLDict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        """Load config from file and env, then populate defaults.
+
+        Raises:
+            ValueError: If config file fails to load.
+        """
         if not self.path:
             self.path = default_config_path
         config_data = {}
@@ -129,6 +149,18 @@ class Config:
         __type: str | None = None,
         separator: str = "",
     ) -> str | list[str] | bool:
+        """Resolve a config value from env, YAML file, or default.
+
+        Args:
+            env_key: Environment variable name to check first.
+            yaml_key: Key in config YAML to check if env is not set.
+            __default: Default value when neither env nor YAML has it.
+            __type: If "list", split env value by separator.
+            separator: String to split env value when __type is "list".
+
+        Returns:
+            The resolved value (str, list of str, or bool).
+        """
         if env_key in os.environ:
             _from_env: str | list[str] | bool | None = os.environ.get(env_key, None)
             if _from_env and __type and __type == "list":
@@ -161,6 +193,67 @@ logger.set_log_level(config.log_level)
 
 @dataclass
 class SingleScan:
+    """State for a single ARI scan (collection, role, playbook, or taskfile).
+
+    Attributes:
+        type: Scan target type (collection, role, playbook, taskfile).
+        name: Target name.
+        collection_name: Collection name if scanning a collection.
+        role_name: Role name if scanning a role.
+        target_playbook_name: Specific playbook name within a project.
+        playbook_yaml: Raw YAML string for inline playbook scanning.
+        playbook_only: Whether to scan only the playbook file.
+        target_taskfile_name: Specific taskfile name within a project.
+        taskfile_yaml: Raw YAML string for inline taskfile scanning.
+        taskfile_only: Whether to scan only the taskfile.
+        skip_playbook_format_error: Whether to skip malformed playbooks.
+        skip_task_format_error: Whether to skip malformed tasks.
+        install_log: Log output from dependency installation.
+        tmp_install_dir: Temporary directory for installed dependencies.
+        index: Index data for the scanned target.
+        root_definitions: Definitions from the root target.
+        ext_definitions: Definitions from external dependencies.
+        target_object: Root Object for the scan target.
+        trees: List of object trees built during scanning.
+        additional: Additional objects (e.g. inventory).
+        taskcalls_in_trees: Task calls organized by tree.
+        contexts: Ansible run contexts built during scanning.
+        data_report: Data report dict for the scan.
+        install_dependencies: Whether to install dependencies before scanning.
+        use_ansible_path: Whether to use ansible path resolution.
+        dependency_dir: Directory containing dependencies.
+        base_dir: Base directory for path resolution.
+        target_path: Resolved target path on disk.
+        loaded_dependency_dirs: List of loaded dependency directory dicts.
+        use_src_cache: Whether to use source cache.
+        prm: Previous RAM metadata for the target.
+        download_url: URL the target was downloaded from.
+        version: Version of the target.
+        hash: Content hash of the target.
+        source_repository: Source repository URL.
+        out_dir: Output directory for results.
+        include_test_contents: Whether to include test content.
+        load_all_taskfiles: Whether to load all taskfiles in a project.
+        yaml_label_list: List of YAML labels for targeted loading.
+        save_only_rule_result: Whether to save only rule results.
+        extra_requirements: Extra Galaxy requirements to install.
+        resolve_failures: Dict tracking variable resolution failures.
+        findings: Findings object with scan results.
+        result: ARIResult summary object.
+        hierarchy_payload: OPA input payload with hierarchy and annotations.
+        root_dir: Root data directory from scanner config.
+        rules_dir: Directory containing rule definitions.
+        rules: List of rule IDs or paths to enable.
+        rules_cache: Cached Rule objects.
+        persist_dependency_cache: Whether to keep dependency cache after scan.
+        spec_mutations_from_previous_scan: Spec mutations carried from prior scan.
+        spec_mutations: Spec mutations detected in this scan.
+        use_ansible_doc: Whether to use ansible-doc for module specs.
+        do_save: Whether to save scan artifacts to disk.
+        silent: Whether to suppress log output.
+
+    """
+
     type: str = ""
     name: str = ""
     collection_name: str = ""
@@ -243,6 +336,11 @@ class SingleScan:
     _parser: Parser | None = None
 
     def __post_init__(self) -> None:
+        """Initialize path mappings and target names based on scan type.
+
+        Raises:
+            ValueError: If type is unsupported.
+        """
         if self.type == LoadType.COLLECTION or self.type == LoadType.ROLE:
             type_root = self.type + "s"
             target_name = self.name
@@ -344,6 +442,16 @@ class SingleScan:
                 self.target_taskfile_name = self.name
 
     def make_target_path(self, typ: str, target_name: str, dep_dir: str = "") -> str:
+        """Resolve the filesystem path for a target (collection, role, playbook, etc.).
+
+        Args:
+            typ: Load type (collection, role, playbook, project, taskfile).
+            target_name: Target name (FQCN, path, or URL).
+            dep_dir: Optional dependency directory to search first.
+
+        Returns:
+            Absolute path to the target on disk.
+        """
         target_path = ""
 
         if dep_dir:
@@ -381,14 +489,32 @@ class SingleScan:
         return target_path
 
     def get_src_root(self) -> str:
+        """Return the source root directory for the current scan type.
+
+        Returns:
+            Path to the src root, or empty string if not set.
+        """
         src_val = self.__path_mappings.get("src")
         return str(src_val) if src_val is not None else ""
 
     def is_src_installed(self) -> bool:
+        """Check whether the target source is already installed (index exists).
+
+        Returns:
+            True if the index file exists, False otherwise.
+        """
         index_location = self.__path_mappings.get("index")
         return isinstance(index_location, str) and os.path.exists(index_location)
 
     def _prepare_dependencies(self, root_install: bool = True) -> tuple[str, list[dict[str, object]]]:
+        """Install dependencies and prepare dependency directories.
+
+        Args:
+            root_install: If True, install the root target.
+
+        Returns:
+            Tuple of (target_path, list of dependency dir metadata dicts).
+        """
         # Install the target if needed
         target_path = self.make_target_path(self.type, self.name)
 
@@ -424,6 +550,19 @@ class SingleScan:
         return target_path, cast(list[dict[str, object]], dep_dirs)
 
     def create_load_file(self, target_type: str, target_name: str, target_path: str) -> Load:
+        """Create and populate a Load object for the target.
+
+        Args:
+            target_type: Load type (collection, role, playbook, etc.).
+            target_name: Target name (FQCN, path, or URL).
+            target_path: Resolved filesystem path.
+
+        Returns:
+            Load object with target metadata and populated definitions.
+
+        Raises:
+            ValueError: If target_path does not exist and no in-memory YAML.
+        """
         loader_version = get_loader_version()
 
         if not os.path.exists(target_path) and not self.playbook_yaml and not self.taskfile_yaml:
@@ -450,6 +589,18 @@ class SingleScan:
         return ld
 
     def get_definition_path(self, ext_type: str, ext_name: str) -> str:
+        """Return the path where external definitions for a role/collection are stored.
+
+        Args:
+            ext_type: External type (role or collection).
+            ext_name: External name (role name or collection FQCN).
+
+        Returns:
+            Path to the definitions directory.
+
+        Raises:
+            ValueError: If ext_type is not role or collection.
+        """
         target_path = ""
         ext_defs = self.__path_mappings.get("ext_definitions")
         if isinstance(ext_defs, dict):
@@ -464,6 +615,16 @@ class SingleScan:
         return target_path
 
     def load_definition_ext(self, target_type: str, target_name: str, target_path: str) -> None:
+        """Load external definitions (role or collection) from path or cache.
+
+        Args:
+            target_type: Load type (role or collection).
+            target_name: Target name (FQCN or role name).
+            target_path: Path to the role or collection.
+
+        Raises:
+            ValueError: If parser is not initialized or parser run fails.
+        """
         ld = self.create_load_file(target_type, target_name, target_path)
         use_cache = True
         output_dir = self.get_definition_path(ld.target_type, ld.target_name)
@@ -494,6 +655,14 @@ class SingleScan:
         return
 
     def _set_load_root(self, target_path: str = "") -> Load | None:
+        """Create Load object for the root target (collection, role, playbook, etc.).
+
+        Args:
+            target_path: Optional path override; uses default if empty.
+
+        Returns:
+            Load object for the root, or None if type is unsupported.
+        """
         root_load_data = None
         if self.type in [LoadType.ROLE, LoadType.COLLECTION]:
             ext_type = self.type
@@ -509,6 +678,19 @@ class SingleScan:
         return root_load_data
 
     def get_source_path(self, ext_type: str, ext_name: str, is_ext_for_project: bool = False) -> str:
+        """Return the source path for an external role or collection.
+
+        Args:
+            ext_type: External type (role or collection).
+            ext_name: External name (role name or collection FQCN).
+            is_ext_for_project: If True, use project dependencies dir.
+
+        Returns:
+            Absolute path to the role or collection source.
+
+        Raises:
+            ValueError: If ext_type is not role or collection.
+        """
         base_dir = ""
         if is_ext_for_project:
             dep_val = self.__path_mappings.get("dependencies")
@@ -535,6 +717,14 @@ class SingleScan:
         return target_path
 
     def load_definitions_root(self, target_path: str = "") -> None:
+        """Load root definitions (playbooks, roles, etc.) via parser.
+
+        Args:
+            target_path: Optional path override for the root target.
+
+        Raises:
+            ValueError: If root load is None, parser is not initialized or run fails.
+        """
         output_dir_val = self.__path_mappings.get("root_definitions")
         output_dir = str(output_dir_val) if isinstance(output_dir_val, str) else ""
         root_load = self._set_load_root(target_path=target_path)
@@ -561,6 +751,7 @@ class SingleScan:
         }
 
     def apply_spec_mutations(self) -> None:
+        """Overwrite root definitions with mutated objects from spec_mutations_from_previous_scan."""
         if not self.spec_mutations_from_previous_scan:
             return
         # overwrite the loaded object with the mutated object in spec mutations
@@ -584,6 +775,7 @@ class SingleScan:
         return
 
     def set_target_object(self) -> None:
+        """Set target_object from root definitions based on type and name."""
         type_name = self.type + "s"
         definitions = self.root_definitions.get("definitions", {})
         if not isinstance(definitions, dict):
@@ -603,6 +795,11 @@ class SingleScan:
         return
 
     def construct_trees(self, ram_client: RAMClient | None = None) -> None:
+        """Build call trees from root and ext definitions, optionally using RAM for lookups.
+
+        Args:
+            ram_client: Optional RAM client for module/role/taskfile lookups.
+        """
         trees, additional, extra_requirements, resolve_failures = tree(
             cast(dict[str, object], self.root_definitions),
             cast(dict[str, object], self.ext_definitions),
@@ -649,6 +846,11 @@ class SingleScan:
         return
 
     def resolve_variables(self, ram_client: RAMClient | None = None) -> None:
+        """Resolve variables in trees and build AnsibleRunContext for each tree.
+
+        Args:
+            ram_client: Optional RAM client for context lookups.
+        """
         taskcalls_in_trees = resolve(self.trees, self.additional)
         self.taskcalls_in_trees = taskcalls_in_trees
 
@@ -680,6 +882,7 @@ class SingleScan:
         return
 
     def annotate(self) -> None:
+        """Run analysis on contexts to add annotations (e.g., risk annotations)."""
         contexts = analyze(self.contexts)
         self.contexts = contexts
 
@@ -697,7 +900,14 @@ class SingleScan:
         return
 
     def _node_to_dict(self, node: RunTarget) -> YAMLDict:
-        """Serialize a RunTarget (playcall, rolecall, taskcall, etc.) to a JSON-serializable dict for OPA input."""
+        """Serialize a RunTarget (playcall, rolecall, taskcall, etc.) to a JSON-serializable dict for OPA input.
+
+        Args:
+            node: RunTarget to serialize.
+
+        Returns:
+            Dict with type, key, file, line, defined_in, and node-specific fields.
+        """
         d = {"type": getattr(node, "type", ""), "key": getattr(node, "key", "")}
         spec = getattr(node, "spec", None)
         if spec:
@@ -754,7 +964,15 @@ class SingleScan:
         return d
 
     def _opts_for_opa(self, opts: YAMLDict, keys: list[str]) -> YAMLDict:
-        """Return a JSON-serializable subset of opts for OPA (only listed keys that exist)."""
+        """Return a JSON-serializable subset of opts for OPA (only listed keys that exist).
+
+        Args:
+            opts: Full options dict.
+            keys: Keys to include if present.
+
+        Returns:
+            Subset of opts with only the listed keys, JSON-safe values.
+        """
         out = {}
         for k in keys:
             if k not in opts:
@@ -765,7 +983,14 @@ class SingleScan:
         return out
 
     def _json_safe(self, v: YAMLValue) -> YAMLValue:
-        """Coerce value to a JSON-serializable form."""
+        """Coerce value to a JSON-serializable form.
+
+        Args:
+            v: Value to coerce (str, int, float, bool, list, dict, or other).
+
+        Returns:
+            JSON-serializable value; non-primitives are stringified.
+        """
         if v is None:
             return None
         if isinstance(v, (str, int, float, bool)):
@@ -777,7 +1002,14 @@ class SingleScan:
         return str(v)
 
     def _location_to_dict(self, loc: Location | None) -> YAMLDict | None:
-        """Serialize a Location to a JSON-safe dict for OPA."""
+        """Serialize a Location to a JSON-safe dict for OPA.
+
+        Args:
+            loc: Location to serialize, or None.
+
+        Returns:
+            Dict with type, value, is_mutable, or None if loc is empty/None.
+        """
         if loc is None or getattr(loc, "is_empty", False):
             return None
         return {
@@ -787,7 +1019,14 @@ class SingleScan:
         }
 
     def _annotation_to_dict(self, an: Annotation) -> YAMLDict:
-        """Serialize a full Annotation (including RiskAnnotation detail) for OPA input."""
+        """Serialize a full Annotation (including RiskAnnotation detail) for OPA input.
+
+        Args:
+            an: Annotation to serialize.
+
+        Returns:
+            Dict with type, key, risk_type, and detail-specific fields.
+        """
         from .models import Location
 
         d = {
@@ -851,7 +1090,14 @@ class SingleScan:
         return d
 
     def build_hierarchy_payload(self, scan_id: str = "") -> YAMLDict:
-        """Build OPA input: hierarchy (collection/role/playbook/play/task) + annotations. No native rules."""
+        """Build OPA input: hierarchy (collection/role/playbook/play/task) + annotations. No native rules.
+
+        Args:
+            scan_id: Optional scan ID; defaults to current UTC timestamp.
+
+        Returns:
+            Dict with scan_id, hierarchy (trees with nodes), and metadata.
+        """
         if not scan_id:
             scan_id = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
         trees_data = []
@@ -885,6 +1131,7 @@ class SingleScan:
         return self.hierarchy_payload
 
     def apply_rules(self) -> None:
+        """Build hierarchy payload and create Findings for OPA (engine-only mode, no native rules)."""
         # Engine-only mode: no native ARI rules; build hierarchy+annotations for OPA.
         self.build_hierarchy_payload()
         target_name = self.name
@@ -917,11 +1164,21 @@ class SingleScan:
         return
 
     def add_time_records(self, time_records: dict[str, object]) -> None:
+        """Add timing records to findings metadata.
+
+        Args:
+            time_records: Dict mapping record names to begin/end/elapsed timing data.
+        """
         if self.findings and isinstance(self.findings.metadata, dict):
             self.findings.metadata["time_records"] = cast(YAMLValue, time_records)
         return
 
     def count_definitions(self) -> tuple[int, dict[str, int], dict[str, int]]:
+        """Count dependency dirs and definition counts for root and ext definitions.
+
+        Returns:
+            Tuple of (dep_num, ext_counts, root_counts).
+        """
         dep_num = len(self.loaded_dependency_dirs)
         ext_counts: dict[str, int] = {}
         for _, _defs in self.ext_definitions.items():
@@ -941,6 +1198,13 @@ class SingleScan:
         return dep_num, ext_counts, root_counts
 
     def set_metadata(self, metadata: dict[str, object], dependencies: list[dict[str, object]]) -> None:
+        """Set scan metadata (version, hash, download_url) and dependency dirs from dicts.
+
+        Args:
+            metadata: Dict with version, hash, download_url keys.
+            dependencies: List of dependency dir dicts.
+
+        """
         self.target_path = self.make_target_path(self.type, self.name)
         self.version = str(metadata.get("version", ""))
         self.hash = str(metadata.get("hash", ""))
@@ -948,6 +1212,7 @@ class SingleScan:
         self.loaded_dependency_dirs = dependencies  # type: ignore[assignment]
 
     def set_metadata_findings(self) -> None:
+        """Create minimal Findings with metadata and dependencies only."""
         target_name = self.name
         if self.collection_name:
             target_name = self.collection_name
@@ -968,6 +1233,7 @@ class SingleScan:
         )
 
     def load_index(self) -> None:
+        """Load the index JSON from path mappings into self.index."""
         index_location_val = self.__path_mappings.get("index")
         index_location = str(index_location_val) if isinstance(index_location_val, str) else ""
         if not index_location:
@@ -978,6 +1244,30 @@ class SingleScan:
 
 @dataclass
 class ARIScanner:
+    """ARI scanner that evaluates collections, roles, playbooks, and taskfiles.
+
+    Attributes:
+        config: Scanner configuration object.
+        root_dir: Root data directory for RAM and dependencies.
+        rules_dir: Directory containing rule definitions.
+        rules: List of rule IDs or paths to enable.
+        rules_cache: Cached Rule objects.
+        ram_client: Risk Assessment Model client for caching.
+        read_ram: Whether to read from RAM cache.
+        read_ram_for_dependency: Whether to read dependency data from RAM.
+        write_ram: Whether to write scan results to RAM.
+        persist_dependency_cache: Whether to keep dependency cache.
+        skip_playbook_format_error: Whether to skip malformed playbooks.
+        skip_task_format_error: Whether to skip malformed tasks.
+        use_ansible_doc: Whether to use ansible-doc for module specs.
+        do_save: Whether to save scan artifacts to disk.
+        show_all: Whether to show all findings (including passing).
+        pretty: Whether to pretty-print output.
+        silent: Whether to suppress log output.
+        output_format: Output format (json, yaml, etc.).
+
+    """
+
     config: Config | None = None
 
     root_dir: str = ""
@@ -1008,6 +1298,7 @@ class ARIScanner:
     _current: SingleScan | None = None
 
     def __post_init__(self) -> None:
+        """Initialize config, root dir, rules, RAM client, and parser from config."""
         if not self.config:
             self.config = config
 
@@ -1061,6 +1352,42 @@ class ARIScanner:
         out_dir: str = "",
         spec_mutations_from_previous_scan: YAMLDict | None = None,
     ) -> SingleScan | None:
+        """Run a full ARI scan for the given target.
+
+        Args:
+            type: Load type (collection, role, playbook, project, taskfile).
+            name: Target name (FQCN, path, or URL).
+            path: Alias for name when name is empty.
+            base_dir: Base directory for path resolution.
+            collection_name: Parent collection when scanning a role.
+            role_name: Parent role when scanning a taskfile.
+            install_dependencies: Whether to install dependencies.
+            use_ansible_path: Use ansible.cfg paths.
+            version: Target version.
+            hash: Target content hash.
+            target_path: Override target path.
+            dependency_dir: Pre-installed dependency dir.
+            download_only: Only download, do not scan.
+            load_only: Only load definitions, no tree/rule evaluation.
+            skip_dependency: Skip loading dependencies.
+            use_src_cache: Use source cache.
+            source_repository: Source repo URL.
+            playbook_yaml: In-memory playbook YAML.
+            playbook_only: Scan only in-memory playbook.
+            taskfile_yaml: In-memory taskfile YAML.
+            taskfile_only: Scan only in-memory taskfile.
+            raw_yaml: Raw YAML (alias for playbook or taskfile).
+            include_test_contents: Include test content.
+            load_all_taskfiles: Load all taskfiles in role.
+            save_only_rule_result: Only save rule results.
+            yaml_label_list: YAML labels to include.
+            objects: Save definition objects to out_dir.
+            out_dir: Output directory.
+            spec_mutations_from_previous_scan: Mutations from prior scan.
+
+        Returns:
+            SingleScan with findings, or None if download_only or load_only.
+        """
         time_records: dict[str, object] = {}
         self.record_begin(time_records, "scandata_init")
 
@@ -1424,6 +1751,17 @@ class ARIScanner:
     def load_metadata_from_ram(
         self, type: str, name: str, version: str
     ) -> tuple[bool, dict[str, object] | None, list[dict[str, object]] | None]:
+        """Load metadata and dependencies from RAM for a target.
+
+        Args:
+            type: Target type (collection, role, etc.).
+            name: Target name.
+            version: Target version string.
+
+        Returns:
+            Tuple of (loaded, metadata, dependencies). metadata/dependencies are None if not found.
+
+        """
         if self.ram_client is None:
             return False, None, None
         loaded, metadata, dependencies = self.ram_client.load_metadata_from_findings(type, name, version)
@@ -1432,6 +1770,19 @@ class ARIScanner:
     def load_definitions_from_ram(
         self, type: str, name: str, version: str, hash: str, allow_unresolved: bool = False
     ) -> tuple[bool, dict[str, object]]:
+        """Load definitions and mappings from RAM for a target.
+
+        Args:
+            type: Target type (collection, role, etc.).
+            name: Target name.
+            version: Target version string.
+            hash: Content hash of the target.
+            allow_unresolved: Whether to accept unresolved definitions.
+
+        Returns:
+            Tuple of (loaded, definitions_dict with definitions and mappings).
+
+        """
         if self.ram_client is None:
             return False, {}
         loaded, definitions, mappings = self.ram_client.load_definitions_from_findings(
@@ -1446,18 +1797,48 @@ class ARIScanner:
         return loaded, definitions_dict
 
     def register_findings_to_ram(self, findings: Findings) -> None:
+        """Register findings to RAM (save to disk and evict old cache).
+
+        Args:
+            findings: Findings to register.
+
+        """
         if self.ram_client is not None:
             self.ram_client.register(findings)
 
     def register_indices_to_ram(self, findings: Findings, include_test_contents: bool = False) -> None:
+        """Register module, role, taskfile, and action group indices to RAM.
+
+        Args:
+            findings: Findings containing index data.
+            include_test_contents: Whether to include test content indices.
+
+        """
         if self.ram_client is not None:
             self.ram_client.register_indices_to_ram(findings, include_test_contents)
 
     def save_findings(self, findings: Findings, out_dir: str) -> None:
+        """Save findings to findings.json in out_dir.
+
+        Args:
+            findings: Findings to save.
+            out_dir: Output directory path.
+
+        """
         if self.ram_client is not None:
             self.ram_client.save_findings(findings, out_dir)
 
     def save_rule_result(self, findings: Findings, out_dir: str) -> None:
+        """Save rule result JSON to out_dir.
+
+        Args:
+            findings: Findings containing rule results.
+            out_dir: Output directory path.
+
+        Raises:
+            ValueError: If out_dir is empty.
+
+        """
         if out_dir == "":
             raise ValueError("output dir must be a non-empty value")
 
@@ -1467,6 +1848,16 @@ class ARIScanner:
         findings.save_rule_result(fpath=os.path.join(out_dir, "rule_result.json"))
 
     def save_definitions(self, definitions: dict[str, object], out_dir: str) -> None:
+        """Save definition objects to objects.json in out_dir.
+
+        Args:
+            definitions: Dict with definitions key containing serializable objects.
+            out_dir: Output directory path.
+
+        Raises:
+            ValueError: If out_dir is empty.
+
+        """
         if out_dir == "":
             raise ValueError("output dir must be a non-empty value")
 
@@ -1479,9 +1870,22 @@ class ARIScanner:
             file.write(objects_json_str)
 
     def get_last_scandata(self) -> SingleScan | None:
+        """Return the most recent SingleScan from evaluate, or None.
+
+        Returns:
+            Most recent SingleScan or None if no scan has been run.
+
+        """
         return self._current
 
     def save_error(self, error: str, out_dir: str = "") -> None:
+        """Save error message to error.log in out_dir (or RAM findings dir if empty).
+
+        Args:
+            error: Error message to save.
+            out_dir: Output directory path (falls back to RAM findings dir).
+
+        """
         if out_dir == "" and self._current is not None and self.ram_client is not None:
             _type = self._current.type
             _name = self._current.name
@@ -1492,11 +1896,23 @@ class ARIScanner:
             self.ram_client.save_error(error, out_dir)
 
     def record_begin(self, time_records: dict[str, object], record_name: str) -> None:
+        """Record the start time for a named timing record.
+
+        Args:
+            time_records: Dict to update with record.
+            record_name: Name of the timing record.
+        """
         rec: dict[str, object] = {}
         rec["begin"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")
         time_records[record_name] = rec
 
     def record_end(self, time_records: dict[str, object], record_name: str) -> None:
+        """Record end time and elapsed seconds for a named timing record.
+
+        Args:
+            time_records: Dict containing the record from record_begin.
+            record_name: Name of the timing record.
+        """
         end = datetime.datetime.now(datetime.timezone.utc)
         end = end.replace(tzinfo=None)
         rec = time_records.get(record_name)
@@ -1521,6 +1937,22 @@ def tree(
     target_taskfile_path: str | None = None,
     load_all_taskfiles: bool = False,
 ) -> tuple[list[ObjectList], ObjectList, list[dict[str, object]], dict[str, dict[str, int]]]:
+    """Build call trees from root and external definitions.
+
+    Args:
+        root_definitions: Root definitions (playbooks, roles, etc.).
+        ext_definitions: External dependency definitions.
+        ram_client: Optional RAM client for module/role/taskfile lookups.
+        target_playbook_path: Target playbook path for filtering.
+        target_taskfile_path: Target taskfile path for filtering.
+        load_all_taskfiles: If True, load all taskfiles in roles.
+
+    Returns:
+        Tuple of (trees, additional objects, extra_requirements, resolve_failures).
+
+    Raises:
+        ValueError: If tree construction fails.
+    """
     tl = TreeLoader(
         root_definitions, ext_definitions, ram_client, target_playbook_path, target_taskfile_path, load_all_taskfiles
     )
@@ -1538,6 +1970,15 @@ def tree(
 
 
 def resolve(trees: list[ObjectList], additional: ObjectList) -> list[TaskCallsInTree]:
+    """Resolve variables in trees and return task calls per tree.
+
+    Args:
+        trees: List of object lists (call trees).
+        additional: Additional objects (e.g., inventory) for variable resolution.
+
+    Returns:
+        List of TaskCallsInTree, one per tree with resolved taskcalls.
+    """
     taskcalls_in_trees = []
     for i, tree in enumerate(trees):
         if not isinstance(tree, ObjectList):

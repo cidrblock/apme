@@ -1,3 +1,5 @@
+"""Native rule L047: detect tasks with password-like params missing no_log: true."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -17,6 +19,14 @@ PASSWORD_LIKE_KEYS = frozenset({"password", "passwd", "pwd", "secret", "token", 
 
 
 def _option_keys_look_like_password(module_options: object) -> bool:
+    """Check if module options contain password-like keys.
+
+    Args:
+        module_options: Dict of module options to check.
+
+    Returns:
+        True if any key looks like a password parameter.
+    """
     if not isinstance(module_options, dict):
         return False
     return any(k and k.lower() in PASSWORD_LIKE_KEYS for k in module_options)
@@ -24,6 +34,18 @@ def _option_keys_look_like_password(module_options: object) -> bool:
 
 @dataclass
 class NoLogPasswordRule(Rule):
+    """Rule for tasks with password-like parameters to set no_log: true.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "L047"
     description: str = "Tasks with password-like parameters should set no_log: true"
     enabled: bool = False
@@ -33,11 +55,27 @@ class NoLogPasswordRule(Rule):
     tags: tuple[str, ...] = (Tag.SYSTEM,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check for password-like params without no_log and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with message detail, or None.
+        """
         task = ctx.current
         if task is None:
             return None

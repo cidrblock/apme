@@ -1,3 +1,5 @@
+"""Risk detection from Ansible tasks via rule evaluation."""
+
 from __future__ import annotations
 
 import argparse
@@ -30,10 +32,26 @@ rule_versions_filename = "rule_versions.json"
 
 
 def key2name(key: str) -> str:
+    """Extract the name (last segment) from a key using key_delimiter.
+
+    Args:
+        key: Key string (e.g. "collection/namespace/name").
+
+    Returns:
+        Last segment of the key.
+    """
     return key.split(key_delimiter)[-1]
 
 
 def load_rule_versions_file(filepath: str) -> dict[str, object]:
+    """Load rule_id -> commit_id mappings from a newline-delimited JSON file.
+
+    Args:
+        filepath: Path to rule_versions.json.
+
+    Returns:
+        Dict mapping rule_id to commit_id. Empty if file missing or invalid.
+    """
     if not os.path.exists(filepath):
         return {}
 
@@ -59,6 +77,23 @@ def load_rules(
     fail_on_error: bool = False,
     exclude_rule_ids: list[str] | None = None,
 ) -> list[Rule]:
+    """Load Rule classes from directories, optionally filtered by rule IDs.
+
+    Supports colon-separated rules_dir. Applies rule_versions.json for commit_id.
+    Sorts by rule_id suffix, rule_id_list order, and precedence.
+
+    Args:
+        rules_dir: Directory or colon-separated dirs containing rule modules.
+        rule_id_list: If provided, only load rules in this list.
+        fail_on_error: If True, raise on load errors; else log and skip.
+        exclude_rule_ids: Rule IDs to exclude from loading.
+
+    Returns:
+        List of instantiated Rule objects, sorted.
+
+    Raises:
+        ValueError: If fail_on_error and load/instantiation fails.
+    """
     if rule_id_list is None:
         rule_id_list = []
     if not rules_dir:
@@ -120,6 +155,15 @@ def load_rules(
 
 
 def make_subject_str(playbook_num: int, role_num: int) -> str:
+    """Build a subject string describing what was scanned (playbooks/roles).
+
+    Args:
+        playbook_num: Number of playbooks.
+        role_num: Number of roles.
+
+    Returns:
+        "playbooks/roles", "playbooks", "roles", or "".
+    """
     subject = ""
     if playbook_num > 0 and role_num > 0:
         subject = "playbooks/roles"
@@ -138,6 +182,25 @@ def detect(
     save_only_rule_result: bool = False,
     exclude_rule_ids: list[str] | None = None,
 ) -> tuple[dict[str, object], list[Rule]]:
+    """Run rules against task contexts and return ARI result plus loaded rules.
+
+    Evaluates each rule against each task in each context. Builds ARIResult with
+    TargetResult and NodeResult. Collects spec_mutations from rules.
+
+    Args:
+        contexts: Ansible run contexts with taskcalls.
+        rules_dir: Directory to load rules from if rules/rules_cache empty.
+        rules: Pre-loaded rules. If provided, rule_ids used for filtering.
+        rules_cache: Cached rules to reuse instead of loading.
+        save_only_rule_result: Omit node details in output.
+        exclude_rule_ids: Rule IDs to exclude.
+
+    Returns:
+        Tuple of (data_report dict with ari_result and spec_mutations, loaded rules).
+
+    Raises:
+        FatalRuleResultError: If a rule returns fatal=True.
+    """
     if rules_cache is None:
         rules_cache = []
     if rules is None:
@@ -237,6 +300,14 @@ def detect(
 
 
 def omit_node_details(node: RunTarget) -> dict[str, object]:
+    """Reduce a RunTarget to a summary dict (type, spec) for compact output.
+
+    Args:
+        node: RunTarget (e.g. TaskCall) to summarize.
+
+    Returns:
+        Dict with type and spec keys.
+    """
     spec = None
     if node.spec:
         spec = {
@@ -254,6 +325,7 @@ def omit_node_details(node: RunTarget) -> dict[str, object]:
 
 
 def main() -> None:
+    """CLI entry point: load taskcalls, run detect, optionally write output."""
     parser = argparse.ArgumentParser(
         prog="risk_detector.py",
         description="Detect risks from tasks by checking rules",

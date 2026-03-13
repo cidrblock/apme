@@ -22,22 +22,54 @@ _JINJA_REF = re.compile(r"\{\{.*?\}\}")
 
 
 def _is_vault_encrypted(content: str) -> bool:
+    """Check if content starts with Ansible Vault header.
+
+    Args:
+        content: File content to check.
+
+    Returns:
+        True if content appears vault-encrypted.
+    """
     return bool(_VAULT_HEADER.search(content))
 
 
 def _value_is_jinja(match_text: str) -> bool:
+    """Check if match text is a Jinja template reference (false positive).
+
+    Args:
+        match_text: Gitleaks match text.
+
+    Returns:
+        True if text looks like Jinja (e.g. {{ var }}).
+    """
     stripped = match_text.strip().strip("'\"")
     return bool(_JINJA_REF.fullmatch(stripped))
 
 
 def _build_rule_id(gitleaks_rule_id: str) -> str:
+    """Map gitleaks rule ID to APME rule ID (SEC: prefix).
+
+    Args:
+        gitleaks_rule_id: Raw gitleaks rule identifier.
+
+    Returns:
+        APME rule ID (e.g. SEC:rule-id).
+    """
     if gitleaks_rule_id in RULE_ID_MAP:
         return RULE_ID_MAP[gitleaks_rule_id]
     return f"{RULE_PREFIX}:{gitleaks_rule_id}"
 
 
 def run_gitleaks(scan_dir: str | Path, *, timeout: int = 120) -> list[dict[str, str | int | list[int] | None]]:
-    """Run gitleaks detect on *scan_dir* (no git required) and return violation dicts."""
+    """Run gitleaks detect on *scan_dir* (no git required) and return violation dicts.
+
+    Args:
+        scan_dir: Directory to scan.
+        timeout: Timeout in seconds for gitleaks subprocess.
+
+    Returns:
+        List of violation dicts.
+    """
     scan_dir = Path(scan_dir)
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as tmp:
         report_path = tmp.name
@@ -90,7 +122,15 @@ def run_gitleaks(scan_dir: str | Path, *, timeout: int = 120) -> list[dict[str, 
 def _convert_findings(
     findings: list[dict[str, object]], scan_dir: Path
 ) -> list[dict[str, str | int | list[int] | None]]:
-    """Convert gitleaks JSON findings to APME violation dicts, filtering false positives."""
+    """Convert gitleaks JSON findings to APME violation dicts, filtering false positives.
+
+    Args:
+        findings: Raw gitleaks findings.
+        scan_dir: Root directory for relative paths.
+
+    Returns:
+        List of APME violation dicts.
+    """
     violations: list[dict[str, str | int | list[int] | None]] = []
     for f in findings:
         file_path = str(f.get("File", ""))

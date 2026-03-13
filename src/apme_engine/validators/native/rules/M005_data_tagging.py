@@ -26,6 +26,18 @@ _JINJA_VAR_REF = re.compile(r"\{\{\s*(\w+)")
 
 @dataclass
 class DataTaggingRule(Rule):
+    """Rule for registered variable used in Jinja template (2.19+ trust model).
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "M005"
     description: str = "Registered variable used in Jinja template may be untrusted in 2.19+"
     enabled: bool = True
@@ -35,11 +47,27 @@ class DataTaggingRule(Rule):
     tags: tuple[str, ...] = (Tag.CODING,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check for registered vars in Jinja and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with registered_vars detail, or None.
+        """
         task = ctx.current
         if task is None:
             return None

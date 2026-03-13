@@ -1,3 +1,5 @@
+"""Safe glob implementation that avoids symlink-induced infinite loops."""
+
 from __future__ import annotations
 
 import os
@@ -14,6 +16,24 @@ def safe_glob(
     type: list[str] | None = None,
     followlinks: bool = False,
 ) -> list[str]:
+    """Match file paths against glob patterns without symlink-induced infinite loops.
+
+    Uses os.walk with followlinks=False by default to avoid infinite loops when
+    symlink cycles exist. Supports both recursive and non-recursive matching.
+
+    Args:
+        patterns: Glob pattern(s) to match. May be a single pattern or list.
+        root_dir: Root directory for search. If empty, derived from pattern.
+        recursive: If True, use os.walk; otherwise use os.listdir.
+        type: Types to include: "file", "dir", or both. Defaults to both.
+        followlinks: Whether to follow symlinks during traversal.
+
+    Returns:
+        List of matched file or directory paths.
+
+    Raises:
+        ValueError: If patterns is not str or list of str.
+    """
     if type is None:
         type = ["file", "dir"]
     pattern_list = []
@@ -84,6 +104,18 @@ def safe_glob(
 
 
 def pattern_match(pattern: str, fpath: str) -> re.Match[str] | None:
+    """Check if a file path matches a glob-style pattern.
+
+    Converts glob patterns to regex: **/ matches any path segment, * matches
+    any characters except slash within a segment.
+
+    Args:
+        pattern: Glob pattern (e.g. "**/*.py", "testdir/*.py").
+        fpath: File path to test against the pattern.
+
+    Returns:
+        Match object if path matches, None otherwise.
+    """
     pattern = pattern.replace("**/", "<ANY>")
     pattern = pattern.replace("*", "[^/]*")
     pattern = pattern.replace("<ANY>", ".*")

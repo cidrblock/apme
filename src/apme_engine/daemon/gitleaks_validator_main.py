@@ -16,6 +16,10 @@ async def _run(listen: str) -> None:
 
 
 def main() -> None:
+    """Entry point: run Gitleaks validator gRPC server until interrupted.
+
+    Uses APME_GITLEAKS_VALIDATOR_LISTEN for bind address. Exits with code 1 on failure.
+    """
     listen = os.environ.get("APME_GITLEAKS_VALIDATOR_LISTEN", "0.0.0.0:50056")
     try:
         asyncio.run(_run(listen))

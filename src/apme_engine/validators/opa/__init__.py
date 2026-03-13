@@ -9,6 +9,11 @@ from apme_engine.validators.base import ScanContext
 
 
 def _default_bundle_path() -> str:
+    """Return default path to OPA bundle directory.
+
+    Returns:
+        Path to bundle directory.
+    """
     return os.path.join(os.path.dirname(__file__), "bundle")
 
 
@@ -20,11 +25,24 @@ class OpaValidator:
         bundle_path: str | None = None,
         entrypoint: str = "data.apme.rules.violations",
     ):
+        """Initialize the OPA validator.
+
+        Args:
+            bundle_path: Path to OPA bundle (defaults to package bundle).
+            entrypoint: OPA entrypoint for violations query.
+        """
         self.bundle_path = bundle_path or _default_bundle_path()
         self.entrypoint = entrypoint
 
     def run(self, context: ScanContext) -> list[dict[str, str | int | list[int] | bool | None]]:
-        """Run OPA on hierarchy_payload; return list of violation dicts."""
+        """Run OPA on hierarchy_payload; return list of violation dicts.
+
+        Args:
+            context: Scan context with hierarchy payload.
+
+        Returns:
+            List of violation dicts from OPA.
+        """
         return run_opa(
             context.hierarchy_payload,
             self.bundle_path,

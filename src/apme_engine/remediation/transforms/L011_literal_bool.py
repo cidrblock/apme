@@ -24,7 +24,15 @@ _REPLACEMENTS = [
 
 
 def fix_literal_bool(content: str, violation: ViolationDict) -> TransformResult:
-    """Remove literal true/false comparisons from when clause."""
+    """Remove literal true/false comparisons from when clause.
+
+    Args:
+        content: YAML file content.
+        violation: Violation dict with line.
+
+    Returns:
+        TransformResult with modified content if applied.
+    """
     yaml = FormattedYAML(typ="rt", pure=True, version=(1, 1))
 
     try:

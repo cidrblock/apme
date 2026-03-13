@@ -1,3 +1,5 @@
+"""Native rule L041: detect task keys in non-canonical order."""
+
 import re
 from dataclasses import dataclass
 from typing import cast
@@ -23,7 +25,14 @@ PREFERRED_BEFORE_ACTION = {"name"}
 
 
 def _top_level_keys_from_yaml(yaml_lines: str) -> list[str]:
-    """Return list of top-level task keys in source order (as they appear in yaml_lines)."""
+    """Return list of top-level task keys in source order (as they appear in yaml_lines).
+
+    Args:
+        yaml_lines: Raw YAML lines of the task.
+
+    Returns:
+        List of top-level keys in source order.
+    """
     keys = []
     for line in yaml_lines.splitlines():
         stripped = line.lstrip()
@@ -38,7 +47,15 @@ def _top_level_keys_from_yaml(yaml_lines: str) -> list[str]:
 
 
 def _first_action_key(keys: list[str], module_name: str) -> str | None:
-    """First key that looks like an action (module name or 'local_action', 'action')."""
+    """First key that looks like an action (module name or 'local_action', 'action').
+
+    Args:
+        keys: List of task keys.
+        module_name: Resolved module name.
+
+    Returns:
+        First action-like key, or None.
+    """
     action_like = {"local_action", "action"}
     for k in keys:
         if k in action_like or k == module_name or (module_name and module_name.split(".")[-1] == k):
@@ -48,6 +65,18 @@ def _first_action_key(keys: list[str], module_name: str) -> str | None:
 
 @dataclass
 class KeyOrderRule(Rule):
+    """Rule for task keys following canonical order (e.g. name before module).
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "L041"
     description: str = "Task keys should follow canonical order (e.g. name before module)"
     enabled: bool = True
@@ -57,11 +86,27 @@ class KeyOrderRule(Rule):
     tags: tuple[str, ...] = (Tag.QUALITY,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check task key order and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with keys_order detail, or None.
+        """
         task = ctx.current
         if task is None:
             return None

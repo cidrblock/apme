@@ -1,3 +1,5 @@
+"""Native rule L038: detect unresolved role references."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -19,11 +21,24 @@ from apme_engine.engine.models import (
 
 @dataclass
 class UnresolvedRoleRuleResult(RuleResult):
-    pass
+    """Result subclass for UnresolvedRoleRule."""
 
 
 @dataclass
 class UnresolvedRoleRule(Rule):
+    """Rule for unresolved role references.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+        result_type: Type of RuleResult to produce.
+    """
+
     rule_id: str = "L038"
     description: str = "Unresolved role is found"
     enabled: bool = True
@@ -34,11 +49,27 @@ class UnresolvedRoleRule(Rule):
     result_type: type = UnresolvedRoleRuleResult
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check for unresolved role and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with role detail, or None.
+        """
         task = ctx.current
         if task is None:
             return None

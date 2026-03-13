@@ -27,7 +27,15 @@ _FREE_FORM_MODULES = frozenset(
 
 
 def fix_free_form(content: str, violation: ViolationDict) -> TransformResult:
-    """Convert ``command: echo hi`` to ``command: { cmd: echo hi }``."""
+    """Convert ``command: echo hi`` to ``command: { cmd: echo hi }``.
+
+    Args:
+        content: YAML file content.
+        violation: Violation dict with line.
+
+    Returns:
+        TransformResult with modified content if applied.
+    """
     yaml = FormattedYAML(typ="rt", pure=True, version=(1, 1))
 
     try:

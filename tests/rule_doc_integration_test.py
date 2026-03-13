@@ -12,25 +12,56 @@ from tests.rule_doc_parser import discover_rule_docs
 
 
 def _repo_root() -> Path:
+    """Return repository root path.
+
+    Returns:
+        Path to repo root.
+    """
     return Path(__file__).resolve().parent.parent
 
 
 def _native_rules_dir() -> Path:
+    """Return path to native rules directory.
+
+    Returns:
+        Path to native rules.
+    """
     return _repo_root() / "src" / "apme_engine" / "validators" / "native" / "rules"
 
 
 def _opa_bundle_dir() -> Path:
+    """Return path to OPA bundle directory.
+
+    Returns:
+        Path to OPA bundle.
+    """
     return _repo_root() / "src" / "apme_engine" / "validators" / "opa" / "bundle"
 
 
 def _violation_ids_for_rule(violations: list[dict[str, object]], rule_id: str, validator: str) -> list[str]:
-    """Return violation rule_id values that match this doc rule (for assertion)."""
+    """Return violation rule_id values that match this doc rule (for assertion).
+
+    Args:
+        violations: List of violation dicts.
+        rule_id: Rule ID to match.
+        validator: 'native' or 'opa' for prefix.
+
+    Returns:
+        List of matching rule_id strings.
+    """
     expected = f"native:{rule_id}" if validator == "native" else rule_id
     return [str(v["rule_id"]) for v in violations if v.get("rule_id") == expected]
 
 
 def _ensure_playbook(yaml_content: str) -> str:
-    """If content is a single task or task list without a play, wrap in a play."""
+    """If content is a single task or task list without a play, wrap in a play.
+
+    Args:
+        yaml_content: Raw YAML content.
+
+    Returns:
+        YAML string with play wrapper if needed.
+    """
     import yaml
 
     try:
@@ -63,7 +94,11 @@ def _ensure_playbook(yaml_content: str) -> str:
 
 @pytest.fixture(scope="module")  # type: ignore[untyped-decorator]
 def validators() -> dict[str, NativeValidator | OpaValidator]:
-    """OPA and Native validators. Native with no exclusions so all rules can run."""
+    """OPA and Native validators. Native with no exclusions so all rules can run.
+
+    Returns:
+        Dict mapping 'opa' and 'native' to validator instances.
+    """
     opa_bundle = str(_opa_bundle_dir())
     return {
         "opa": OpaValidator(opa_bundle),
@@ -74,7 +109,15 @@ def validators() -> dict[str, NativeValidator | OpaValidator]:
 def _collect_violations(
     yaml_content: str, validators: dict[str, NativeValidator | OpaValidator]
 ) -> list[dict[str, object]]:
-    """Run scan on YAML and return combined violations from both validators."""
+    """Run scan on YAML and return combined violations from both validators.
+
+    Args:
+        yaml_content: YAML string to scan.
+        validators: Dict of opa and native validators.
+
+    Returns:
+        Combined list of violation dicts.
+    """
     content = _ensure_playbook(yaml_content)
     try:
         context = run_scan_playbook_yaml(content, project_root=None, include_scandata=True)
@@ -89,7 +132,11 @@ def _collect_violations(
 
 
 def _rule_doc_params() -> tuple[list[tuple[str, dict[str, object]]], list[str]]:
-    """List of (md_path, doc) and corresponding ids for parametrize."""
+    """List of (md_path, doc) and corresponding ids for parametrize.
+
+    Returns:
+        Tuple of (param_tuples, param_ids).
+    """
     pairs = discover_rule_docs(_native_rules_dir(), _opa_bundle_dir())
     if not pairs:
         return [], []
@@ -107,7 +154,14 @@ _param_tuples, _param_ids = _rule_doc_params()
 def test_rule_doc_examples(
     md_path: str, doc: dict[str, object], validators: dict[str, NativeValidator | OpaValidator]
 ) -> None:
-    """For each rule .md with frontmatter and examples, run YAML and assert violation/pass."""
+    """For each rule .md with frontmatter and examples, run YAML and assert violation/pass.
+
+    Args:
+        md_path: Parametrized path to the rule markdown file.
+        doc: Parametrized rule document dict.
+        validators: Fixture providing validator instances.
+
+    """
     if not doc.get("examples"):
         pytest.skip(f"No examples in {md_path}")
     rule_id = str(doc["rule_id"])

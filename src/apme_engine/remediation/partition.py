@@ -10,7 +10,15 @@ from apme_engine.remediation.registry import TransformRegistry
 
 
 def is_finding_resolvable(violation: ViolationDict, registry: TransformRegistry) -> bool:
-    """Return True if the violation has a registered deterministic transform (Tier 1)."""
+    """Return True if the violation has a registered deterministic transform (Tier 1).
+
+    Args:
+        violation: Violation dict with rule_id.
+        registry: Transform registry to check for rule.
+
+    Returns:
+        True if rule_id has a registered transform.
+    """
     return str(violation.get("rule_id", "")) in registry
 
 
@@ -23,6 +31,13 @@ def partition_violations(
     Tier 1: deterministic transform exists in registry.
     Tier 2: no transform, but ai_proposable (default True if not set).
     Tier 3: no transform, ai_proposable explicitly False.
+
+    Args:
+        violations: List of violation dicts.
+        registry: Transform registry for Tier 1 lookup.
+
+    Returns:
+        Tuple of (tier1_fixable, tier2_ai, tier3_manual).
     """
     tier1: list[ViolationDict] = []
     tier2: list[ViolationDict] = []

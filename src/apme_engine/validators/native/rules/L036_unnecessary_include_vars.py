@@ -1,3 +1,5 @@
+"""Native rule L036: detect include_vars used without any condition."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -18,6 +20,18 @@ from apme_engine.engine.models import (
 
 @dataclass
 class UnnecessaryIncludeVarsRule(Rule):
+    """Rule for include_vars used without any condition.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "L036"
     description: str = "include_vars is used without any condition"
     enabled: bool = True
@@ -27,11 +41,29 @@ class UnnecessaryIncludeVarsRule(Rule):
     tags: tuple[str, ...] = (Tag.VARIABLE,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Return True if the current target is a task.
+
+        Args:
+            ctx: Current Ansible run context.
+
+        Returns:
+            True if the current target is a task.
+
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check for include_vars without condition and return result.
+
+        Args:
+            ctx: Current Ansible run context.
+
+        Returns:
+            RuleResult with verdict if include_vars lacks condition, None otherwise.
+
+        """
         task = ctx.current
         if task is None:
             return None

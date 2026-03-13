@@ -27,7 +27,24 @@ def make_task_spec(
     key: str | None = None,
     possible_candidates: list[tuple[str, str]] | None = None,
 ) -> Task:
-    """Build a minimal Task spec for rule tests."""
+    """Build a minimal Task spec for rule tests.
+
+    Args:
+        name: Optional task name.
+        module: Module name.
+        executable: Executable name.
+        executable_type: Type of executable (module, role, etc.).
+        resolved_name: Resolved module/role name.
+        options: Task options dict.
+        module_options: Module-specific options dict.
+        defined_in: File path where task is defined.
+        line_num_in_file: Line numbers in file.
+        key: Optional key for set_call_object_key.
+        possible_candidates: Optional list of (name, path) candidates.
+
+    Returns:
+        A minimal Task spec for rule tests.
+    """
     # Key must be "type rest" (space-separated) for set_call_object_key.
     if key is None:
         key = "task task:{}:[0]".format(defined_in.replace("/", ":"))
@@ -49,7 +66,14 @@ def make_task_spec(
 
 
 def make_task_call(spec: Task) -> TaskCall:
-    """Build a TaskCall from a Task spec."""
+    """Build a TaskCall from a Task spec.
+
+    Args:
+        spec: Task spec to convert.
+
+    Returns:
+        TaskCall built from the spec.
+    """
     return cast(TaskCall, TaskCall.from_spec(spec, None, 0))
 
 
@@ -59,7 +83,17 @@ def make_role_spec(
     key: str | None = None,
     metadata: YAMLDict | None = None,
 ) -> Role:
-    """Build a minimal Role spec for rule tests."""
+    """Build a minimal Role spec for rule tests.
+
+    Args:
+        name: Role name.
+        defined_in: File path where role is defined.
+        key: Optional key for set_call_object_key.
+        metadata: Optional role metadata dict.
+
+    Returns:
+        A minimal Role spec for rule tests.
+    """
     # Key must be "type rest" (space-separated) for set_call_object_key.
     if key is None:
         key = "role role:{}".format(name or "test")
@@ -72,7 +106,15 @@ def make_role_spec(
 
 
 def make_role_call(spec: Role) -> RoleCall:
-    """Build a RoleCall from a Role spec."""
+    """Build a RoleCall from a Role spec.
+
+    Args:
+        spec: Role spec to wrap.
+
+    Returns:
+        RoleCall with depth 0.
+
+    """
     return cast(RoleCall, RoleCall.from_spec(spec, None, 0))
 
 
@@ -80,7 +122,16 @@ def make_context(
     current: RunTarget | None,
     sequence: list[RunTarget] | None = None,
 ) -> AnsibleRunContext:
-    """Build an AnsibleRunContext with current set (task or role). Optionally set sequence for is_begin/is_end."""
+    """Build an AnsibleRunContext with current set (task or role).
+
+    Args:
+        current: The current RunTarget (task or role) to set.
+        sequence: Optional list of RunTargets for is_begin/is_end checks.
+
+    Returns:
+        AnsibleRunContext configured for testing.
+
+    """
     ctx = AnsibleRunContext(root_key="playbook.yml")
     ctx.current = current
     if sequence is not None:

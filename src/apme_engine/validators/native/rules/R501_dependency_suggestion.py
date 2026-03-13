@@ -1,3 +1,5 @@
+"""Native rule R501: suggest dependencies for unresolved modules/roles."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -15,6 +17,18 @@ from apme_engine.engine.models import RuleTag as Tag
 
 @dataclass
 class DependencySuggestionRule(Rule):
+    """Rule to suggest dependencies for unresolved modules/roles.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "R501"
     description: str = "Suggest dependencies for unresolved modules/roles"
     enabled: bool = True
@@ -24,11 +38,27 @@ class DependencySuggestionRule(Rule):
     tags: tuple[str, ...] = (Tag.DEPENDENCY,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Suggest dependencies for unresolved modules/roles and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with type/fqcn/defined_in detail, or None.
+        """
         task = ctx.current
         if task is None:
             return None

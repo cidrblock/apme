@@ -1,3 +1,5 @@
+"""Risk Assessment Model (RAM) generator for scanning collections and roles."""
+
 from __future__ import annotations
 
 import datetime
@@ -13,6 +15,13 @@ from .scanner import ARIScanner, config
 
 
 class RiskAssessmentModelGenerator:
+    """Generates Risk Assessment Model (RAM) data by scanning collections/roles.
+
+    Attributes:
+        start: Timestamp when generation started, or None.
+
+    """
+
     _queue: list[tuple[str, str]]
     _resume: int
     _update: bool
@@ -31,6 +40,19 @@ class RiskAssessmentModelGenerator:
         no_module_spec: bool = False,
         no_retry: bool = False,
     ) -> None:
+        """Initialize the RAM generator with scan targets and options.
+
+        Args:
+            target_list: List of (target_type, target_name) tuples to scan.
+            resume: Index to resume from (-1 to start from beginning).
+            update: Disable dependency cache for fresh evaluation.
+            parallel: Use joblib for parallel scanning.
+            download_only: Only download dependencies, do not evaluate.
+            include_test_contents: Include test content; disables RAM read/write.
+            out_dir: Base directory for per-target output.
+            no_module_spec: Disable ansible-doc for module specs.
+            no_retry: Do not retry previously failed scans.
+        """
         if target_list is None:
             target_list = []
         self._queue = list(target_list)
@@ -63,6 +85,11 @@ class RiskAssessmentModelGenerator:
         )
 
     def run(self) -> None:
+        """Run scans for all targets in the queue (parallel or sequential).
+
+        Raises:
+            ValueError: If target list items are not (target_type, target_name) tuples.
+        """
         num = len(self._queue)
         resume_str = f"(resume from {self._resume})" if self._resume > 0 else ""
         print(f"Start scanning {num} targets {resume_str}")
@@ -94,6 +121,14 @@ class RiskAssessmentModelGenerator:
                 self.scan(i, num, _type, _name)
 
     def scan(self, i: int, num: int, type: str, name: str) -> None:
+        """Scan a single target and save RAM log.
+
+        Args:
+            i: Index of this target in the queue.
+            num: Total number of targets.
+            type: Target type (collection, role, etc.).
+            name: Target name.
+        """
         start_val = self.start if self.start is not None else time.time()
         elapsed = round(time.time() - start_val, 2)
         start_of_this_scan = time.time()
@@ -133,6 +168,13 @@ class RiskAssessmentModelGenerator:
             print(f"WARNING: It took {elapsed_for_this_scan} sec. to process [{i + 1}/{num}] {type} {name}")
 
     def save_ram_log(self, type: str, name: str, fail: bool) -> None:
+        """Save scan result to ram_log.json for the target.
+
+        Args:
+            type: Target type.
+            name: Target name.
+            fail: Whether the scan failed.
+        """
         out_dir = os.path.join(self._scanner.root_dir, "log", type, name)
         path = os.path.join(out_dir, "ram_log.json")
 
@@ -154,6 +196,17 @@ class RiskAssessmentModelGenerator:
         return
 
     def skip_scan(self, type: str, name: str) -> bool:
+        """Determine if a target should be skipped based on prior scan results.
+
+        Skips if the latest ram_log entry succeeded, or if no_retry is set.
+
+        Args:
+            type: Target type.
+            name: Target name.
+
+        Returns:
+            True if the scan should be skipped.
+        """
         skip = False
         path = os.path.join(self._scanner.root_dir, "log", type, name, "ram_log.json")
         if not os.path.exists(path):

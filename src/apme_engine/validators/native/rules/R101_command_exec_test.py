@@ -1,10 +1,11 @@
-# Colocated tests for R101 (CommandExecRule). Rule uses annotations; test no fire without annotation.
+"""Tests for native rule R101."""
 
 from apme_engine.validators.native.rules._test_helpers import make_context, make_task_call, make_task_spec
 from apme_engine.validators.native.rules.R101_command_exec import CommandExecRule
 
 
 def test_R101_does_not_fire_when_no_annotation() -> None:
+    """Verify R101 does not fire when no annotation."""
     spec = make_task_spec(module="ansible.builtin.command", resolved_name="ansible.builtin.command")
     task = make_task_call(spec)
     ctx = make_context(task)
@@ -16,6 +17,7 @@ def test_R101_does_not_fire_when_no_annotation() -> None:
 
 
 def test_R101_match_only_tasks() -> None:
+    """Verify R101 matches only task targets."""
     from apme_engine.validators.native.rules._test_helpers import make_role_call, make_role_spec
 
     role = make_role_call(make_role_spec(name="foo"))

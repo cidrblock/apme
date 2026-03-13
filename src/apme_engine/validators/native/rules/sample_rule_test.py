@@ -1,4 +1,4 @@
-# Colocated tests for sample_rule (SampleRule).
+"""Tests for sample rule."""
 
 from apme_engine.engine.models import MutableContent, YAMLValue
 from apme_engine.validators.native.rules._test_helpers import (
@@ -10,6 +10,7 @@ from apme_engine.validators.native.rules.sample_rule import SampleRule
 
 
 def test_sample_rule_matches_task_and_process_returns_task_block() -> None:
+    """Verify SampleRule matches task and process returns task block."""
     spec = make_task_spec(module="ansible.builtin.copy", name="Copy file")
     task = make_task_call(spec)
     task.content = MutableContent(_yaml="- name: Copy file\n  copy:\n    src: a\n    dest: b", _task_spec=spec)

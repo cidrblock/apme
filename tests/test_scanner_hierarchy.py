@@ -10,7 +10,11 @@ if TYPE_CHECKING:
 
 
 def _import_single_scan() -> type["SingleScan"] | None:
-    """Import SingleScan from apme_engine.engine; return None if import fails."""
+    """Import SingleScan from apme_engine.engine; return None if import fails.
+
+    Returns:
+        SingleScan class or None.
+    """
     try:
         from apme_engine.engine.scanner import SingleScan
 
@@ -21,7 +25,11 @@ def _import_single_scan() -> type["SingleScan"] | None:
 
 @pytest.fixture  # type: ignore[untyped-decorator]
 def single_scan_with_mock_contexts() -> "SingleScan":
-    """SingleScan with minimal mock contexts so build_hierarchy_payload runs."""
+    """SingleScan with minimal mock contexts so build_hierarchy_payload runs.
+
+    Returns:
+        SingleScan instance with mock playcall and taskcall.
+    """
     SingleScan = _import_single_scan()
     if SingleScan is None:
         pytest.skip("apme_engine.engine not importable (missing deps)")
@@ -55,7 +63,12 @@ class TestScannerHierarchy:
     """Tests for integrated engine scanner build_hierarchy_payload and apply_rules."""
 
     def test_build_hierarchy_payload_structure(self, single_scan_with_mock_contexts: "SingleScan") -> None:
-        """build_hierarchy_payload returns dict with scan_id, hierarchy, metadata."""
+        """build_hierarchy_payload returns dict with scan_id, hierarchy, metadata.
+
+        Args:
+            single_scan_with_mock_contexts: Fixture providing a SingleScan with mocked contexts.
+
+        """
         scan = single_scan_with_mock_contexts
         payload = scan.build_hierarchy_payload(scan_id="fixed-id")
         assert payload["scan_id"] == "fixed-id"
@@ -73,7 +86,12 @@ class TestScannerHierarchy:
         assert metadata["name"] == "test.yml"
 
     def test_build_hierarchy_payload_node_serialization(self, single_scan_with_mock_contexts: "SingleScan") -> None:
-        """_node_to_dict serializes playcall and taskcall with file, line, module."""
+        """_node_to_dict serializes playcall and taskcall with file, line, module.
+
+        Args:
+            single_scan_with_mock_contexts: Fixture providing a SingleScan with mocked contexts.
+
+        """
         scan = single_scan_with_mock_contexts
         payload = scan.build_hierarchy_payload(scan_id="x")
         hierarchy = cast(list[dict[str, object]], payload["hierarchy"])
@@ -98,7 +116,12 @@ class TestScannerHierarchy:
     def test_build_hierarchy_payload_empty_scan_id_generates_timestamp(
         self, single_scan_with_mock_contexts: "SingleScan"
     ) -> None:
-        """When scan_id is empty, build_hierarchy_payload uses timestamp."""
+        """When scan_id is empty, build_hierarchy_payload uses timestamp.
+
+        Args:
+            single_scan_with_mock_contexts: Fixture providing a SingleScan with mocked contexts.
+
+        """
         scan = single_scan_with_mock_contexts
         payload = scan.build_hierarchy_payload()
         scan_id = str(payload["scan_id"])
@@ -106,6 +129,7 @@ class TestScannerHierarchy:
         assert len(scan_id) >= 14  # YYYYMMDDHHMMSS
 
     def test_build_hierarchy_payload_empty_contexts_returns_empty_trees(self) -> None:
+        """When contexts is empty, hierarchy is empty list."""
         SingleScan = _import_single_scan()
         if SingleScan is None:
             pytest.skip("apme_engine.engine not importable")
@@ -117,7 +141,12 @@ class TestScannerHierarchy:
     def test_apply_rules_sets_findings_and_hierarchy_payload(
         self, single_scan_with_mock_contexts: "SingleScan"
     ) -> None:
-        """apply_rules builds hierarchy_payload and sets findings with it in report."""
+        """apply_rules builds hierarchy_payload and sets findings with it in report.
+
+        Args:
+            single_scan_with_mock_contexts: Fixture providing a SingleScan with mocked contexts.
+
+        """
         scan = single_scan_with_mock_contexts
         scan.apply_rules()
         assert scan.hierarchy_payload != {}
@@ -127,7 +156,12 @@ class TestScannerHierarchy:
         assert scan.result is None
 
     def test_node_to_dict_no_spec(self, single_scan_with_mock_contexts: "SingleScan") -> None:
-        """_node_to_dict handles node without spec (file/line empty)."""
+        """_node_to_dict handles node without spec (file/line empty).
+
+        Args:
+            single_scan_with_mock_contexts: Fixture providing a SingleScan with mocked contexts.
+
+        """
         scan = single_scan_with_mock_contexts
         node = MagicMock()
         node.type = "playcall"

@@ -15,8 +15,7 @@ def pull_galaxy_collection(
     cache_root: Path | None = None,
     galaxy_server: str | None = None,
 ) -> Path:
-    """
-    Install a Galaxy collection into the cache via ansible-galaxy.
+    """Install a Galaxy collection into the cache via ansible-galaxy.
 
     Args:
         spec: Collection specifier, e.g. "namespace.collection" or "namespace.collection:1.2.3".
@@ -26,9 +25,6 @@ def pull_galaxy_collection(
     Returns:
         Path to the installed collection (cache_root/galaxy/ansible_collections/namespace/collection/).
 
-    Raises:
-        FileNotFoundError: If ansible-galaxy is not found.
-        subprocess.CalledProcessError: If install fails.
     """
     root = cache_root or get_cache_root()
     target = galaxy_cache_dir(root)
@@ -55,8 +51,7 @@ def pull_galaxy_requirements(
     cache_root: Path | None = None,
     galaxy_server: str | None = None,
 ) -> list[Path]:
-    """
-    Install collections from a requirements.yml into the cache.
+    """Install collections from a requirements.yml into the cache.
 
     Args:
         requirements_path: Path to requirements.yml (collections list).
@@ -65,6 +60,10 @@ def pull_galaxy_requirements(
 
     Returns:
         List of paths to installed collections (one per collection in the file).
+
+    Raises:
+        FileNotFoundError: If requirements_path does not exist.
+        RuntimeError: If ansible-galaxy install fails.
     """
     root = cache_root or get_cache_root()
     target = galaxy_cache_dir(root)
@@ -100,7 +99,17 @@ def pull_galaxy_requirements(
 
 
 def _parse_collection_spec(spec: str) -> tuple[str, str]:
-    """Return (namespace, collection) from 'namespace.collection' or 'namespace.collection:version'."""
+    """Return (namespace, collection) from 'namespace.collection' or 'namespace.collection:version'.
+
+    Args:
+        spec: Collection specifier string (e.g. namespace.collection or namespace.collection:version).
+
+    Returns:
+        Tuple of (namespace, collection).
+
+    Raises:
+        ValueError: If spec does not contain a dot (expected namespace.collection).
+    """
     spec = spec.split(":")[0].strip()
     if "." not in spec:
         raise ValueError(f"Invalid collection spec (expected namespace.collection): {spec}")
@@ -114,8 +123,7 @@ def pull_github_org(
     clone_depth: int | None = 1,
     token: str | None = None,
 ) -> list[Path]:
-    """
-    Clone GitHub org repos that look like Ansible collections into the cache.
+    """Clone GitHub org repos that look like Ansible collections into the cache.
 
     Uses the GitHub API to list org repos (requires network). Repos are considered
     collections if they contain galaxy.yml or meta/runtime.yml at the root.
@@ -128,6 +136,7 @@ def pull_github_org(
 
     Returns:
         List of paths to cloned repo roots (cache_root/github/org/repo_name/).
+
     """
     root = cache_root or get_cache_root()
     base = github_cache_dir(root) / org
@@ -160,8 +169,7 @@ def pull_github_repos(
     cache_root: Path | None = None,
     clone_depth: int | None = 1,
 ) -> list[Path]:
-    """
-    Clone specific GitHub org repos into the cache (no API needed).
+    """Clone specific GitHub org repos into the cache (no API needed).
 
     Args:
         org: GitHub organization name (e.g. "redhat-cop").
@@ -171,6 +179,7 @@ def pull_github_repos(
 
     Returns:
         List of paths to cloned repo roots.
+
     """
     root = cache_root or get_cache_root()
     base = github_cache_dir(root) / org
@@ -192,7 +201,15 @@ def pull_github_repos(
 
 
 def _list_org_repos(org: str, token: str) -> list[str]:
-    """List public repo names for a GitHub org via API. Returns empty list on error."""
+    """List public repo names for a GitHub org via API. Returns empty list on error.
+
+    Args:
+        org: GitHub organization name.
+        token: Optional GitHub token for API authentication.
+
+    Returns:
+        List of non-archived public repo names, or empty list on error.
+    """
     try:
         import json
         import urllib.request
@@ -215,8 +232,7 @@ def collection_path_in_cache(
     cache_root: Path | None = None,
     source: str = "galaxy",
 ) -> Path | None:
-    """
-    Return the path to a collection in the cache if present.
+    """Return the path to a collection in the cache if present.
 
     Args:
         namespace: Collection namespace.
@@ -227,6 +243,7 @@ def collection_path_in_cache(
 
     Returns:
         Path to the collection root, or None if not found.
+
     """
     root = cache_root or get_cache_root()
     if source == "galaxy":

@@ -1,3 +1,5 @@
+"""Native rule L045: detect inline environment variables in tasks."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -16,6 +18,18 @@ from apme_engine.engine.models import (
 
 @dataclass
 class InlineEnvVarRule(Rule):
+    """Rule for avoiding inline environment variables in tasks.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "L045"
     description: str = "Avoid inline environment variables in tasks; use env file or role vars"
     enabled: bool = True
@@ -25,11 +39,27 @@ class InlineEnvVarRule(Rule):
     tags: tuple[str, ...] = (Tag.CODING,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check for inline environment and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with message detail, or None.
+        """
         task = ctx.current
         if task is None:
             return None

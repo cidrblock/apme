@@ -181,7 +181,17 @@ def run(
     env_extra: dict[str, str] | None = None,
     **_kwargs: object,
 ) -> list[dict[str, object]]:
-    """Run mock/patch-based argspec validation in the venv's Python."""
+    """Run mock/patch-based argspec validation in the venv's Python.
+
+    Args:
+        task_nodes: List of task node dicts.
+        venv_root: Path to ansible venv root.
+        env_extra: Optional extra environment variables.
+        **_kwargs: Ignored keyword arguments.
+
+    Returns:
+        List of violation dicts.
+    """
     task_modules: dict[str, bool] = {}
     tasks_for_check: list[dict[str, object]] = []
     for node in task_nodes:

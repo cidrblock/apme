@@ -64,6 +64,16 @@ _TASK_KEY_SET = set(TASK_KEY_ORDER)
 
 @dataclass
 class FormatResult:
+    """Result of formatting a YAML file or content string.
+
+    Attributes:
+        path: Path to the file (or placeholder for stdin).
+        original: Original content before formatting.
+        formatted: Content after formatting.
+        changed: True if formatting changed the content.
+        diff: Unified diff string (empty if unchanged).
+    """
+
     path: Path
     original: str
     formatted: str
@@ -72,7 +82,14 @@ class FormatResult:
 
 
 def _normalize_jinja(match: re.Match[str]) -> str:
-    """Normalize {{ foo }} spacing to exactly one space inside braces."""
+    """Normalize {{ foo }} spacing to exactly one space inside braces.
+
+    Args:
+        match: Regex match for Jinja expression with optional inner spacing.
+
+    Returns:
+        Normalized Jinja string with exactly one space inside braces.
+    """
     inner: str = match.group(2).strip()
     if not inner:
         return "{{ }}"
@@ -88,7 +105,11 @@ def _fix_tabs(text: str) -> str:
 
 
 def _reorder_task_keys(data: object) -> None:
-    """Reorder keys in task mappings so name comes first, then action, then meta keys."""
+    """Reorder keys in task mappings so name comes first, then action, then meta keys.
+
+    Args:
+        data: CommentedSeq, CommentedMap, or nested structure with tasks.
+    """
     if isinstance(data, CommentedSeq):
         for item in data:
             _reorder_task_keys(item)
@@ -114,7 +135,11 @@ def _reorder_task_keys(data: object) -> None:
 
 
 def _reorder_single_task(mapping: CommentedMap) -> None:
-    """Reorder a single task/play CommentedMap: name first, then action, then known keys, then rest."""
+    """Reorder a single task/play CommentedMap: name first, then action, then known keys, then rest.
+
+    Args:
+        mapping: CommentedMap for a task or play block.
+    """
     keys = list(mapping.keys())
     if len(keys) <= 1:
         return
@@ -154,7 +179,15 @@ def _reorder_single_task(mapping: CommentedMap) -> None:
 
 
 def format_content(text: str, filename: str = "<stdin>") -> FormatResult:
-    """Format a YAML string. Returns FormatResult with original, formatted, diff."""
+    """Format a YAML string.
+
+    Args:
+        text: Raw YAML content.
+        filename: Filename for diff output (default: "<stdin>").
+
+    Returns:
+        FormatResult with original, formatted, diff.
+    """
     original = text
 
     text = _fix_tabs(text)
@@ -213,7 +246,14 @@ def format_content(text: str, filename: str = "<stdin>") -> FormatResult:
 
 
 def format_file(path: Path) -> FormatResult:
-    """Format a single YAML file on disk."""
+    """Format a single YAML file on disk.
+
+    Args:
+        path: Path to the YAML file.
+
+    Returns:
+        FormatResult with original, formatted, diff.
+    """
     text = path.read_text(encoding="utf-8")
     result = format_content(text, filename=str(path))
     result.path = path
@@ -224,7 +264,15 @@ def format_directory(
     root: Path,
     exclude_patterns: list[str] | None = None,
 ) -> list[FormatResult]:
-    """Walk a directory and format all .yml/.yaml files."""
+    """Walk a directory and format all .yml/.yaml files.
+
+    Args:
+        root: Root directory to walk.
+        exclude_patterns: Optional glob patterns to exclude (e.g. ["vendor/*"]).
+
+    Returns:
+        List of FormatResult for each formatted file.
+    """
     results: list[FormatResult] = []
     exclude = set(exclude_patterns or [])
 
@@ -251,13 +299,28 @@ def format_directory(
 
 
 def _matches_glob(path_str: str, pattern: str) -> bool:
-    """Simple glob matching using fnmatch."""
+    """Simple glob matching using fnmatch.
+
+    Args:
+        path_str: Path string to match.
+        pattern: Glob pattern (e.g. "vendor/*").
+
+    Returns:
+        True if path matches pattern.
+    """
     import fnmatch
 
     return fnmatch.fnmatch(path_str, pattern)
 
 
 def check_idempotent(result: FormatResult) -> bool:
-    """Verify that formatting the formatted output produces no further changes."""
+    """Verify that formatting the formatted output produces no further changes.
+
+    Args:
+        result: FormatResult from a previous format run.
+
+    Returns:
+        True if second format produces no changes.
+    """
     second = format_content(result.formatted, filename=str(result.path))
     return not second.changed

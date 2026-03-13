@@ -1,3 +1,5 @@
+"""Logging configuration and convenience functions for the engine."""
+
 from __future__ import annotations
 
 import logging
@@ -14,6 +16,11 @@ log_level_map = {
 
 
 def set_logger_channel(channel: str = "") -> None:
+    """Configure the module logger with a channel name and stdout handler.
+
+    Args:
+        channel: Logger name (e.g. module path). Empty for root logger.
+    """
     global _logger
     _logger = logging.getLogger(channel)
     handler = logging.StreamHandler(sys.stdout)
@@ -24,6 +31,11 @@ def set_logger_channel(channel: str = "") -> None:
 
 
 def set_log_level(level_str: str = "info") -> None:
+    """Set the log level for the module logger.
+
+    Args:
+        level_str: Level name: "error", "warning", "info", or "debug".
+    """
     global _logger
     level = log_level_map.get(level_str.lower())
     if _logger is not None and level is not None:
@@ -31,25 +43,55 @@ def set_log_level(level_str: str = "info") -> None:
 
 
 def exception(*args: object, **kwargs: object) -> None:
+    """Log an exception with traceback. No-op if logger not configured.
+
+    Args:
+        *args: Positional args passed to logger.exception.
+        **kwargs: Keyword args passed to logger.exception.
+    """
     if _logger is not None:
         _logger.exception(*args, **kwargs)  # type: ignore[arg-type]
 
 
 def error(*args: object, **kwargs: object) -> None:
+    """Log an error message. No-op if logger not configured.
+
+    Args:
+        *args: Positional args passed to logger.error.
+        **kwargs: Keyword args passed to logger.error.
+    """
     if _logger is not None:
         _logger.error(*args, **kwargs)  # type: ignore[arg-type]
 
 
 def warning(*args: object, **kwargs: object) -> None:
+    """Log a warning message. No-op if logger not configured.
+
+    Args:
+        *args: Positional args passed to logger.warning.
+        **kwargs: Keyword args passed to logger.warning.
+    """
     if _logger is not None:
         _logger.warning(*args, **kwargs)  # type: ignore[arg-type]
 
 
 def info(*args: object, **kwargs: object) -> None:
+    """Log an info message. No-op if logger not configured.
+
+    Args:
+        *args: Positional args passed to logger.info.
+        **kwargs: Keyword args passed to logger.info.
+    """
     if _logger is not None:
         _logger.info(*args, **kwargs)  # type: ignore[arg-type]
 
 
 def debug(*args: object, **kwargs: object) -> None:
+    """Log a debug message. No-op if logger not configured.
+
+    Args:
+        *args: Positional args passed to logger.debug.
+        **kwargs: Keyword args passed to logger.debug.
+    """
     if _logger is not None:
         _logger.debug(*args, **kwargs)  # type: ignore[arg-type]

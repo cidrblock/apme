@@ -1,4 +1,4 @@
-"""M010: Python 2 interpreter path detected (dropped in ansible-core 2.18+)."""
+"""Native rule M010: detect ansible_python_interpreter set to Python 2."""
 
 import re
 from dataclasses import dataclass
@@ -21,6 +21,18 @@ _PY2_PATH = re.compile(r"python2(\.\d+)?$")
 
 @dataclass
 class Python2InterpreterRule(Rule):
+    """Rule for ansible_python_interpreter set to Python 2 (dropped in 2.18+).
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "M010"
     description: str = "ansible_python_interpreter set to Python 2; dropped in 2.18+"
     enabled: bool = True
@@ -30,11 +42,27 @@ class Python2InterpreterRule(Rule):
     tags: tuple[str, ...] = (Tag.CODING,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check for Python 2 interpreter path and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with interpreter detail, or None.
+        """
         task = ctx.current
         if task is None:
             return None

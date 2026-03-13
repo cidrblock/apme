@@ -9,6 +9,11 @@ DEFAULT_VERSION = "2.20"
 
 
 def prebuilt_venvs_root() -> Path | None:
+    """Return root directory for pre-built ansible venvs from env, or None.
+
+    Returns:
+        Path to venvs root if APME_ANSIBLE_VENVS_ROOT is set and valid, else None.
+    """
     root = os.environ.get("APME_ANSIBLE_VENVS_ROOT", "").strip()
     if root:
         p = Path(root)
@@ -18,6 +23,14 @@ def prebuilt_venvs_root() -> Path | None:
 
 
 def find_prebuilt_venv(version: str) -> Path | None:
+    """Find pre-built venv for given ansible version.
+
+    Args:
+        version: Ansible version string (e.g. 2.20).
+
+    Returns:
+        Path to venv if found, else None.
+    """
     root = prebuilt_venvs_root()
     if root is None:
         return None
@@ -30,7 +43,14 @@ def find_prebuilt_venv(version: str) -> Path | None:
 
 
 def resolve_venv_root(version: str) -> Path | None:
-    """Return the venv root directory for a given version, or None."""
+    """Return the venv root directory for a given version, or None.
+
+    Args:
+        version: Ansible version string.
+
+    Returns:
+        Path to venv root (pre-built or system), or None.
+    """
     venv = find_prebuilt_venv(version)
     if venv is not None:
         return venv
@@ -44,7 +64,14 @@ def resolve_venv_root(version: str) -> Path | None:
 
 
 def resolve_ansible_playbook(version: str) -> Path | None:
-    """Find ansible-playbook for a given version: pre-built venv first, then system PATH."""
+    """Find ansible-playbook for a given version: pre-built venv first, then system PATH.
+
+    Args:
+        version: Ansible version string.
+
+    Returns:
+        Path to ansible-playbook binary, or None.
+    """
     venv = find_prebuilt_venv(version)
     if venv is not None:
         return venv / "bin" / "ansible-playbook"
@@ -55,7 +82,15 @@ def resolve_ansible_playbook(version: str) -> Path | None:
 
 
 def setup_collections_env(collection_specs: list[str], cache_root: Path) -> dict[str, str] | None:
-    """Build ANSIBLE_COLLECTIONS_PATH pointing at the cache so ansible finds collections."""
+    """Build ANSIBLE_COLLECTIONS_PATH pointing at the cache so ansible finds collections.
+
+    Args:
+        collection_specs: List of collection specs (used to determine if setup needed).
+        cache_root: Root of the collection cache.
+
+    Returns:
+        Env dict with ANSIBLE_COLLECTIONS_PATH if paths exist, else None.
+    """
     if not collection_specs:
         return None
     from apme_engine.collection_cache.config import galaxy_cache_dir, github_cache_dir

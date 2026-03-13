@@ -1,4 +1,4 @@
-# Colocated tests for L035 (UnnecessarySetFactRule / R204).
+"""Tests for native rule L035."""
 
 from apme_engine.engine.models import ExecutableType
 from apme_engine.validators.native.rules._test_helpers import (
@@ -10,6 +10,7 @@ from apme_engine.validators.native.rules.L035_unnecessary_set_fact import Unnece
 
 
 def test_L035_fires_when_set_fact_with_random_in_args() -> None:
+    """Verify L035 fires when set_fact has random in args."""
     spec = make_task_spec(
         module="ansible.builtin.set_fact",
         executable_type=ExecutableType.MODULE_TYPE,
@@ -27,6 +28,7 @@ def test_L035_fires_when_set_fact_with_random_in_args() -> None:
 
 
 def test_L035_does_not_fire_when_set_fact_without_random() -> None:
+    """Verify L035 does not fire when set_fact has no random."""
     spec = make_task_spec(
         module="ansible.builtin.set_fact",
         executable_type=ExecutableType.MODULE_TYPE,
@@ -43,6 +45,7 @@ def test_L035_does_not_fire_when_set_fact_without_random() -> None:
 
 
 def test_L035_does_not_fire_for_non_set_fact() -> None:
+    """Verify L035 does not fire for non-set_fact tasks."""
     spec = make_task_spec(module="ansible.builtin.copy", resolved_name="ansible.builtin.copy")
     task = make_task_call(spec)
     ctx = make_context(task)

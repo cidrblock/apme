@@ -29,19 +29,50 @@ SERVICE_SETTLE_SECONDS = 5
 
 
 def _run(cmd: list[str], **kwargs: str | bool | int | float | None) -> subprocess.CompletedProcess[str]:
+    """Run command and return CompletedProcess.
+
+    Args:
+        cmd: Command and args.
+        **kwargs: Passed to subprocess.run.
+
+    Returns:
+        CompletedProcess with stdout, stderr, returncode.
+    """
     return subprocess.run(cmd, capture_output=True, text=True, **kwargs)  # type: ignore[arg-type]
 
 
 def _podman(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    """Run podman command.
+
+    Args:
+        *args: Podman subcommand and args.
+        check: If True, raise on non-zero exit.
+
+    Returns:
+        CompletedProcess.
+    """
     return _run(["podman", *args], check=check)
 
 
 def _pod_status() -> str:
+    """Return pod status string.
+
+    Returns:
+        Pod status or empty string.
+    """
     r = _podman("pod", "list", "--filter", f"name={POD_NAME}", "--format", "{{.Status}}", check=False)
     return (r.stdout or "").strip()
 
 
 def _container_logs(name: str) -> str:
+    """Return pod container logs.
+
+    Args:
+        name: Container name (e.g. 'primary', 'native').
+
+    Returns:
+        Combined stdout and stderr.
+    """
     r = _podman("logs", f"{POD_NAME}-{name}", check=False)
     return (r.stdout or "") + (r.stderr or "")
 
@@ -86,7 +117,14 @@ def pod() -> Generator[None, None, None]:
 
 @pytest.fixture(scope="module")  # type: ignore[untyped-decorator]
 def scan_result(pod: None) -> YAMLDict:
-    """Run a scan of the test playbook via the CLI container and return parsed JSON."""
+    """Run a scan of the test playbook via the CLI container and return parsed JSON.
+
+    Args:
+        pod: Fixture that starts and tears down the podman pod.
+
+    Returns:
+        Parsed JSON scan result (violations, count, etc.).
+    """
     test_dir = str(REPO_ROOT / "tests" / "integration")
     r = _run(
         [
@@ -118,6 +156,14 @@ def scan_result(pod: None) -> YAMLDict:
 
 
 def _violation_rule_ids(scan_result: YAMLDict) -> set[str]:
+    """Extract set of rule IDs from scan violations.
+
+    Args:
+        scan_result: Parsed scan JSON.
+
+    Returns:
+        Set of rule_id strings.
+    """
     violations = cast(list[ViolationDict], scan_result.get("violations", []))
     return {str(v.get("rule_id", "")) for v in violations}
 
@@ -129,7 +175,15 @@ def _violation_rule_ids(scan_result: YAMLDict) -> set[str]:
 
 @pytest.mark.integration
 class TestHealthCheck:
+    """Tests for health-check subcommand."""
+
     def test_overall_ok(self, pod: None) -> None:
+        """Health-check reports overall: ok when all services up.
+
+        Args:
+            pod: Fixture that starts and tears down the podman pod.
+
+        """
         r = _run(
             [
                 "podman",
@@ -158,7 +212,15 @@ class TestHealthCheck:
 
 @pytest.mark.integration
 class TestScanViolations:
+    """Tests for scan violations."""
+
     def test_violations_returned(self, scan_result: YAMLDict) -> None:
+        """Scan returns violations.
+
+        Args:
+            scan_result: Fixture providing scan result dict.
+
+        """
         raw_count = scan_result.get("count", 0)
         count = int(raw_count) if isinstance(raw_count, (int, float, str)) else 0
         assert count > 0, f"Expected >0 violations, got {count}"
@@ -175,6 +237,14 @@ class TestScanViolations:
         ],
     )  # type: ignore[untyped-decorator]
     def test_opa_rule(self, scan_result: YAMLDict, rule_id: str, desc: str) -> None:
+        """OPA rule fires for test playbook.
+
+        Args:
+            scan_result: Fixture providing scan result dict.
+            rule_id: Parametrized rule ID.
+            desc: Parametrized rule description.
+
+        """
         assert rule_id in _violation_rule_ids(scan_result), f"{rule_id} ({desc}) not found"
 
     # Native rules
@@ -187,10 +257,24 @@ class TestScanViolations:
         ],
     )  # type: ignore[untyped-decorator]
     def test_native_rule(self, scan_result: YAMLDict, rule_id: str, desc: str) -> None:
+        """Native rule fires for test playbook.
+
+        Args:
+            scan_result: Fixture providing scan result dict.
+            rule_id: Parametrized rule ID.
+            desc: Parametrized rule description.
+
+        """
         assert rule_id in _violation_rule_ids(scan_result), f"{rule_id} ({desc}) not found"
 
     # Modernize rules
     def test_m001_fqcn_resolution(self, scan_result: YAMLDict) -> None:
+        """M001 FQCN resolution rule fires.
+
+        Args:
+            scan_result: Fixture providing scan result dict.
+
+        """
         assert "M001" in _violation_rule_ids(scan_result), "M001 (FQCN resolution) not found"
 
     # Ansible validator rules
@@ -202,6 +286,14 @@ class TestScanViolations:
         ],
     )  # type: ignore[untyped-decorator]
     def test_ansible_rule(self, scan_result: YAMLDict, rule_id: str, desc: str) -> None:
+        """Ansible validator rule fires.
+
+        Args:
+            scan_result: Fixture providing scan result dict.
+            rule_id: Parametrized rule ID.
+            desc: Parametrized rule description.
+
+        """
         assert rule_id in _violation_rule_ids(scan_result), f"{rule_id} ({desc}) not found"
 
 
@@ -212,7 +304,15 @@ class TestScanViolations:
 
 @pytest.mark.integration
 class TestNoDuplicates:
+    """Tests for violation deduplication."""
+
     def test_no_duplicate_violations(self, scan_result: YAMLDict) -> None:
+        """Scan returns no duplicate violations.
+
+        Args:
+            scan_result: Fixture providing scan result dict.
+
+        """
         seen: set[tuple[str, str, int | tuple[int, ...]]] = set()
         dups: list[tuple[str, str, int | tuple[int, ...]]] = []
         violations = cast(list[ViolationDict], scan_result.get("violations", []))
@@ -238,27 +338,65 @@ class TestNoDuplicates:
 
 @pytest.mark.integration
 class TestContainerLogs:
+    """Tests for container log content."""
+
     def test_primary_logged_opa_count(self, scan_result: YAMLDict) -> None:
+        """Primary logs OPA count.
+
+        Args:
+            scan_result: Fixture providing scan result dict.
+
+        """
         logs = _container_logs("primary")
         assert "Opa=" in logs, f"Primary did not log OPA count:\n{logs[-500:]}"
 
     def test_primary_logged_native_count(self, scan_result: YAMLDict) -> None:
+        """Primary logs Native count.
+
+        Args:
+            scan_result: Fixture providing scan result dict.
+
+        """
         logs = _container_logs("primary")
         assert "Native=" in logs, f"Primary did not log Native count:\n{logs[-500:]}"
 
     def test_opa_wrapper_logged(self, scan_result: YAMLDict) -> None:
+        """OPA wrapper logs OPA returned.
+
+        Args:
+            scan_result: Fixture providing scan result dict.
+
+        """
         logs = _container_logs("opa")
         assert "OPA returned" in logs, f"OPA wrapper did not log:\n{logs[-500:]}"
 
     def test_native_validator_logged(self, scan_result: YAMLDict) -> None:
+        """Native validator logs return message.
+
+        Args:
+            scan_result: Fixture providing scan result dict.
+
+        """
         logs = _container_logs("native")
         assert "Native validator returned" in logs, f"Native did not log:\n{logs[-500:]}"
 
     def test_ansible_introspection(self, scan_result: YAMLDict) -> None:
+        """AnsibleValidator logs introspecting.
+
+        Args:
+            scan_result: Fixture providing scan result dict.
+
+        """
         logs = _container_logs("ansible")
         assert "introspecting" in logs, f"Ansible did not run introspection:\n{logs[-500:]}"
 
     def test_ansible_argspec(self, scan_result: YAMLDict) -> None:
+        """AnsibleValidator logs argspec.
+
+        Args:
+            scan_result: Fixture providing scan result dict.
+
+        """
         logs = _container_logs("ansible")
         assert "argspec" in logs, f"Ansible did not run argspec:\n{logs[-500:]}"
 
@@ -272,7 +410,15 @@ SECRETS_FIXTURE = REPO_ROOT / "tests" / "integration" / "test_secrets_playbook.y
 
 @pytest.mark.integration
 class TestGitleaks:
+    """Tests for Gitleaks validator."""
+
     def test_gitleaks_container_healthy(self, pod: None) -> None:
+        """Gitleaks reported in health-check.
+
+        Args:
+            pod: Fixture that starts and tears down the podman pod.
+
+        """
         r = _run(
             [
                 "podman",
@@ -296,10 +442,22 @@ class TestGitleaks:
         )
 
     def test_gitleaks_logged(self, scan_result: YAMLDict) -> None:
+        """Gitleaks container logs validator message.
+
+        Args:
+            scan_result: Fixture providing scan result dict.
+
+        """
         logs = _container_logs("gitleaks")
         assert "Gitleaks validator" in logs, f"Gitleaks did not log:\n{logs[-500:]}"
 
     def test_primary_logged_gitleaks_count(self, scan_result: YAMLDict) -> None:
+        """Primary logs Gitleaks count.
+
+        Args:
+            scan_result: Fixture providing scan result dict.
+
+        """
         logs = _container_logs("primary")
         assert "Gitleaks=" in logs, f"Primary did not log Gitleaks count:\n{logs[-500:]}"
 
@@ -313,8 +471,15 @@ FORMAT_FIXTURE = REPO_ROOT / "tests" / "integration" / "test_format_playbook.yml
 
 @pytest.mark.integration
 class TestFormat:
+    """Tests for format subcommand in container."""
+
     def test_format_check_detects_issues(self, pod: None) -> None:
-        """format --check on messy fixture exits 1."""
+        """Format --check on messy fixture exits 1.
+
+        Args:
+            pod: Fixture that starts and tears down the podman pod.
+
+        """
         test_dir = str(FORMAT_FIXTURE.parent)
         r = _run(
             [
@@ -338,7 +503,12 @@ class TestFormat:
         assert r.returncode == 1, f"Expected exit 1 for messy file:\n{r.stdout}\n{r.stderr}"
 
     def test_format_diff_shows_transforms(self, pod: None) -> None:
-        """format (no --apply) shows unified diff with expected transforms."""
+        """Format (no --apply) shows unified diff with expected transforms.
+
+        Args:
+            pod: Fixture that starts and tears down the podman pod.
+
+        """
         test_dir = str(FORMAT_FIXTURE.parent)
         r = _run(
             [
@@ -362,7 +532,13 @@ class TestFormat:
         assert "@@" in r.stdout or "---" in r.stdout, f"Expected unified diff output:\n{r.stdout[:500]}"
 
     def test_format_apply_then_check_passes(self, pod: None, tmp_path: Path) -> None:
-        """format --apply writes file; subsequent --check exits 0."""
+        """Format --apply writes file; subsequent --check exits 0.
+
+        Args:
+            pod: Fixture that starts and tears down the podman pod.
+            tmp_path: Pytest temporary directory fixture.
+
+        """
         import shutil
 
         work = tmp_path / "fmt_test"

@@ -27,6 +27,13 @@ def fix_changed_when(content: str, violation: ViolationDict) -> TransformResult:
 
     This is a conservative default — the task may actually change state,
     but the user should audit and adjust the condition.
+
+    Args:
+        content: YAML file content.
+        violation: Violation dict with line.
+
+    Returns:
+        TransformResult with modified content if applied.
     """
     yaml = FormattedYAML(typ="rt", pure=True, version=(1, 1))
 

@@ -1,3 +1,5 @@
+"""Native rule R402: list all used variables."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -15,6 +17,18 @@ from apme_engine.engine.models import RuleTag as Tag
 
 @dataclass
 class ListAllUsedVariablesRule(Rule):
+    """Rule to list all used variables.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "R402"
     description: str = "Listing all used variables"
     enabled: bool = True
@@ -24,11 +38,27 @@ class ListAllUsedVariablesRule(Rule):
     tags: tuple[str, ...] = (Tag.VARIABLE,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """List used variables and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with metadata/variables detail, or None.
+        """
         task = ctx.current
         if task is None:
             return None

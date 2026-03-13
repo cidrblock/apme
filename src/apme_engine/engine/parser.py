@@ -1,3 +1,5 @@
+"""Parser for Ansible content (collections, roles, playbooks, taskfiles)."""
+
 from __future__ import annotations
 
 import copy
@@ -40,6 +42,8 @@ from .utils import (
 
 
 class Parser:
+    """Parses Ansible content (collections, roles, playbooks, taskfiles) into definitions."""
+
     def __init__(
         self,
         do_save: bool = False,
@@ -47,6 +51,14 @@ class Parser:
         skip_playbook_format_error: bool = True,
         skip_task_format_error: bool = True,
     ) -> None:
+        """Initialize the parser with load and error-handling options.
+
+        Args:
+            do_save: Whether to save parsed definitions.
+            use_ansible_doc: Use ansible-doc for module specs.
+            skip_playbook_format_error: Skip playbooks with format errors.
+            skip_task_format_error: Skip tasks with format errors.
+        """
         self.do_save = do_save
         self.use_ansible_doc = use_ansible_doc
         self.skip_playbook_format_error = skip_playbook_format_error
@@ -58,6 +70,25 @@ class Parser:
         load_json_path: str = "",
         collection_name_of_project: str = "",
     ) -> tuple[dict[str, list[Object]], Load] | None:
+        """Parse Ansible content and return definitions plus Load metadata.
+
+        Loads from Load object, JSON file, or both. Supports collections, roles,
+        projects, playbooks, and taskfiles. Returns mappings of object types to
+        parsed definitions.
+
+        Args:
+            load_data: Pre-built Load object. If None, load_json_path used.
+            load_json_path: Path to Load JSON file.
+            collection_name_of_project: Override collection name for projects.
+
+        Returns:
+            Tuple of (definitions dict, Load) or None on load failure.
+
+        Raises:
+            ValueError: If file not found or load type unsupported.
+            PlaybookFormatError: If skip_playbook_format_error is False.
+            TaskFormatError: If skip_task_format_error is False.
+        """
         ld: Load = Load()
         if load_data is not None:
             ld = load_data
@@ -450,6 +481,17 @@ class Parser:
 
     @classmethod
     def restore_definition_objects(cls: type[Parser], input_dir: str) -> tuple[dict[str, list[Object]], Load]:
+        """Load previously dumped definition objects from JSON files in a directory.
+
+        Args:
+            input_dir: Directory containing collections.json, roles.json, etc.
+
+        Returns:
+            Tuple of (definitions dict, Load from mappings.json).
+
+        Raises:
+            ValueError: If mappings.json not found.
+        """
         collections = _load_object_list(Collection, os.path.join(input_dir, "collections.json"))
 
         # TODO: only repository?
@@ -488,6 +530,13 @@ class Parser:
     def dump_definition_objects(
         cls: type[Parser], output_dir: str, definitions: dict[str, list[Object]], ld: Load
     ) -> None:
+        """Write definition objects and Load to JSON files in a directory.
+
+        Args:
+            output_dir: Directory to write JSON files.
+            definitions: Dict mapping object type names to lists of Object.
+            ld: Load object to write as mappings.json.
+        """
         collections = definitions.get("collections", [])
         if len(collections) > 0:
             _dump_object_list(collections, os.path.join(output_dir, "collections.json"))
@@ -524,6 +573,12 @@ class Parser:
 
 
 def _dump_object_list(obj_list: list[Object], output_path: str) -> None:
+    """Write a list of Object instances to a file as newline-delimited JSON.
+
+    Args:
+        obj_list: List of Object instances with dump() method.
+        output_path: Path to write the output file.
+    """
     tmp_obj_list = copy.deepcopy(obj_list)
     lines = []
     for i in range(len(tmp_obj_list)):
@@ -533,6 +588,15 @@ def _dump_object_list(obj_list: list[Object], output_path: str) -> None:
 
 
 def _load_object_list(cls: type[Object], input_path: str) -> list[Object]:
+    """Load Object instances from newline-delimited JSON file.
+
+    Args:
+        cls: Object subclass with from_json class method.
+        input_path: Path to the JSON file.
+
+    Returns:
+        List of Object instances.
+    """
     obj_list: list[Object] = []
     if os.path.exists(input_path):
         with open(input_path) as f:
@@ -543,6 +607,14 @@ def _load_object_list(cls: type[Object], input_path: str) -> list[Object]:
 
 
 def load_name2target_name(path: str) -> str:
+    """Extract target name from a load JSON filename (e.g. load-foo.json -> foo).
+
+    Args:
+        path: Path to a load JSON file.
+
+    Returns:
+        Target name with "load-" prefix stripped.
+    """
     filename = os.path.basename(path)
     parts = os.path.splitext(filename)
     prefix = "load-"

@@ -11,11 +11,30 @@ from apme.v1 import cache_pb2_grpc, common_pb2, primary_pb2_grpc, validate_pb2_g
 
 
 class _HealthStub(Protocol):
-    def Health(self, req: object, timeout: float = 5.0) -> object: ...
+    """Protocol for gRPC stubs that expose a Health RPC."""
+
+    def Health(self, req: object, timeout: float = 5.0) -> object:
+        """Call Health RPC.
+
+        Args:
+            req: Health request message.
+            timeout: RPC timeout in seconds.
+
+        Returns:
+            Health response message.
+        """
+        ...
 
 
 def _derive_addresses(primary_addr: str) -> dict[str, str]:
-    """From primary host:port derive default addresses for all services."""
+    """From primary host:port derive default addresses for all services.
+
+    Args:
+        primary_addr: Primary service address (host:port or host).
+
+    Returns:
+        Dict mapping service names to addresses (primary, native, opa, ansible, cache_maintainer).
+    """
     if ":" in primary_addr:
         host, _ = primary_addr.rsplit(":", 1)
     else:
@@ -32,7 +51,16 @@ def _derive_addresses(primary_addr: str) -> dict[str, str]:
 def check_grpc_health(
     addr: str, stub_factory: Callable[[grpc.Channel], _HealthStub], timeout: float = 5.0
 ) -> dict[str, str | float | bool | None]:
-    """Call Health RPC on a gRPC service; return {ok, status, error, latency_ms}."""
+    """Call Health RPC on a gRPC service; return {ok, status, error, latency_ms}.
+
+    Args:
+        addr: gRPC address (host:port).
+        stub_factory: Callable that creates a Health stub from a channel.
+        timeout: RPC timeout in seconds.
+
+    Returns:
+        Dict with ok, status, error, latency_ms keys.
+    """
     start = time.perf_counter()
     try:
         channel = grpc.insecure_channel(addr)
@@ -75,7 +103,20 @@ def run_health_checks(
     # Legacy parameter kept for backward compatibility (ignored)
     opa_url: str | None = None,
 ) -> dict[str, dict[str, str | float | bool | None]]:
-    """Run all health checks. Addresses not provided are derived from primary_addr."""
+    """Run all health checks. Addresses not provided are derived from primary_addr.
+
+    Args:
+        primary_addr: Primary service address (required).
+        native_addr: Native validator address (optional).
+        opa_addr: OPA validator address (optional).
+        ansible_addr: Ansible validator address (optional).
+        cache_addr: Cache maintainer address (optional).
+        timeout: RPC timeout in seconds.
+        opa_url: Legacy parameter, ignored.
+
+    Returns:
+        Dict mapping service names to check_grpc_health result dicts.
+    """
     defaults = _derive_addresses(primary_addr)
     native_addr = native_addr or os.environ.get("NATIVE_GRPC_ADDRESS") or defaults["native"]
     opa_addr = opa_addr or os.environ.get("OPA_GRPC_ADDRESS") or defaults["opa"]

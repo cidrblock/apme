@@ -9,7 +9,14 @@ RULE_ID = "L057"
 
 
 def _find_playbooks(root: Path) -> list[Path]:
-    """Return paths to YAML files that look like playbooks."""
+    """Return paths to YAML files that look like playbooks.
+
+    Args:
+        root: Root directory to search.
+
+    Returns:
+        List of paths to playbook-like YAML files.
+    """
     playbooks = []
     for ext in ("*.yml", "*.yaml"):
         for path in root.rglob(ext):
@@ -30,7 +37,17 @@ def run(
     env_extra: dict[str, str] | None = None,
     **_kwargs: object,
 ) -> list[dict[str, object]]:
-    """Run ansible-playbook --syntax-check on all playbooks under root_dir."""
+    """Run ansible-playbook --syntax-check on all playbooks under root_dir.
+
+    Args:
+        venv_root: Path to ansible venv root.
+        root_dir: Root directory containing playbooks.
+        env_extra: Optional extra environment variables.
+        **_kwargs: Ignored keyword arguments.
+
+    Returns:
+        List of violation dicts.
+    """
     ansible_playbook = venv_root / "bin" / "ansible-playbook"
     violations: list[dict[str, object]] = []
 

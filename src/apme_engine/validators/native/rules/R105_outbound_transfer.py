@@ -1,3 +1,5 @@
+"""Native rule R105: detect outbound network transfer to parameterized URL."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -20,6 +22,18 @@ from apme_engine.engine.models import (
 
 @dataclass
 class InboundTransferRule(Rule):
+    """Rule for outbound network transfer to parameterized URL.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "R105"
     description: str = "An outbound network transfer to a parameterized URL is found"
     enabled: bool = True
@@ -29,11 +43,27 @@ class InboundTransferRule(Rule):
     tags: tuple[str, ...] = (Tag.NETWORK,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check for outbound transfer to parameterized URL and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with from/to detail, or None.
+        """
         task = ctx.current
         if task is None:
             return None

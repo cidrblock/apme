@@ -1,3 +1,5 @@
+"""Native rule R103: detect downloaded file from parameterized source being executed."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -20,6 +22,19 @@ from apme_engine.engine.models import (
 
 @dataclass
 class DownloadExecRule(Rule):
+    """Rule for downloaded file from parameterized source being executed.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+        precedence: Evaluation order.
+    """
+
     rule_id: str = "R103"
     description: str = "A downloaded file from parameterized source is executed"
     enabled: bool = True
@@ -30,11 +45,27 @@ class DownloadExecRule(Rule):
     precedence: int = 11
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check for download-exec pattern and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with command/src/executed_file detail, or None.
+        """
         task = ctx.current
         if task is None:
             return None

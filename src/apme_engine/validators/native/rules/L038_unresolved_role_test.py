@@ -1,4 +1,4 @@
-# Colocated tests for L038 (UnresolvedRoleRule).
+"""Tests for native rule L038."""
 
 from apme_engine.engine.models import ExecutableType
 from apme_engine.validators.native.rules._test_helpers import (
@@ -10,6 +10,7 @@ from apme_engine.validators.native.rules.L038_unresolved_role import UnresolvedR
 
 
 def test_L038_fires_when_role_unresolved() -> None:
+    """Verify L038 fires when role is unresolved."""
     spec = make_task_spec(
         module="some_role",
         executable="some_role",
@@ -28,6 +29,7 @@ def test_L038_fires_when_role_unresolved() -> None:
 
 
 def test_L038_does_not_fire_when_role_resolved() -> None:
+    """Verify L038 does not fire when role is resolved."""
     spec = make_task_spec(
         module="geerlingguy.docker",
         executable_type=ExecutableType.ROLE_TYPE,
@@ -43,6 +45,7 @@ def test_L038_does_not_fire_when_role_resolved() -> None:
 
 
 def test_L038_does_not_fire_for_module_task() -> None:
+    """Verify L038 does not fire for module tasks."""
     spec = make_task_spec(module="copy", executable_type=ExecutableType.MODULE_TYPE)
     task = make_task_call(spec)
     ctx = make_context(task)

@@ -24,7 +24,15 @@ _MODE_QUOTED_NO_ZERO = re.compile(
 
 
 def fix_octal_mode(content: str, violation: ViolationDict) -> TransformResult:
-    """Convert ``mode: 644`` or ``mode: 0644`` to ``mode: "0644"``."""
+    """Convert ``mode: 644`` or ``mode: 0644`` to ``mode: "0644"``.
+
+    Args:
+        content: YAML file content.
+        violation: Violation dict with line.
+
+    Returns:
+        TransformResult with modified content if applied.
+    """
     target_line = violation_line_to_int(violation)
 
     lines = content.splitlines(keepends=True)

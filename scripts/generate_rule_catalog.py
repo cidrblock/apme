@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""Generate docs/RULE_CATALOG.md — a single-file reference of every rule, its
-validator, description, severity/level, and whether a deterministic fixer exists.
+"""Generate docs/RULE_CATALOG.md — a single-file reference of every rule.
 
-Run from repo root:
-    python scripts/generate_rule_catalog.py
-
+Validator, description, severity/level, and whether a deterministic fixer exists.
+Run from repo root: python scripts/generate_rule_catalog.py
 The output is written to docs/RULE_CATALOG.md.  Re-run whenever rules or
 transforms change.
 """
@@ -29,6 +27,15 @@ _KV = re.compile(r"^(\w+):\s*(.+)$", re.MULTILINE)
 
 
 def _parse_frontmatter(path: Path) -> dict[str, str]:
+    """Parse YAML frontmatter from a markdown file; return key-value dict.
+
+    Args:
+        path: Path to the markdown file.
+
+    Returns:
+        Dict of frontmatter key-value pairs.
+
+    """
     text = path.read_text(encoding="utf-8")
     m = _FRONTMATTER.match(text)
     if not m:
@@ -37,6 +44,12 @@ def _parse_frontmatter(path: Path) -> dict[str, str]:
 
 
 def _collect_opa_rules() -> list[dict[str, str]]:
+    """Collect rule_id, validator, description, source from OPA bundle .md files.
+
+    Returns:
+        List of rule dicts with rule_id, validator, description, source.
+
+    """
     rules = []
     for md in sorted(OPA_DIR.glob("*.md")):
         fm = _parse_frontmatter(md)
@@ -54,6 +67,12 @@ def _collect_opa_rules() -> list[dict[str, str]]:
 
 
 def _collect_native_rules() -> list[dict[str, str]]:
+    """Collect rule_id, validator, description, source from native rules .md files.
+
+    Returns:
+        List of rule dicts with rule_id, validator, description, source.
+
+    """
     rules = []
     for md in sorted(NATIVE_DIR.glob("*.md")):
         fm = _parse_frontmatter(md)
@@ -71,6 +90,12 @@ def _collect_native_rules() -> list[dict[str, str]]:
 
 
 def _collect_ansible_rules() -> list[dict[str, str]]:
+    """Collect rule_id, validator, description, source from Ansible rules .md files.
+
+    Returns:
+        List of rule dicts with rule_id, validator, description, source.
+
+    """
     rules = []
     for md in sorted(ANSIBLE_DIR.glob("*.md")):
         fm = _parse_frontmatter(md)
@@ -88,6 +113,12 @@ def _collect_ansible_rules() -> list[dict[str, str]]:
 
 
 def _collect_gitleaks_rules() -> list[dict[str, str]]:
+    """Return a single Gitleaks rule entry.
+
+    Returns:
+        List with one rule dict for Gitleaks SEC:*.
+
+    """
     return [
         {
             "rule_id": "SEC:*",
@@ -99,6 +130,12 @@ def _collect_gitleaks_rules() -> list[dict[str, str]]:
 
 
 def _get_fixable_ids() -> set[str]:
+    """Load remediation registry and return set of rule_ids that have fixers.
+
+    Returns:
+        Set of rule_id strings that have deterministic fixers.
+
+    """
     try:
         from apme_engine.remediation.transforms import build_default_registry
 
@@ -110,6 +147,15 @@ def _get_fixable_ids() -> set[str]:
 
 
 def _sort_key(rule: dict[str, str]) -> tuple[str, int]:
+    """Return (prefix, number) for sorting rules by rule_id.
+
+    Args:
+        rule: Rule dict with at least a rule_id key.
+
+    Returns:
+        Tuple of (letter prefix, numeric portion) for sort ordering.
+
+    """
     rid = rule["rule_id"]
     prefix = rid.rstrip("0123456789:*")
     num_str = rid[len(prefix) :].split(":")[0].split("*")[0]
@@ -118,6 +164,12 @@ def _sort_key(rule: dict[str, str]) -> tuple[str, int]:
 
 
 def generate() -> str:
+    """Collect all rules from OPA/native/Ansible/Gitleaks and return RULE_CATALOG.md content.
+
+    Returns:
+        Full markdown content for docs/RULE_CATALOG.md.
+
+    """
     all_rules: list[dict[str, str]] = []
     all_rules.extend(_collect_opa_rules())
     all_rules.extend(_collect_native_rules())
@@ -186,6 +238,7 @@ def generate() -> str:
 
 
 def main() -> None:
+    """Write RULE_CATALOG.md to docs/."""
     content = generate()
     OUTPUT.write_text(content, encoding="utf-8")
     print(f"Wrote {OUTPUT} ({content.count(chr(10))} lines)")

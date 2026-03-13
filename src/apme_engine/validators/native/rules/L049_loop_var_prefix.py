@@ -1,3 +1,5 @@
+"""Native rule L049: detect loop variables without prefix (e.g. item_)."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -19,6 +21,18 @@ LOOP_VAR_PREFIX = "item_"
 
 @dataclass
 class LoopVarPrefixRule(Rule):
+    """Rule for loop variable to use prefix (e.g. item_) to avoid shadowing.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "L049"
     description: str = "Loop variable should use a prefix (e.g. item_) to avoid shadowing"
     enabled: bool = True
@@ -28,11 +42,27 @@ class LoopVarPrefixRule(Rule):
     tags: tuple[str, ...] = (Tag.VARIABLE,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check loop variable prefix and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with loop_var/message detail, or None.
+        """
         task = ctx.current
         if task is None:
             return None

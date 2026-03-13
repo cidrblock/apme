@@ -1,3 +1,5 @@
+"""Native rule L046: detect raw/command/shell without explicit args (free-form)."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -30,6 +32,18 @@ FREE_FORM_ACTIONS = frozenset(
 
 @dataclass
 class NoFreeFormRule(Rule):
+    """Rule for avoiding raw/command/shell without explicit args.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "L046"
     description: str = "Avoid raw/command/shell without explicit args (use args: key)"
     enabled: bool = True
@@ -39,11 +53,29 @@ class NoFreeFormRule(Rule):
     tags: tuple[str, ...] = (Tag.COMMAND,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Return True if the current target is a task.
+
+        Args:
+            ctx: Current Ansible run context.
+
+        Returns:
+            True if the current target is a task.
+
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check for free-form raw/command/shell and return result.
+
+        Args:
+            ctx: Current Ansible run context.
+
+        Returns:
+            RuleResult with verdict and detail if free-form usage found, None otherwise.
+
+        """
         task = ctx.current
         if task is None:
             return None

@@ -31,7 +31,15 @@ from apme_engine.validators.opa import OpaValidator
 
 
 def _sort_violations(violations: list[ViolationDict]) -> list[ViolationDict]:
-    """Sort by file, then line for stable output."""
+    """Sort by file, then line for stable output.
+
+    Args:
+        violations: List of violation dicts from validators.
+
+    Returns:
+        The same violations sorted by file path then line number.
+
+    """
 
     def key(v: ViolationDict) -> tuple[str, int | float]:
         f = str(v.get("file") or "")
@@ -48,7 +56,15 @@ def _sort_violations(violations: list[ViolationDict]) -> list[ViolationDict]:
 
 
 def _deduplicate_violations(violations: list[ViolationDict]) -> list[ViolationDict]:
-    """Remove duplicate violations sharing the same (rule_id, file, line)."""
+    """Remove duplicate violations sharing the same (rule_id, file, line).
+
+    Args:
+        violations: List of violation dicts, may contain duplicates.
+
+    Returns:
+        New list with duplicates removed, first occurrence kept.
+
+    """
     seen: set[tuple[str, str, str | int | list[int] | tuple[int, ...] | bool | None]] = set()
     out: list[ViolationDict] = []
     for v in violations:
@@ -63,7 +79,15 @@ def _deduplicate_violations(violations: list[ViolationDict]) -> list[ViolationDi
 
 
 def _fmt_ms(ms: float) -> str:
-    """Format milliseconds for human display."""
+    """Format milliseconds for human display.
+
+    Args:
+        ms: Duration in milliseconds.
+
+    Returns:
+        Human-readable string such as '<1ms', '42ms', or '1.2s'.
+
+    """
     if ms < 1:
         return "<1ms"
     if ms < 1000:
@@ -72,7 +96,12 @@ def _fmt_ms(ms: float) -> str:
 
 
 def _print_diagnostics_v(diag: ScanDiagnostics) -> None:
-    """Print -v level diagnostics: validator summaries + top 10 slowest rules."""
+    """Print -v level diagnostics: validator summaries + top 10 slowest rules.
+
+    Args:
+        diag: Scan diagnostics from the primary daemon.
+
+    """
     w = sys.stderr.write
 
     engine_detail = ""
@@ -121,7 +150,12 @@ def _print_diagnostics_v(diag: ScanDiagnostics) -> None:
 
 
 def _print_diagnostics_vv(diag: ScanDiagnostics) -> None:
-    """Print -vv level diagnostics: full per-rule breakdown for every validator."""
+    """Print -vv level diagnostics: full per-rule breakdown for every validator.
+
+    Args:
+        diag: Scan diagnostics from the primary daemon.
+
+    """
     w = sys.stderr.write
 
     engine_detail = ""
@@ -154,7 +188,15 @@ def _print_diagnostics_vv(diag: ScanDiagnostics) -> None:
 
 
 def _diag_to_dict(diag: ScanDiagnostics) -> YAMLDict:
-    """Convert ScanDiagnostics proto to a JSON-serializable dict."""
+    """Convert ScanDiagnostics proto to a JSON-serializable dict.
+
+    Args:
+        diag: Scan diagnostics from the primary daemon.
+
+    Returns:
+        A dict suitable for JSON serialization with engine and validator timings.
+
+    """
     validators = []
     for vd in diag.validators:
         validators.append(
@@ -190,7 +232,12 @@ def _diag_to_dict(diag: ScanDiagnostics) -> YAMLDict:
 
 
 def _run_scan(args: argparse.Namespace) -> None:
-    """Run scan: engine + validators on target path, or call Primary daemon over gRPC."""
+    """Run scan: engine + validators on target path, or call Primary daemon over gRPC.
+
+    Args:
+        args: Parsed CLI namespace with target, primary_addr, json, no_opa, no_native, opa_bundle, etc.
+
+    """
     primary_addr = getattr(args, "primary_addr", None) or os.environ.get("APME_PRIMARY_ADDRESS")
     if primary_addr:
         _run_scan_grpc(args, primary_addr)
@@ -248,7 +295,13 @@ def _run_scan(args: argparse.Namespace) -> None:
 
 
 def _run_scan_grpc(args: argparse.Namespace, primary_addr: str) -> None:
-    """Send chunked fs to Primary daemon and print violations."""
+    """Send chunked fs to Primary daemon and print violations.
+
+    Args:
+        args: Parsed CLI namespace with target, json, verbose, ansible_version, collections.
+        primary_addr: gRPC address of the Primary daemon.
+
+    """
     verbosity = getattr(args, "verbose", 0) or 0
 
     try:
@@ -300,7 +353,12 @@ def _run_scan_grpc(args: argparse.Namespace, primary_addr: str) -> None:
 
 
 def _run_cache(args: argparse.Namespace) -> None:
-    """Run a collection cache command (pull-galaxy, pull-requirements, clone-org)."""
+    """Run a collection cache command (pull-galaxy, pull-requirements, clone-org).
+
+    Args:
+        args: Parsed CLI namespace with cache_command, cache_root, spec, requirements_path, org, etc.
+
+    """
     cache_root = get_cache_root() if args.cache_root is None else Path(args.cache_root)
 
     if args.cache_command == "pull-galaxy":
@@ -339,7 +397,12 @@ def _run_cache(args: argparse.Namespace) -> None:
 
 
 def _run_format(args: argparse.Namespace) -> None:
-    """Format YAML files: normalize indentation, key order, jinja spacing, tabs."""
+    """Format YAML files: normalize indentation, key order, jinja spacing, tabs.
+
+    Args:
+        args: Parsed CLI namespace with target, exclude, apply, check.
+
+    """
     target = Path(args.target).resolve()
     exclude = getattr(args, "exclude", None) or []
     apply_changes = getattr(args, "apply", False)
@@ -381,7 +444,17 @@ def _run_format(args: argparse.Namespace) -> None:
 
 
 def _scan_files_local(file_paths: list[str], repo_root: str, opa_bundle: str | None) -> list[ViolationDict]:
-    """In-process scan: engine + OPA + native validators. Returns violation dicts."""
+    """In-process scan: engine + OPA + native validators. Returns violation dicts.
+
+    Args:
+        file_paths: Paths to YAML files to scan.
+        repo_root: Project root path for engine context.
+        opa_bundle: Optional path to OPA bundle; None uses built-in.
+
+    Returns:
+        Deduplicated, sorted list of violation dicts.
+
+    """
     from apme_engine.runner import run_scan as _run_scan
 
     yaml_files = [f for f in file_paths if f.endswith((".yml", ".yaml"))]
@@ -409,7 +482,12 @@ def _scan_files_local(file_paths: list[str], repo_root: str, opa_bundle: str | N
 
 
 def _run_fix(args: argparse.Namespace) -> None:
-    """Format → idempotency check → scan → remediate (convergence loop)."""
+    """Format → idempotency check → scan → remediate (convergence loop).
+
+    Args:
+        args: Parsed CLI namespace with target, exclude, apply, check, max_passes, opa_bundle.
+
+    """
     target = Path(args.target).resolve()
     exclude = getattr(args, "exclude", None) or []
     apply_changes = getattr(args, "apply", False)
@@ -510,7 +588,12 @@ def _run_fix(args: argparse.Namespace) -> None:
 
 
 def _run_health_check(args: argparse.Namespace) -> None:
-    """Check health of all services (Primary, Native, OPA, Ansible, Cache maintainer) via gRPC."""
+    """Check health of all services (Primary, Native, OPA, Ansible, Cache maintainer) via gRPC.
+
+    Args:
+        args: Parsed CLI namespace with primary_addr, native_addr, opa_addr, ansible_addr, cache_addr, timeout, json.
+
+    """
     primary_addr = getattr(args, "primary_addr", None) or os.environ.get("APME_PRIMARY_ADDRESS")
     if not primary_addr:
         sys.stderr.write("Set --primary-addr or APME_PRIMARY_ADDRESS to check remote services.\n")
@@ -548,6 +631,7 @@ def _run_health_check(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    """Parse CLI, dispatch to scan/cache/format/fix/health-check, and exit."""
     parser = argparse.ArgumentParser(
         description="Run APME scan: engine + OPA and native validators; or manage collection cache.",
     )

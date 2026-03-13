@@ -1,4 +1,4 @@
-# Colocated tests for R404 (ShowVariablesRule).
+"""Tests for native rule R404."""
 
 from apme_engine.validators.native.rules._test_helpers import (
     make_context,
@@ -9,6 +9,7 @@ from apme_engine.validators.native.rules.R404_show_variables import ShowVariable
 
 
 def test_R404_always_fires_and_exposes_variable_set() -> None:
+    """Verify R404 always fires and exposes variable_set."""
     spec = make_task_spec(module="ansible.builtin.copy")
     task = make_task_call(spec)
     task.variable_set["foo"] = []
@@ -24,6 +25,7 @@ def test_R404_always_fires_and_exposes_variable_set() -> None:
 
 
 def test_R404_empty_variable_set() -> None:
+    """Verify R404 handles empty variable_set."""
     spec = make_task_spec(module="ansible.builtin.copy")
     task = make_task_call(spec)
     ctx = make_context(task)

@@ -14,7 +14,11 @@ _SKIP_NATIVE_FILES = {"__init__", "base_rule", "sample_rule"}
 
 
 def _discover_native_rule_ids() -> list[tuple[str, str, Path]]:
-    """Return (rule_id, source_file, expected_md_dir) for each native Python rule."""
+    """Return (rule_id, source_file, expected_md_dir) for each native Python rule.
+
+    Returns:
+        List of (rule_id, source_file, md_dir) tuples.
+    """
     results: list[tuple[str, str, Path]] = []
     pat = re.compile(r'rule_id:\s*str\s*=\s*"([^"]+)"')
     for py in NATIVE_RULES_DIR.glob("*.py"):
@@ -28,7 +32,11 @@ def _discover_native_rule_ids() -> list[tuple[str, str, Path]]:
 
 
 def _discover_opa_rule_ids() -> list[tuple[str, str, Path]]:
-    """Return (rule_id, source_file, expected_md_dir) for each OPA rego rule."""
+    """Return (rule_id, source_file, expected_md_dir) for each OPA rego rule.
+
+    Returns:
+        List of (rule_id, source_file, md_dir) tuples.
+    """
     results: list[tuple[str, str, Path]] = []
     pat = re.compile(r'"rule_id":\s*"([^"]+)"')
     for rego in OPA_BUNDLE_DIR.glob("*.rego"):
@@ -42,7 +50,11 @@ def _discover_opa_rule_ids() -> list[tuple[str, str, Path]]:
 
 
 def _discover_ansible_rule_ids() -> list[tuple[str, str, Path]]:
-    """Return (rule_id, source_file, expected_md_dir) for each ansible validator rule."""
+    """Return (rule_id, source_file, expected_md_dir) for each ansible validator rule.
+
+    Returns:
+        List of (rule_id, source_file, md_dir) tuples.
+    """
     results: list[tuple[str, str, Path]] = []
     if not ANSIBLE_RULES_DIR.is_dir():
         return results
@@ -65,7 +77,15 @@ def _discover_ansible_rule_ids() -> list[tuple[str, str, Path]]:
 
 
 def _find_md_for_rule(rule_id: str, md_dir: Path) -> Path | None:
-    """Find the .md doc file for a rule ID in the given directory."""
+    """Find the .md doc file for a rule ID in the given directory.
+
+    Args:
+        rule_id: Rule ID to find.
+        md_dir: Directory to search.
+
+    Returns:
+        Path to .md file or None.
+    """
     exact = md_dir / f"{rule_id}.md"
     if exact.exists():
         return exact
@@ -76,6 +96,11 @@ def _find_md_for_rule(rule_id: str, md_dir: Path) -> Path | None:
 
 
 def _collect_all_rules() -> list[tuple[str, str, str, Path]]:
+    """Collect all rules from native, OPA, and ansible validators.
+
+    Returns:
+        List of (validator, rule_id, source_file, md_dir) tuples.
+    """
     rules: list[tuple[str, str, str, Path]] = []
     rules.extend(("native", r[0], r[1], r[2]) for r in _discover_native_rule_ids())
     rules.extend(("opa", r[0], r[1], r[2]) for r in _discover_opa_rule_ids())
@@ -93,7 +118,15 @@ _PARAM_IDS = [f"{validator}:{rule_id}" for validator, rule_id, _, _ in _ALL_RULE
     ids=_PARAM_IDS if _PARAM_IDS else ["no_rules"],
 )  # type: ignore[untyped-decorator]
 def test_rule_has_doc(validator: str, rule_id: str, source_file: str, md_dir: Path) -> None:
-    """Every rule must have a .md doc file."""
+    """Every rule must have a .md doc file.
+
+    Args:
+        validator: Validator type (native, opa, or ansible).
+        rule_id: Rule ID string.
+        source_file: Source file name containing the rule.
+        md_dir: Directory to search for .md doc files.
+
+    """
     if rule_id == "skip":
         pytest.skip("No rules discovered")
     md_path = _find_md_for_rule(rule_id, md_dir)

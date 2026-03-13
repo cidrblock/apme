@@ -1,4 +1,4 @@
-# Colocated tests for L034 (UnusedOverrideRule / R203).
+"""Tests for native rule L034."""
 
 from typing import cast
 
@@ -12,6 +12,7 @@ from apme_engine.validators.native.rules.L034_unused_override import UnusedOverr
 
 
 def test_L034_does_not_fire_when_no_defined_vars() -> None:
+    """Verify L034 does not fire when no defined vars."""
     spec = make_task_spec(module="ansible.builtin.copy")
     task = make_task_call(spec)
     ctx = make_context(task)
@@ -24,6 +25,7 @@ def test_L034_does_not_fire_when_no_defined_vars() -> None:
 
 
 def test_L034_fires_when_new_definition_has_lower_precedence() -> None:
+    """Verify L034 fires when new definition has lower precedence."""
     spec = make_task_spec(module="ansible.builtin.set_fact")
     spec.set_facts = {"my_var": "x"}
     task = make_task_call(spec)
@@ -47,6 +49,7 @@ def test_L034_fires_when_new_definition_has_lower_precedence() -> None:
 
 
 def test_L034_does_not_fire_when_single_definition() -> None:
+    """Verify L034 does not fire when single definition."""
     spec = make_task_spec(module="ansible.builtin.set_fact")
     spec.set_facts = {"my_var": "x"}
     task = make_task_call(spec)

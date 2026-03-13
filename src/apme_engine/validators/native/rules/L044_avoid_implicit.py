@@ -1,3 +1,5 @@
+"""Native rule L044: detect implicit behavior; require explicit state where it matters."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -44,6 +46,18 @@ MODULES_NEEDING_STATE = frozenset(
 
 @dataclass
 class AvoidImplicitRule(Rule):
+    """Rule for avoiding implicit behavior; set state explicitly where it matters.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "L044"
     description: str = "Avoid implicit behavior; set state (or other key) explicitly where it matters"
     enabled: bool = True
@@ -53,11 +67,27 @@ class AvoidImplicitRule(Rule):
     tags: tuple[str, ...] = (Tag.CODING,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check for implicit state and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with module/message detail, or None.
+        """
         task = ctx.current
         if task is None:
             return None

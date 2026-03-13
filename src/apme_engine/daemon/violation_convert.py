@@ -7,7 +7,14 @@ from apme_engine.engine.models import ViolationDict
 
 
 def violation_dict_to_proto(v: ViolationDict | Mapping[str, str | int | list[int] | bool | None]) -> Violation:
-    """Build a proto Violation from a dict with rule_id, level, message, file, line, path."""
+    """Build a proto Violation from a dict with rule_id, level, message, file, line, path.
+
+    Args:
+        v: Dict or mapping with rule_id, level, message, file, line (int or [start,end]), path.
+
+    Returns:
+        Violation proto populated from the dict.
+    """
     out = Violation(
         rule_id=v.get("rule_id") or "",
         level=v.get("level") or "",
@@ -24,7 +31,14 @@ def violation_dict_to_proto(v: ViolationDict | Mapping[str, str | int | list[int
 
 
 def violation_proto_to_dict(v: Violation) -> ViolationDict:
-    """Build a dict violation from proto (for CLI output)."""
+    """Build a dict violation from proto (for CLI output).
+
+    Args:
+        v: Violation proto to convert.
+
+    Returns:
+        ViolationDict with rule_id, level, message, file, line, path.
+    """
     line: int | list[int] | None = v.line if v.HasField("line") else None
     if v.HasField("line_range"):
         line = [v.line_range.start, v.line_range.end]

@@ -57,7 +57,16 @@ json.dump(results, sys.stdout)
 def _run_introspection(
     module_names: list[str], venv_root: Path, env_extra: dict[str, str] | None = None
 ) -> dict[str, object]:
-    """Run plugin introspection in the venv's Python. Returns {name: info_dict}."""
+    """Run plugin introspection in the venv's Python. Returns {name: info_dict}.
+
+    Args:
+        module_names: List of module names to introspect.
+        venv_root: Path to ansible venv root.
+        env_extra: Optional extra environment variables.
+
+    Returns:
+        Dict mapping module name to info dict (fqcn, deprecated, etc.).
+    """
     if not module_names:
         return {}
 
@@ -100,7 +109,17 @@ def run(
     env_extra: dict[str, str] | None = None,
     **_kwargs: object,
 ) -> list[dict[str, object]]:
-    """Run plugin introspection and return M001-M004 violations."""
+    """Run plugin introspection and return M001-M004 violations.
+
+    Args:
+        task_nodes: List of task node dicts.
+        venv_root: Path to ansible venv root.
+        env_extra: Optional extra environment variables.
+        **_kwargs: Ignored keyword arguments.
+
+    Returns:
+        List of violation dicts for M001, M002, M003, M004.
+    """
     unique_modules: list[str] = [str(m) for m in {n.get("module", "") for n in task_nodes if n.get("module")}]
     if not unique_modules:
         return []

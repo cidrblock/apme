@@ -45,9 +45,9 @@ def scan_playbook(
     ...
 ```
 
-### Docstrings
+### Docstrings (Google style)
 
-Google style for public APIs:
+Google style for all public modules, classes, and functions. Enforced by Ruff (D rules, convention = google) and pydoclint via prek. Do not put type hints in docstrings; types belong in signatures only. Include Args, Returns, Raises (and Yields where applicable). For classes with instance attributes (e.g. dataclasses), include an **Attributes** section listing and describing each attribute. Blank line after the last section before closing `"""`.
 
 ```python
 def apply_fqcn_fix(module_name: str, line: int) -> FixResult:

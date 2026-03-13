@@ -26,7 +26,12 @@ class TestMain:
 
     @pytest.fixture(autouse=True)  # type: ignore[untyped-decorator]
     def _repo_root(self, repo_root: Path) -> None:
-        """Ensure repo_root is available; main uses Path(__file__).parent.parent."""
+        """Ensure repo_root is available; main uses Path(__file__).parent.parent.
+
+        Args:
+            repo_root: Fixture providing the repository root path.
+
+        """
         pass
 
     def test_main_scan_failure_exits_1(self) -> None:
@@ -73,7 +78,12 @@ class TestMain:
         assert "No hierarchy payload" in stderr_io.getvalue()
 
     def test_main_no_validators_json_outputs_hierarchy_only(self, sample_hierarchy_payload: YAMLDict) -> None:
-        """With --no-opa --no-native and --json, output is hierarchy_payload only."""
+        """With --no-opa --no-native and --json, output is hierarchy_payload only.
+
+        Args:
+            sample_hierarchy_payload: Fixture providing sample hierarchy data.
+
+        """
         stdout_io = StringIO()
         with (
             patch.object(cli_module, "run_scan", return_value=_make_context(sample_hierarchy_payload)),
@@ -88,7 +98,12 @@ class TestMain:
         assert "violations" not in data
 
     def test_main_no_validators_no_json_prints_message(self, sample_hierarchy_payload: YAMLDict) -> None:
-        """With --no-opa --no-native and no --json, print message about validators skipped."""
+        """With --no-opa --no-native and no --json, print message about validators skipped.
+
+        Args:
+            sample_hierarchy_payload: Fixture providing sample hierarchy data.
+
+        """
         stdout_io = StringIO()
         with (
             patch.object(cli_module, "run_scan", return_value=_make_context(sample_hierarchy_payload)),
@@ -101,7 +116,13 @@ class TestMain:
     def test_main_with_opa_json_outputs_violations_and_count(
         self, sample_hierarchy_payload: YAMLDict, opa_eval_result_with_violations: YAMLDict
     ) -> None:
-        """With OPA and --json, output includes violations and count."""
+        """With OPA and --json, output includes violations and count.
+
+        Args:
+            sample_hierarchy_payload: Fixture providing sample hierarchy data.
+            opa_eval_result_with_violations: Fixture providing OPA eval results with violations.
+
+        """
         stdout_io = StringIO()
         violations = opa_eval_result_with_violations["result"][0]["expressions"][0]["value"]  # type: ignore[index,call-overload]
         with (
@@ -118,7 +139,12 @@ class TestMain:
         assert data["violations"][0]["rule_id"] == "task-name"
 
     def test_main_with_opa_no_json_prints_summary_and_list(self, sample_hierarchy_payload: YAMLDict) -> None:
-        """With OPA and no --json, print Scan line and violation lines."""
+        """With OPA and no --json, print Scan line and violation lines.
+
+        Args:
+            sample_hierarchy_payload: Fixture providing sample hierarchy data.
+
+        """
         stdout_io = StringIO()
         violations = [{"rule_id": "r1", "level": "warning", "message": "msg", "file": "f.yml", "line": 1, "path": "p"}]
         with (
@@ -135,7 +161,12 @@ class TestMain:
         assert "msg" in out
 
     def test_main_with_opa_no_violations_prints_no_violations(self, sample_hierarchy_payload: YAMLDict) -> None:
-        """With OPA and no violations, print 'No violations.'"""
+        """With OPA and no violations, print 'No violations.'.
+
+        Args:
+            sample_hierarchy_payload: Fixture providing sample hierarchy data.
+
+        """
         stdout_io = StringIO()
         with (
             patch.object(cli_module, "run_scan", return_value=_make_context(sample_hierarchy_payload)),
@@ -149,7 +180,13 @@ class TestMain:
     def test_main_uses_custom_opa_bundle_when_provided(
         self, sample_hierarchy_payload: YAMLDict, tmp_path: Path
     ) -> None:
-        """When --opa-bundle is passed, OpaValidator receives that path."""
+        """When --opa-bundle is passed, OpaValidator receives that path.
+
+        Args:
+            sample_hierarchy_payload: Fixture providing sample hierarchy data.
+            tmp_path: Pytest temporary directory fixture.
+
+        """
         bundle = tmp_path / "custom_bundle"
         bundle.mkdir()
         with (
@@ -166,7 +203,12 @@ class TestRunScan:
     """Tests for run_scan (runner module) via CLI integration."""
 
     def test_run_scan_nonexistent_path_raises(self, repo_root: Path) -> None:
-        """run_scan raises FileNotFoundError when target does not exist."""
+        """run_scan raises FileNotFoundError when target does not exist.
+
+        Args:
+            repo_root: Fixture providing the repository root path.
+
+        """
         with (
             patch.object(
                 cli_module, "run_scan", side_effect=FileNotFoundError("Target path does not exist: /nonexistent")
@@ -179,7 +221,14 @@ class TestRunScan:
     def test_run_scan_playbook_file_called_with_correct_args(
         self, repo_root: Path, tmp_path: Path, sample_hierarchy_payload: YAMLDict
     ) -> None:
-        """When target is a file, run_scan is called with playbook path and repo_root (from CLI's __file__)."""
+        """When target is a file, run_scan is called with playbook path and repo_root (from CLI's __file__).
+
+        Args:
+            repo_root: Fixture providing the repository root path.
+            tmp_path: Pytest temporary directory fixture.
+            sample_hierarchy_payload: Fixture providing sample hierarchy data.
+
+        """
         playbook = tmp_path / "play.yml"
         playbook.write_text("---\n- hosts: localhost\n  tasks: []\n")
         with (
@@ -199,7 +248,14 @@ class TestRunScan:
     def test_run_scan_returns_context_with_payload(
         self, repo_root: Path, tmp_path: Path, sample_hierarchy_payload: YAMLDict
     ) -> None:
-        """run_scan returns ScanContext with hierarchy_payload."""
+        """run_scan returns ScanContext with hierarchy_payload.
+
+        Args:
+            repo_root: Fixture providing the repository root path.
+            tmp_path: Pytest temporary directory fixture.
+            sample_hierarchy_payload: Fixture providing sample hierarchy data.
+
+        """
         from apme_engine.runner import run_scan
 
         playbook = tmp_path / "play.yml"
@@ -218,6 +274,7 @@ class TestSortViolations:
     """Tests for _sort_violations helper."""
 
     def test_sort_by_file_then_line(self) -> None:
+        """Violations are sorted by file path then line number."""
         violations: list[ViolationDict] = [
             {"rule_id": "r1", "file": "b.yml", "line": 10},
             {"rule_id": "r2", "file": "a.yml", "line": 5},
@@ -230,6 +287,7 @@ class TestSortViolations:
         assert result[2]["file"] == "b.yml"
 
     def test_sort_with_list_line(self) -> None:
+        """Violations with list line values sort correctly."""
         violations: list[ViolationDict] = [
             {"rule_id": "r1", "file": "a.yml", "line": [10, 15]},
             {"rule_id": "r2", "file": "a.yml", "line": [2, 5]},
@@ -238,6 +296,7 @@ class TestSortViolations:
         assert result[0]["line"] == [2, 5]
 
     def test_sort_with_none_line(self) -> None:
+        """Violations with None line sort before numeric lines."""
         violations: list[ViolationDict] = [
             {"rule_id": "r1", "file": "a.yml", "line": 5},
             {"rule_id": "r2", "file": "a.yml", "line": None},
@@ -247,6 +306,7 @@ class TestSortViolations:
         assert result[1]["line"] == 5
 
     def test_sort_with_missing_file(self) -> None:
+        """Violations without file key sort first."""
         violations: list[ViolationDict] = [
             {"rule_id": "r1", "line": 1},
             {"rule_id": "r2", "file": "a.yml", "line": 1},
@@ -255,6 +315,7 @@ class TestSortViolations:
         assert result[0].get("file") is None or result[0].get("file") == ""
 
     def test_empty_list(self) -> None:
+        """Empty violation list returns empty list."""
         assert _sort_violations([]) == []
 
 
@@ -262,6 +323,7 @@ class TestDeduplicateViolations:
     """Tests for _deduplicate_violations helper."""
 
     def test_removes_duplicates(self) -> None:
+        """Duplicate violations (same rule, file, line) are removed."""
         violations: list[ViolationDict] = [
             {"rule_id": "r1", "file": "a.yml", "line": 5},
             {"rule_id": "r1", "file": "a.yml", "line": 5},
@@ -271,6 +333,7 @@ class TestDeduplicateViolations:
         assert len(result) == 2
 
     def test_keeps_different_lines(self) -> None:
+        """Violations with different lines are kept."""
         violations: list[ViolationDict] = [
             {"rule_id": "r1", "file": "a.yml", "line": 5},
             {"rule_id": "r1", "file": "a.yml", "line": 10},
@@ -279,6 +342,7 @@ class TestDeduplicateViolations:
         assert len(result) == 2
 
     def test_dedup_with_list_line(self) -> None:
+        """Duplicate violations with list line are deduplicated."""
         violations: list[ViolationDict] = [
             {"rule_id": "r1", "file": "a.yml", "line": [5, 10]},
             {"rule_id": "r1", "file": "a.yml", "line": [5, 10]},
@@ -287,6 +351,7 @@ class TestDeduplicateViolations:
         assert len(result) == 1
 
     def test_empty_list(self) -> None:
+        """Empty violation list returns empty list."""
         assert _deduplicate_violations([]) == []
 
 
@@ -294,21 +359,27 @@ class TestFmtMs:
     """Tests for _fmt_ms helper."""
 
     def test_sub_millisecond(self) -> None:
+        """Values under 1ms format as '<1ms'."""
         assert _fmt_ms(0.5) == "<1ms"
 
     def test_milliseconds(self) -> None:
+        """Values in milliseconds format with 'ms' suffix."""
         assert _fmt_ms(42) == "42ms"
 
     def test_seconds(self) -> None:
+        """Values >= 1000ms format as seconds."""
         assert _fmt_ms(1500) == "1.5s"
 
     def test_zero(self) -> None:
+        """Zero formats as '<1ms'."""
         assert _fmt_ms(0) == "<1ms"
 
     def test_exactly_one_second(self) -> None:
+        """Exactly 1000ms formats as '1.0s'."""
         assert _fmt_ms(1000) == "1.0s"
 
     def test_large_value(self) -> None:
+        """Large values format as seconds."""
         assert _fmt_ms(65000) == "65.0s"
 
 
@@ -316,6 +387,7 @@ class TestFormatCommand:
     """Tests for the 'format' subcommand."""
 
     def test_format_nonexistent_target_exits_1(self) -> None:
+        """Format on nonexistent path exits with code 1."""
         stderr_io = StringIO()
         with (
             patch("sys.stderr", stderr_io),
@@ -327,6 +399,12 @@ class TestFormatCommand:
         assert "Path not found" in stderr_io.getvalue()
 
     def test_format_check_no_changes_exits_0(self, tmp_path: Path) -> None:
+        """Format --check on already-formatted file exits 0.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+
+        """
         yml = tmp_path / "ok.yml"
         yml.write_text("---\nname: test\n")
         mock_result = MagicMock()
@@ -341,6 +419,12 @@ class TestFormatCommand:
         assert exc_info.value.code == 0
 
     def test_format_check_with_changes_exits_1(self, tmp_path: Path) -> None:
+        """Format --check on file needing changes exits 1.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+
+        """
         yml = tmp_path / "bad.yml"
         yml.write_text("name: test\n")
         mock_result = MagicMock()
@@ -356,6 +440,12 @@ class TestFormatCommand:
         assert exc_info.value.code == 1
 
     def test_format_no_changes_prints_message(self, tmp_path: Path) -> None:
+        """Format on already-formatted file prints 'already formatted'.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+
+        """
         yml = tmp_path / "ok.yml"
         yml.write_text("---\nname: test\n")
         mock_result = MagicMock()
@@ -370,6 +460,12 @@ class TestFormatCommand:
         assert "already formatted" in stdout_io.getvalue().lower()
 
     def test_format_apply_writes_files(self, tmp_path: Path) -> None:
+        """Format --apply writes reformatted content and prints message.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+
+        """
         yml = tmp_path / "fix.yml"
         yml.write_text("name: test\n")
         mock_result = MagicMock()
@@ -386,6 +482,12 @@ class TestFormatCommand:
         assert "reformatted" in stdout_io.getvalue().lower()
 
     def test_format_directory(self, tmp_path: Path) -> None:
+        """Format on directory processes files and prints message.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+
+        """
         mock_result = MagicMock()
         mock_result.changed = False
         stdout_io = StringIO()
@@ -398,6 +500,12 @@ class TestFormatCommand:
         assert "already formatted" in stdout_io.getvalue().lower()
 
     def test_format_diff_output(self, tmp_path: Path) -> None:
+        """Format without --apply prints unified diff to stdout.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+
+        """
         yml = tmp_path / "fix.yml"
         yml.write_text("name: test\n")
         mock_result = MagicMock()
@@ -419,6 +527,7 @@ class TestHealthCheckCommand:
     """Tests for the 'health-check' subcommand."""
 
     def test_health_check_no_addr_exits_1(self) -> None:
+        """Health-check without address env var exits 1."""
         stderr_io = StringIO()
         with (
             patch.dict("os.environ", {}, clear=True),
@@ -430,6 +539,7 @@ class TestHealthCheckCommand:
         assert exc_info.value.code == 1
 
     def test_health_check_json_all_ok(self) -> None:
+        """Health-check --json with all services ok exits 0."""
         mock_results = {
             "Primary": {"ok": True, "latency_ms": 5.0, "error": None},
         }
@@ -446,6 +556,7 @@ class TestHealthCheckCommand:
         assert data["Primary"]["ok"] is True
 
     def test_health_check_json_with_failure(self) -> None:
+        """Health-check --json with service failure exits 1."""
         mock_results = {
             "Primary": {"ok": False, "latency_ms": None, "error": "connection refused"},
         }
@@ -460,6 +571,7 @@ class TestHealthCheckCommand:
         assert exc_info.value.code == 1
 
     def test_health_check_text_output(self) -> None:
+        """Health-check without --json prints text with ok/fail status."""
         mock_results = {
             "Primary": {"ok": True, "latency_ms": 3.2, "error": None},
             "Native": {"ok": False, "latency_ms": None, "error": "timeout"},
@@ -483,6 +595,12 @@ class TestCacheCommand:
     """Tests for the 'cache' subcommand."""
 
     def test_cache_pull_galaxy(self, tmp_path: Path) -> None:
+        """Cache pull-galaxy installs collection and prints message.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+
+        """
         stdout_io = StringIO()
         with (
             patch("apme_engine.cli.pull_galaxy_collection") as mock_pull,
@@ -497,6 +615,12 @@ class TestCacheCommand:
         assert "Installed ns.col" in stdout_io.getvalue()
 
     def test_cache_pull_requirements(self, tmp_path: Path) -> None:
+        """Cache pull-requirements installs from requirements file.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+
+        """
         stdout_io = StringIO()
         req_file = tmp_path / "requirements.yml"
         req_file.write_text("---\ncollections: []\n")
@@ -513,6 +637,12 @@ class TestCacheCommand:
         assert "Installed requirements" in stdout_io.getvalue()
 
     def test_cache_clone_org(self, tmp_path: Path) -> None:
+        """Cache clone-org clones GitHub org repos.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+
+        """
         stdout_io = StringIO()
         with (
             patch("apme_engine.cli.pull_github_org") as mock_pull,
@@ -527,6 +657,12 @@ class TestCacheCommand:
         assert "Cloned org ansible" in stdout_io.getvalue()
 
     def test_cache_clone_org_with_repos(self, tmp_path: Path) -> None:
+        """Cache clone-org with --repos clones specified repos.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+
+        """
         stdout_io = StringIO()
         with (
             patch("apme_engine.cli.pull_github_repos") as mock_pull,
@@ -544,6 +680,7 @@ class TestFixCommand:
     """Tests for the 'fix' subcommand."""
 
     def test_fix_nonexistent_target_exits_1(self) -> None:
+        """Fix on nonexistent path exits 1."""
         stderr_io = StringIO()
         with (
             patch("sys.stderr", stderr_io),
@@ -555,6 +692,12 @@ class TestFixCommand:
         assert "Path not found" in stderr_io.getvalue()
 
     def test_fix_check_no_changes_exits_0(self, tmp_path: Path) -> None:
+        """Fix --check on already-fixed file exits 0.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+
+        """
         yml = tmp_path / "ok.yml"
         yml.write_text("---\nname: test\n")
         mock_result = MagicMock()

@@ -1,3 +1,5 @@
+"""Native rule R106: detect inbound network transfer from parameterized source."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -20,11 +22,24 @@ from apme_engine.engine.models import (
 
 @dataclass
 class InboundRuleResult(RuleResult):
-    pass
+    """Result subclass for InboundTransferRule."""
 
 
 @dataclass
 class InboundTransferRule(Rule):
+    """Rule for inbound network transfer from parameterized source.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+        result_type: Type of RuleResult to produce.
+    """
+
     rule_id: str = "R106"
     description: str = "A inbound network transfer from a parameterized source is found"
     enabled: bool = True
@@ -35,11 +50,27 @@ class InboundTransferRule(Rule):
     result_type: type = InboundRuleResult
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check for inbound transfer from parameterized source and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with from/to detail, or None.
+        """
         task = ctx.current
         if task is None:
             return None

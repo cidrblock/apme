@@ -1,3 +1,5 @@
+"""Native rule L056: detect files in paths that should be excluded from lint/sanity."""
+
 import re
 from dataclasses import dataclass
 from typing import cast
@@ -25,6 +27,18 @@ SANITY_IGNORE_PATTERNS = [
 
 @dataclass
 class SanityRule(Rule):
+    """Rule for files in paths that should be excluded from lint/sanity.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "L056"
     description: str = "File may be in a path that should be excluded from lint/sanity"
     enabled: bool = True
@@ -34,9 +48,25 @@ class SanityRule(Rule):
     tags: tuple[str, ...] = (Tag.QUALITY,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task or role target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task or role.
+        """
         return bool(ctx.current is not None and ctx.current.type in (RunTargetType.Task, RunTargetType.Role))
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check if path matches sanity ignore patterns and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with path/message detail, or None.
+        """
         target = ctx.current
         if target is None:
             return None

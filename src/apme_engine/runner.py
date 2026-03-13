@@ -14,8 +14,8 @@ def run_scan_playbook_yaml(
     project_root: str | None = None,
     include_scandata: bool = True,
 ) -> ScanContext:
-    """
-    Run the engine on a playbook given as a YAML string (e.g. for integration tests).
+    """Run the engine on a playbook given as a YAML string (e.g. for integration tests).
+
     Writes content to a temporary playbook file and runs the scanner.
 
     Args:
@@ -25,6 +25,7 @@ def run_scan_playbook_yaml(
 
     Returns:
         ScanContext with hierarchy_payload and optionally scandata.
+
     """
     project_root or os.path.expanduser("~/.apme-data")
     with tempfile.TemporaryDirectory(prefix="apme_rule_doc_") as tmpdir:
@@ -40,8 +41,7 @@ def run_scan(
     project_root: str,
     include_scandata: bool = True,
 ) -> ScanContext:
-    """
-    Run the engine on target_path and return a ScanContext for validators.
+    """Run the engine on target_path and return a ScanContext for validators.
 
     Args:
         target_path: Path to playbook file, taskfile, or project directory.
@@ -50,6 +50,10 @@ def run_scan(
 
     Returns:
         ScanContext with hierarchy_payload and optionally scandata.
+
+    Raises:
+        FileNotFoundError: If target_path does not exist.
+
     """
     root_dir = project_root or os.path.expanduser("~/.apme-data")
     scanner = ARIScanner(
@@ -99,7 +103,16 @@ def run_scan(
 
 
 def _extract_engine_diagnostics(scandata: object, engine_total_ms: float) -> EngineDiagnostics:
-    """Pull per-phase elapsed times from the scanner's time_records."""
+    """Pull per-phase elapsed times from the scanner's time_records.
+
+    Args:
+        scandata: Scanner result object with findings metadata.
+        engine_total_ms: Total engine wall-clock time in milliseconds.
+
+    Returns:
+        EngineDiagnostics populated from time_records.
+
+    """
     diag = EngineDiagnostics(total_ms=engine_total_ms)
     if not scandata:
         return diag

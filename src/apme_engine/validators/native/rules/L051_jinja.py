@@ -1,3 +1,5 @@
+"""Native rule L051: detect Jinja formatting without spaces inside {{ }}."""
+
 import re
 from dataclasses import dataclass
 from typing import cast
@@ -20,6 +22,18 @@ JINJA_NO_SPACE = re.compile(r"\{\{[^\s\}].*?\}\}|\{\{.*?[^\s\{]\}\}")
 
 @dataclass
 class JinjaRule(Rule):
+    """Rule for Jinja formatting: use spaces inside {{ }} (e.g. {{ foo }}).
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "L051"
     description: str = "Jinja formatting: use spaces inside {{ }} (e.g. {{ foo }})"
     enabled: bool = True
@@ -29,11 +43,27 @@ class JinjaRule(Rule):
     tags: tuple[str, ...] = (Tag.QUALITY,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check Jinja spacing and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with bad_expressions/message detail, or None.
+        """
         task = ctx.current
         if task is None:
             return None

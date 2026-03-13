@@ -32,7 +32,15 @@ _FILE_MODULES = frozenset(
 
 
 def fix_missing_mode(content: str, violation: ViolationDict) -> TransformResult:
-    """Add mode: '0644' to file-related tasks that lack an explicit mode."""
+    """Add mode: '0644' to file-related tasks that lack an explicit mode.
+
+    Args:
+        content: YAML file content.
+        violation: Violation dict with line.
+
+    Returns:
+        TransformResult with modified content if applied.
+    """
     yaml = FormattedYAML(typ="rt", pure=True, version=(1, 1))
 
     try:

@@ -15,20 +15,35 @@ class TestRunOpa:
     """Tests for run_opa()."""
 
     def test_bundle_not_directory_raises(self, tmp_path: Path) -> None:
-        """Non-directory bundle path raises FileNotFoundError."""
+        """Non-directory bundle path raises FileNotFoundError.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+
+        """
         not_dir = tmp_path / "file.txt"
         not_dir.write_text("x")
         with pytest.raises(FileNotFoundError, match="is not a directory"):
             run_opa({"hierarchy": []}, str(not_dir))
 
     def test_bundle_nonexistent_raises(self, tmp_path: Path) -> None:
-        """Nonexistent bundle path raises FileNotFoundError."""
+        """Nonexistent bundle path raises FileNotFoundError.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+
+        """
         missing = tmp_path / "missing"
         with pytest.raises(FileNotFoundError, match="is not a directory"):
             run_opa({"hierarchy": []}, str(missing))
 
     def test_opa_not_found_returns_empty_list(self, opa_bundle_path: Path) -> None:
-        """When opa command is not found, returns [] and writes to stderr."""
+        """When opa command is not found, returns [] and writes to stderr.
+
+        Args:
+            opa_bundle_path: Fixture providing path to OPA bundle.
+
+        """
         with (
             patch("apme_engine.opa_client.subprocess.run", side_effect=FileNotFoundError("opa not found")),
             patch("sys.stderr.write") as mock_stderr,
@@ -41,7 +56,13 @@ class TestRunOpa:
     def test_opa_nonzero_exit_returns_empty_list(
         self, opa_bundle_path: Path, sample_hierarchy_payload: YAMLDict
     ) -> None:
-        """When OPA returns non-zero exit code, returns [] and writes stderr."""
+        """When OPA returns non-zero exit code, returns [] and writes stderr.
+
+        Args:
+            opa_bundle_path: Fixture providing path to OPA bundle.
+            sample_hierarchy_payload: Fixture providing sample hierarchy data.
+
+        """
         with patch("apme_engine.opa_client.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="policy error")
             with patch("sys.stderr.write") as mock_stderr:
@@ -53,7 +74,13 @@ class TestRunOpa:
     def test_opa_invalid_json_returns_empty_list(
         self, opa_bundle_path: Path, sample_hierarchy_payload: YAMLDict
     ) -> None:
-        """When OPA stdout is not valid JSON, returns [] and writes stderr."""
+        """When OPA stdout is not valid JSON, returns [] and writes stderr.
+
+        Args:
+            opa_bundle_path: Fixture providing path to OPA bundle.
+            sample_hierarchy_payload: Fixture providing sample hierarchy data.
+
+        """
         with patch("apme_engine.opa_client.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="not json", stderr="")
             with patch("sys.stderr.write") as mock_stderr:
@@ -68,14 +95,27 @@ class TestRunOpa:
         sample_hierarchy_payload: YAMLDict,
         opa_eval_result_empty: YAMLDict,
     ) -> None:
-        """When OPA result has no expressions, returns []."""
+        """When OPA result has no expressions, returns [].
+
+        Args:
+            opa_bundle_path: Fixture providing path to OPA bundle.
+            sample_hierarchy_payload: Fixture providing sample hierarchy data.
+            opa_eval_result_empty: Fixture providing empty OPA eval result.
+
+        """
         with patch("apme_engine.opa_client.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout=json.dumps({"result": []}), stderr="")
             result = run_opa(sample_hierarchy_payload, str(opa_bundle_path))
         assert result == []
 
     def test_opa_value_none_returns_empty_list(self, opa_bundle_path: Path, sample_hierarchy_payload: YAMLDict) -> None:
-        """When expressions[0].expressions[0].value is None, returns []."""
+        """When expressions[0].expressions[0].value is None, returns [].
+
+        Args:
+            opa_bundle_path: Fixture providing path to OPA bundle.
+            sample_hierarchy_payload: Fixture providing sample hierarchy data.
+
+        """
         with patch("apme_engine.opa_client.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=0,
@@ -88,7 +128,13 @@ class TestRunOpa:
     def test_opa_value_not_list_returns_empty_list(
         self, opa_bundle_path: Path, sample_hierarchy_payload: YAMLDict
     ) -> None:
-        """When value is not a list (e.g. object), returns []."""
+        """When value is not a list (e.g. object), returns [].
+
+        Args:
+            opa_bundle_path: Fixture providing path to OPA bundle.
+            sample_hierarchy_payload: Fixture providing sample hierarchy data.
+
+        """
         with patch("apme_engine.opa_client.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=0,
@@ -104,7 +150,14 @@ class TestRunOpa:
         sample_hierarchy_payload: YAMLDict,
         opa_eval_result_with_violations: YAMLDict,
     ) -> None:
-        """When OPA returns valid result with violations, returns that list."""
+        """When OPA returns valid result with violations, returns that list.
+
+        Args:
+            opa_bundle_path: Fixture providing path to OPA bundle.
+            sample_hierarchy_payload: Fixture providing sample hierarchy data.
+            opa_eval_result_with_violations: Fixture providing OPA eval result with violations.
+
+        """
         with patch("apme_engine.opa_client.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=0,
@@ -124,7 +177,14 @@ class TestRunOpa:
         sample_hierarchy_payload: YAMLDict,
         opa_eval_result_empty: YAMLDict,
     ) -> None:
-        """When OPA returns valid result with empty value list, returns []."""
+        """When OPA returns valid result with empty value list, returns [].
+
+        Args:
+            opa_bundle_path: Fixture providing path to OPA bundle.
+            sample_hierarchy_payload: Fixture providing sample hierarchy data.
+            opa_eval_result_empty: Fixture providing empty OPA eval result.
+
+        """
         with patch("apme_engine.opa_client.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(
                 returncode=0,
@@ -140,7 +200,14 @@ class TestRunOpa:
         sample_hierarchy_payload: dict[str, object],
         opa_eval_result_empty: dict[str, object],
     ) -> None:
-        """run_opa passes custom entrypoint to opa eval."""
+        """run_opa passes custom entrypoint to opa eval.
+
+        Args:
+            opa_bundle_path: Fixture providing path to OPA bundle.
+            sample_hierarchy_payload: Fixture providing sample hierarchy data.
+            opa_eval_result_empty: Fixture providing empty OPA eval result.
+
+        """
         with patch("apme_engine.opa_client.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout=json.dumps(opa_eval_result_empty), stderr="")
             run_opa(
@@ -157,7 +224,14 @@ class TestRunOpa:
         sample_hierarchy_payload: dict[str, object],
         opa_eval_result_empty: dict[str, object],
     ) -> None:
-        """Input JSON is passed to opa via stdin."""
+        """Input JSON is passed to opa via stdin.
+
+        Args:
+            opa_bundle_path: Fixture providing path to OPA bundle.
+            sample_hierarchy_payload: Fixture providing sample hierarchy data.
+            opa_eval_result_empty: Fixture providing empty OPA eval result.
+
+        """
         with patch("apme_engine.opa_client.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout=json.dumps(opa_eval_result_empty), stderr="")
             run_opa(cast(YAMLDict, sample_hierarchy_payload), str(opa_bundle_path))
@@ -169,21 +243,36 @@ class TestRunOpaTest:
     """Tests for run_opa_test() — runs OPA Rego unit tests in the bundle."""
 
     def test_opa_bundle_rego_tests_pass(self, opa_bundle_path: Path) -> None:
-        """Run `opa test . -v` in the bundle (Podman or local opa). All Rego tests must pass."""
+        """Run `opa test . -v` in the bundle (Podman or local opa). All Rego tests must pass.
+
+        Args:
+            opa_bundle_path: Fixture providing path to OPA bundle.
+
+        """
         success, stdout, stderr = run_opa_test(opa_bundle_path)
         if not success and "not found" in stderr.lower():
             pytest.skip("podman and opa not available; install one to run OPA bundle tests")
         assert success, f"OPA Rego tests failed.\nstdout:\n{stdout}\nstderr:\n{stderr}"
 
     def test_run_opa_test_bundle_not_directory_raises(self, tmp_path: Path) -> None:
-        """Non-directory bundle path raises FileNotFoundError."""
+        """Non-directory bundle path raises FileNotFoundError.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+
+        """
         not_dir = tmp_path / "file.txt"
         not_dir.write_text("x")
         with pytest.raises(FileNotFoundError, match="is not a directory"):
             run_opa_test(not_dir)
 
     def test_run_opa_test_bundle_nonexistent_raises(self, tmp_path: Path) -> None:
-        """Nonexistent bundle path raises FileNotFoundError."""
+        """Nonexistent bundle path raises FileNotFoundError.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+
+        """
         missing = tmp_path / "missing"
         with pytest.raises(FileNotFoundError, match="is not a directory"):
             run_opa_test(missing)

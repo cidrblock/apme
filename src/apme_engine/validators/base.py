@@ -8,7 +8,17 @@ from apme_engine.engine.models import ViolationDict, YAMLDict
 
 @dataclass
 class EngineDiagnostics:
-    """Timing data collected during engine phases (populated by run_scan)."""
+    """Timing data collected during engine phases (populated by run_scan).
+
+    Attributes:
+        parse_ms: Time spent parsing.
+        annotate_ms: Time spent annotating.
+        tree_build_ms: Time spent building trees.
+        variable_resolution_ms: Time spent on variable resolution.
+        total_ms: Total time.
+        files_scanned: Number of files scanned.
+        trees_built: Number of trees built.
+    """
 
     parse_ms: float = 0.0
     annotate_ms: float = 0.0
@@ -21,7 +31,14 @@ class EngineDiagnostics:
 
 @dataclass
 class ScanContext:
-    """What validators receive. Extensible so different backends get what they need."""
+    """What validators receive. Extensible so different backends get what they need.
+
+    Attributes:
+        hierarchy_payload: Payload with hierarchy data.
+        scandata: jsonpickle-decoded scan context.
+        root_dir: Root directory for scan.
+        engine_diagnostics: Timing data from engine phases.
+    """
 
     hierarchy_payload: YAMLDict
     scandata: object = None  # jsonpickle-decoded scan context
@@ -34,5 +51,12 @@ class Validator(Protocol):
     """Any backend that can produce violations from a scan."""
 
     def run(self, context: ScanContext) -> list[ViolationDict]:
-        """Return list of violation dicts (rule_id, level, message, file, line, path)."""
+        """Return list of violation dicts (rule_id, level, message, file, line, path).
+
+        Args:
+            context: Scan context passed to validator.
+
+        Returns:
+            List of violation dicts.
+        """
         ...

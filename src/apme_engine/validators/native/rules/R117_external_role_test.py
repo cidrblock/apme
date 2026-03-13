@@ -1,5 +1,4 @@
-# Colocated tests for R117 (ExternalRoleRule).
-
+"""Tests for native rule R117."""
 
 from apme_engine.validators.native.rules._test_helpers import (
     make_context,
@@ -10,6 +9,7 @@ from apme_engine.validators.native.rules.R117_external_role import ExternalRoleR
 
 
 def test_R117_fires_when_role_not_begin_and_has_galaxy_info() -> None:
+    """Verify R117 fires when role is not begin and has galaxy_info."""
     r1_spec = make_role_spec(name="internal", key="role role:internal")
     r2_spec = make_role_spec(
         name="external",
@@ -28,6 +28,7 @@ def test_R117_fires_when_role_not_begin_and_has_galaxy_info() -> None:
 
 
 def test_R117_does_not_fire_when_role_is_begin() -> None:
+    """Verify R117 does not fire when role is begin."""
     spec = make_role_spec(
         name="external",
         metadata={"galaxy_info": {"galaxy_api_url": "https://galaxy.ansible.com"}},
@@ -42,6 +43,7 @@ def test_R117_does_not_fire_when_role_is_begin() -> None:
 
 
 def test_R117_does_not_fire_when_role_has_no_galaxy_info() -> None:
+    """Verify R117 does not fire when role has no galaxy_info."""
     r1_spec = make_role_spec(name="a", key="role role:a")
     r2_spec = make_role_spec(name="b", key="role role:b", metadata={})
     r1 = make_role_call(r1_spec)

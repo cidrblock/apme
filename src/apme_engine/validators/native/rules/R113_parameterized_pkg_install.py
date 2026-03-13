@@ -1,3 +1,5 @@
+"""Native rule R113: detect parameterized package installation."""
+
 from dataclasses import dataclass
 from typing import cast
 
@@ -20,11 +22,24 @@ from apme_engine.engine.models import (
 
 @dataclass
 class PkgInstallRuleResult(RuleResult):
-    pass
+    """Result subclass for PkgInstallRule."""
 
 
 @dataclass
 class PkgInstallRule(Rule):
+    """Rule for parameterized package installation.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+        result_type: Type of RuleResult to produce.
+    """
+
     rule_id: str = "R113"
     description: str = "A parameterized pkg installation is found"
     enabled: bool = True
@@ -35,11 +50,29 @@ class PkgInstallRule(Rule):
     result_type: type = PkgInstallRuleResult
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Return True if the current target is a task.
+
+        Args:
+            ctx: Current Ansible run context.
+
+        Returns:
+            True if the current target is a task.
+
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check for parameterized pkg install and return result.
+
+        Args:
+            ctx: Current Ansible run context.
+
+        Returns:
+            RuleResult with verdict and pkg detail if parameterized install found, None otherwise.
+
+        """
         task = ctx.current
         if task is None:
             return None

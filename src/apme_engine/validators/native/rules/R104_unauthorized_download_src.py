@@ -1,3 +1,5 @@
+"""Native rule R104: detect network transfer from unauthorized source."""
+
 import re
 from dataclasses import dataclass
 from typing import cast
@@ -25,6 +27,18 @@ deny_url_list = ["http://*"]
 
 @dataclass
 class InvalidDownloadSourceRule(Rule):
+    """Rule for network transfer from unauthorized source.
+
+    Attributes:
+        rule_id: Rule identifier.
+        description: Rule description.
+        enabled: Whether the rule is enabled.
+        name: Rule name.
+        version: Rule version.
+        severity: Severity level.
+        tags: Rule tags.
+    """
+
     rule_id: str = "R104"
     description: str = "A network transfer from unauthorized source is found."
     enabled: bool = True
@@ -34,11 +48,27 @@ class InvalidDownloadSourceRule(Rule):
     tags: tuple[str, ...] = (Tag.NETWORK,)
 
     def match(self, ctx: AnsibleRunContext) -> bool:
+        """Check if context has a task target.
+
+        Args:
+            ctx: AnsibleRunContext to evaluate.
+
+        Returns:
+            True if current target is a task.
+        """
         if ctx.current is None:
             return False
         return bool(ctx.current.type == RunTargetType.Task)
 
     def process(self, ctx: AnsibleRunContext) -> RuleResult | None:
+        """Check for unauthorized download source and return result.
+
+        Args:
+            ctx: AnsibleRunContext to process.
+
+        Returns:
+            RuleResult with invalid_src detail, or None.
+        """
         task = ctx.current
         if task is None:
             return None
@@ -62,6 +92,16 @@ class InvalidDownloadSourceRule(Rule):
         )
 
     def is_allowed_url(self, src: str, allow_list: list[str], deny_list: list[str]) -> bool:
+        """Check if URL is allowed by allow/deny lists.
+
+        Args:
+            src: URL to check.
+            allow_list: List of allowed URL patterns.
+            deny_list: List of denied URL patterns.
+
+        Returns:
+            True if URL is allowed.
+        """
         matched: bool = True
         if len(allow_list) > 0:
             matched = False

@@ -13,7 +13,15 @@ _JINJA_EXPR = re.compile(r"\{\{\s*(.+?)\s*\}\}")
 
 
 def fix_jinja_when(content: str, violation: ViolationDict) -> TransformResult:
-    """Replace ``{{ var }}`` in when with bare ``var``."""
+    """Replace ``{{ var }}`` in when with bare ``var``.
+
+    Args:
+        content: YAML file content.
+        violation: Violation dict with line.
+
+    Returns:
+        TransformResult with modified content if applied.
+    """
     yaml = FormattedYAML(typ="rt", pure=True, version=(1, 1))
 
     try:

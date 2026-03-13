@@ -15,6 +15,15 @@ PLAYBOOK_WRAP = """- name: Example play
 
 
 def playbook(*tasks_yaml: str) -> str:
+    """Wrap one or more task YAML strings in a minimal playbook with hosts and tasks.
+
+    Args:
+        *tasks_yaml: One or more YAML task strings to embed under tasks:.
+
+    Returns:
+        Complete playbook YAML string.
+
+    """
     lines = []
     for t in tasks_yaml:
         for line in t.strip().splitlines():
@@ -23,6 +32,17 @@ def playbook(*tasks_yaml: str) -> str:
 
 
 def write_native(name: str, rule_id: str, title: str, desc: str, violation: str, pass_yaml: str) -> None:
+    """Write a native rule .md file with frontmatter and violation/pass examples.
+
+    Args:
+        name: Filename stem (e.g. L026_non_fqcn_use).
+        rule_id: Rule identifier (e.g. L026).
+        title: Human-readable title.
+        desc: One-line description.
+        violation: YAML showing a violation.
+        pass_yaml: YAML showing correct usage.
+
+    """
     path = NATIVE_RULES / f"{name}.md"
     path.write_text(
         f"""---
@@ -53,6 +73,17 @@ description: {desc}
 
 
 def write_opa(num: int, rule_id: str, title: str, desc: str, violation: str, pass_yaml: str) -> None:
+    """Write an OPA rule .md file with frontmatter and violation/pass examples.
+
+    Args:
+        num: Numeric portion of the rule (used for filename L{num:03d}.md).
+        rule_id: Rule identifier (e.g. L001).
+        title: Human-readable title.
+        desc: One-line description.
+        violation: YAML showing a violation.
+        pass_yaml: YAML showing correct usage.
+
+    """
     path = OPA_BUNDLE / f"L{num:03d}.md"
     path.write_text(
         f"""---
@@ -83,6 +114,7 @@ description: {desc}
 
 
 def main() -> None:
+    """Generate all rule .md files (native and OPA) with frontmatter and examples."""
     pb_v = playbook("- name: Bad\n  ansible.builtin.shell: whoami")
     pb_p = playbook("- name: Ok\n  ansible.builtin.command: whoami")
 

@@ -121,7 +121,17 @@ def run(
     env_extra: dict[str, str] | None = None,
     **_kwargs: object,
 ) -> list[dict[str, object]]:
-    """Run docstring-based argspec validation in the venv's Python."""
+    """Run docstring-based argspec validation in the venv's Python.
+
+    Args:
+        task_nodes: List of task node dicts.
+        venv_root: Path to ansible venv root.
+        env_extra: Optional extra environment variables.
+        **_kwargs: Ignored keyword arguments.
+
+    Returns:
+        List of violation dicts.
+    """
     return _run_argspec_script(_SCRIPT, task_nodes, venv_root, env_extra)
 
 
@@ -131,6 +141,17 @@ def _run_argspec_script(
     venv_root: Path,
     env_extra: dict[str, str] | None = None,
 ) -> list[dict[str, object]]:
+    """Run argspec validation script in venv Python.
+
+    Args:
+        script: Python script to execute.
+        task_nodes: List of task node dicts.
+        venv_root: Path to ansible venv root.
+        env_extra: Optional extra environment variables.
+
+    Returns:
+        List of violation dicts.
+    """
     task_modules: dict[str, bool] = {}
     tasks_for_check: list[dict[str, object]] = []
     for node in task_nodes:
