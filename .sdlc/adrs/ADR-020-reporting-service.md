@@ -26,14 +26,14 @@ Two architectural observations shape this decision:
 |--------|------|------|
 | Embed a database in the engine | Simple deployment, single binary | Engine becomes stateful; doesn't work with multiple pods (ADR-012); mixes concerns |
 | Engine queues and retries events | Guaranteed delivery | Adds state to the engine; retry storms; partial message broker |
-| Fire-ACK with health-gated emission | Engine stays stateless; self-healing; no queuing | Missing data during reporting outages |
+| Best-effort with ACK and health-gated emission | Engine stays stateless; self-healing; no queuing | Missing data during reporting outages |
 | Message broker between engine and reporting | Guaranteed delivery, decoupled | Adds infrastructure (NATS, Redis); overkill until data completeness is critical |
 
 ## Decision
 
 **No persistence layer yet.** This ADR documents the target architecture so the design is informed rather than reactive when the reporting service is built.
 
-When built, the engine will emit events via gRPC using the **fire-ACK with health-gated emission** model. The reporting service will own all persistence.
+When built, the engine will emit events via gRPC using a **best-effort delivery model with health-gated emission**. The reporting service will own all persistence.
 
 ### Target Architecture
 
@@ -54,9 +54,9 @@ The engine emits structured `ScanCompleted` events via gRPC to a dedicated repor
        └────────── periodic health check ──────────▶│
 ```
 
-### Event Delivery: Fire-ACK with Health-Gated Emission
+### Event Delivery: Best-Effort with ACK and Health-Gated Emission
 
-The engine does not queue, retry, or buffer events. Delivery works as follows:
+The engine uses a best-effort delivery model: it sends an event and expects an acknowledgment, but does not queue, retry, or buffer on failure. A periodic health check gates whether sends are even attempted, avoiding wasted timeouts when the reporting service is known to be down.
 
 1. **Periodic health check.** Each engine pod runs a background gRPC health check against the reporting service (e.g. every 30 seconds) using the standard `grpc.health.v1.Health/Check` protocol. This maintains a boolean flag: `reporting_available`.
 
@@ -91,7 +91,7 @@ Scans that run while the reporting service is unreachable produce no dashboard d
 - The engine's job is scanning — persistence is a presentation/dashboard concern that belongs in a separate service
 - Multiple engine pods (ADR-012) rule out embedded storage as a shared source of truth
 - Health-gated emission avoids wasted timeouts and keeps the scan path fast
-- The fire-ACK model is the simplest delivery mechanism that self-heals; a message broker can be added later if data completeness becomes critical
+- Best-effort delivery with health gating is the simplest mechanism that self-heals; a message broker can be added later if data completeness becomes critical
 - Missing a few dashboard data points during an outage is acceptable for trend charts — the primary scan result is always delivered to the caller
 
 ## Consequences
@@ -108,6 +108,12 @@ Scans that run while the reporting service is unreachable produce no dashboard d
 - Dashboard data has gaps during reporting service outages (acceptable trade-off)
 - Adds a new service to the pod topology when implemented
 - The `ScanCompleted` protobuf contract becomes a versioned API surface between engine and reporting service
+
+### Reporting Must Be Configurable
+
+Event emission to the reporting service must be toggleable. For local CLI use (developer workstation, ad-hoc scans), users may not have — or want — a reporting service running. For managed/enterprise deployments, reporting may be expected by default.
+
+Whether the default is opt-in or opt-out is deferred to implementation time. The engine must support both modes via configuration (e.g. `--reporting-endpoint` flag or config file entry). When no reporting endpoint is configured, the engine skips all health checks and event emission with zero overhead.
 
 ## Requirements for the Reporting Service (when built)
 

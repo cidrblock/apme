@@ -25,7 +25,7 @@ This directory contains the Architecture Decision Records (ADRs) for APME.
 | [ADR-017](ADR-017-trust-and-verify-agent-sdlc.md) | Trust-and-verify Agent SDLC Invocation | Accepted | 2026-03 |
 | [ADR-018](ADR-018-mypy-strict-type-checking.md) | mypy Strict Mode Type Checking | Accepted | 2026-03 |
 | [ADR-019](ADR-019-dependency-governance.md) | Dependency Governance Policy | Accepted | 2026-03 |
-| [ADR-020](ADR-020-persistence-layer.md) | Reporting Service and Event Delivery Model | Proposed | 2026-03 |
+| [ADR-020](ADR-020-reporting-service.md) | Reporting Service and Event Delivery Model | Proposed | 2026-03 |
 
 ## Categories
 
