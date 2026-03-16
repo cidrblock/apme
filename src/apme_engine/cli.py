@@ -11,6 +11,24 @@ import grpc
 
 from apme.v1 import primary_pb2_grpc
 from apme.v1.primary_pb2 import ScanDiagnostics
+from apme_engine.ansi import (
+    TREE_LAST,
+    TREE_MID,
+    TREE_PIPE,
+    TREE_SPACE,
+    bold,
+    box,
+    cyan,
+    dim,
+    gray,
+    green,
+    magenta,
+    red,
+    severity_badge,
+    severity_indicator,
+    table,
+    yellow,
+)
 from apme_engine.collection_cache import (
     get_cache_root,
     pull_galaxy_collection,
@@ -231,6 +249,151 @@ def _diag_to_dict(diag: ScanDiagnostics) -> YAMLDict:
     )
 
 
+def _count_by_severity(violations: list[ViolationDict]) -> dict[str, int]:
+    """Count violations by severity level.
+
+    Args:
+        violations: List of violation dictionaries.
+
+    Returns:
+        Counts keyed by severity bucket.
+    """
+    counts = {"error": 0, "warning": 0, "info": 0, "hint": 0}
+    for v in violations:
+        level = str(v.get("level") or "").lower()
+        if level in ("very_high", "high", "error"):
+            counts["error"] += 1
+        elif level in ("medium", "low", "warning"):
+            counts["warning"] += 1
+        elif level == "info":
+            counts["info"] += 1
+        else:
+            counts["hint"] += 1
+    return counts
+
+
+def _group_by_file(violations: list[ViolationDict]) -> dict[str, list[ViolationDict]]:
+    """Group violations by file.
+
+    Args:
+        violations: List of violation dictionaries.
+
+    Returns:
+        Violations grouped by file path.
+    """
+    grouped: dict[str, list[ViolationDict]] = {}
+    for v in violations:
+        f = str(v.get("file") or "(unknown)")
+        if f not in grouped:
+            grouped[f] = []
+        grouped[f].append(v)
+    return grouped
+
+
+def _render_scan_results(
+    violations: list[ViolationDict],
+    scan_id: str = "",
+    scan_time_ms: float | None = None,
+) -> None:
+    """Render scan results with ANSI styling.
+
+    Displays:
+    1. Summary box with pass/fail status and counts
+    2. Issues table with rule, severity badge, message, location
+    3. Issues-by-file tree view
+
+    Args:
+        violations: List of violation dictionaries.
+        scan_id: Scan identifier for display.
+        scan_time_ms: Scan duration in milliseconds.
+    """
+    counts = _count_by_severity(violations)
+    has_errors = counts["error"] > 0
+    passed = not has_errors
+
+    status = green(bold("PASSED")) if passed else red(bold("FAILED"))
+    summary_lines = [f"Status: {status}"]
+
+    if scan_id:
+        summary_lines.append(f"Scan ID: {dim(scan_id)}")
+
+    counts_line = []
+    if counts["error"]:
+        counts_line.append(red(f"{counts['error']} error(s)"))
+    if counts["warning"]:
+        counts_line.append(yellow(f"{counts['warning']} warning(s)"))
+    if counts["info"]:
+        counts_line.append(magenta(f"{counts['info']} info(s)"))
+    if counts["hint"]:
+        counts_line.append(cyan(f"{counts['hint']} hint(s)"))
+    if counts_line:
+        summary_lines.append("Issues: " + ", ".join(counts_line))
+    else:
+        summary_lines.append(green("No issues found"))
+
+    if scan_time_ms is not None:
+        summary_lines.append(f"Time: {_fmt_ms(scan_time_ms)}")
+
+    print(box("\n".join(summary_lines), title="Scan Results"))
+    print()
+
+    if not violations:
+        return
+
+    headers = ["Rule", "Severity", "Message", "Location"]
+    rows = []
+    for v in violations:
+        rule_id = str(v.get("rule_id") or "?")
+        level = str(v.get("level") or "none")
+        message = str(v.get("message") or "")
+        if len(message) > 50:
+            message = message[:47] + "..."
+
+        file_path = str(v.get("file") or "")
+        line = v.get("line")
+        if isinstance(line, (list, tuple)) and len(line) >= 2:
+            location = f"{file_path}:{line[0]}-{line[1]}"
+        elif line is not None:
+            location = f"{file_path}:{line}"
+        else:
+            location = file_path
+
+        rows.append([rule_id, severity_badge(level), message, dim(location)])
+
+    print(bold("Issues"))
+    print(table(headers, rows))
+    print()
+
+    grouped = _group_by_file(violations)
+    files = sorted(grouped.keys())
+
+    print(bold("Issues by File"))
+    for i, f in enumerate(files):
+        is_last_file = i == len(files) - 1
+        file_prefix = TREE_LAST if is_last_file else TREE_MID
+        file_violations = grouped[f]
+        print(f"{file_prefix}{bold(f)} ({len(file_violations)})")
+
+        for j, v in enumerate(file_violations):
+            is_last_v = j == len(file_violations) - 1
+            indent = TREE_SPACE if is_last_file else TREE_PIPE
+            v_prefix = TREE_LAST if is_last_v else TREE_MID
+            indicator = severity_indicator(str(v.get("level") or "none"))
+            line = v.get("line")
+            if isinstance(line, (list, tuple)) and len(line) >= 2:
+                line_str = f"{line[0]}-{line[1]}"
+            elif isinstance(line, (list, tuple)):
+                line_str = str(line[0])
+            elif line is not None:
+                line_str = str(line)
+            else:
+                line_str = "?"
+            rule_id = str(v.get("rule_id") or "?")
+            print(f"{indent}{v_prefix}{indicator} {gray(f'L{line_str}')} [{rule_id}] {v.get('message', '')}")
+
+    print()
+
+
 def _run_scan(args: argparse.Namespace) -> None:
     """Run scan: engine + validators on target path, or call Primary daemon over gRPC.
 
@@ -282,16 +445,10 @@ def _run_scan(args: argparse.Namespace) -> None:
         return
 
     payload: YAMLDict = context.hierarchy_payload or {}
-    print(f"Scan: {payload.get('scan_id', '')} | Violations: {len(violations)}")
-    for violation in violations:
-        line = violation.get("line")
-        line_str = str(line) if line is not None else "?"
-        rule_id = violation.get("rule_id", "")
-        fpath = violation.get("file", "")
-        msg = violation.get("message", "")
-        print(f"  [{rule_id}] {fpath}:{line_str} - {msg}")
-    if not violations:
-        print("No violations.")
+    _render_scan_results(
+        violations,
+        scan_id=str(payload.get("scan_id", "")),
+    )
 
 
 def _run_scan_grpc(args: argparse.Namespace, primary_addr: str) -> None:
@@ -337,19 +494,19 @@ def _run_scan_grpc(args: argparse.Namespace, primary_addr: str) -> None:
         print(json.dumps(out, indent=2))
         return
 
-    print(f"Scan: {resp.scan_id} | Violations: {len(violations)}")
+    # Render styled output
+    scan_time_ms = resp.diagnostics.total_ms if has_diag else None
+    _render_scan_results(
+        violations,
+        scan_id=resp.scan_id,
+        scan_time_ms=scan_time_ms,
+    )
 
+    # Print diagnostics after the main output if requested
     if verbosity >= 2 and has_diag:
         _print_diagnostics_vv(resp.diagnostics)
     elif verbosity >= 1 and has_diag:
         _print_diagnostics_v(resp.diagnostics)
-
-    for v in violations:
-        line = v.get("line")
-        line_str = str(line) if line is not None else "?"
-        print(f"  [{v.get('rule_id', '')}] {v.get('file', '')}:{line_str} - {v.get('message', '')}")
-    if not violations:
-        print("No violations.")
 
 
 def _run_cache(args: argparse.Namespace) -> None:
@@ -635,9 +792,18 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run APME scan: engine + OPA and native validators; or manage collection cache.",
     )
+    global_opts = argparse.ArgumentParser(add_help=False)
+    global_opts.add_argument(
+        "--na",
+        "--no-ansi",
+        action="store_true",
+        default=False,
+        dest="no_ansi",
+        help="Disable ANSI color output",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    scan_parser = subparsers.add_parser("scan", help="Run scan on a playbook, role, or project")
+    scan_parser = subparsers.add_parser("scan", parents=[global_opts], help="Run scan on a playbook, role, or project")
     scan_parser.add_argument("target", nargs="?", default=".", help="Path to playbook, role, or project")
     scan_parser.add_argument(
         "--primary-addr",
@@ -674,7 +840,9 @@ def main() -> None:
         help="Diagnostics verbosity: -v for summary + top 10, -vv for full per-rule breakdown",
     )
 
-    cache_parser = subparsers.add_parser("cache", help="Manage collection cache (Galaxy + GitHub)")
+    cache_parser = subparsers.add_parser(
+        "cache", parents=[global_opts], help="Manage collection cache (Galaxy + GitHub)"
+    )
     cache_parser.add_argument(
         "--cache-root",
         default=None,
@@ -703,6 +871,7 @@ def main() -> None:
     # ── format ──
     format_parser = subparsers.add_parser(
         "format",
+        parents=[global_opts],
         help="Normalize YAML formatting (indentation, key order, jinja spacing, tabs)",
     )
     format_parser.add_argument("target", nargs="?", default=".", help="Path to file or directory")
@@ -713,6 +882,7 @@ def main() -> None:
     # ── fix ──
     fix_parser = subparsers.add_parser(
         "fix",
+        parents=[global_opts],
         help="Format then modernize: format → idempotency check → re-scan → modernize",
     )
     fix_parser.add_argument("target", nargs="?", default=".", help="Path to file or directory")
@@ -725,7 +895,9 @@ def main() -> None:
 
     # ── health-check ──
     health_parser = subparsers.add_parser(
-        "health-check", help="Check health of all services (Primary, Native, OPA, Ansible, Cache maintainer) via gRPC"
+        "health-check",
+        parents=[global_opts],
+        help="Check health of all services (Primary, Native, OPA, Ansible, Cache maintainer) via gRPC",
     )
     health_parser.add_argument(
         "--primary-addr",
@@ -748,6 +920,11 @@ def main() -> None:
     health_parser.add_argument("--json", action="store_true", help="Output results as JSON")
 
     args = parser.parse_args()
+
+    if args.no_ansi:
+        from apme_engine.ansi import force_no_color  # noqa: PLC0415
+
+        force_no_color()
 
     if args.command == "scan":
         _run_scan(args)
