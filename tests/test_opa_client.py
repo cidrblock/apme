@@ -12,7 +12,7 @@ from apme_engine.engine.models import YAMLDict
 from apme_engine.opa_client import reset_opa_circuit_breaker, run_opa, run_opa_test
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(autouse=True)  # type: ignore[untyped-decorator]
 def _reset_circuit_breaker() -> None:
     """Reset the OPA timeout circuit-breaker before each test."""
     reset_opa_circuit_breaker()

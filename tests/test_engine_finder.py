@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from apme_engine.engine.finder import identify_lines_with_jsonpath
 
 
@@ -76,13 +74,7 @@ class TestIdentifyLinesWithJsonpathSuccess:
 
     def test_valid_key_path_returns_fragment_and_range(self) -> None:
         """When path exists, returns (yaml_fragment, (start_line, end_line))."""
-        yaml_str = (
-            "- hosts: localhost\n"
-            "  tasks:\n"
-            "    - name: hello\n"
-            "      ansible.builtin.debug:\n"
-            "        msg: world\n"
-        )
+        yaml_str = "- hosts: localhost\n  tasks:\n    - name: hello\n      ansible.builtin.debug:\n        msg: world\n"
         result_lines, result_range = identify_lines_with_jsonpath(
             yaml_str=yaml_str,
             jsonpath=".0.tasks.0",

@@ -344,9 +344,8 @@ def identify_lines_with_jsonpath(
                 p_num = int(p)
                 blocks = find_child_yaml_block(current_lines, line_num_offset=current_line_num)
                 if not blocks or p_num < 0 or p_num >= len(blocks):
-                    logger.debug(
-                        f"no block at index {p_num} for jsonpath '{jsonpath}' (blocks count: {len(blocks) if blocks else 0})"
-                    )
+                    n_blocks = len(blocks) if blocks else 0
+                    logger.debug(f"no block at index {p_num} for jsonpath '{jsonpath}' (blocks count: {n_blocks})")
                     return None, None
                 current_lines, line_num_tuple = blocks[p_num]
                 current_line_num = line_num_tuple[0]

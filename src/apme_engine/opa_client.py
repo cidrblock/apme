@@ -26,7 +26,11 @@ _opa_disabled = False
 
 
 def _max_consecutive_timeouts() -> int:
-    """Return max consecutive timeouts before disabling OPA (from env or default 3)."""
+    """Return max consecutive timeouts before disabling OPA (from env or default 3).
+
+    Returns:
+        Positive int from APME_OPA_MAX_CONSECUTIVE_TIMEOUTS, or 3 if unset/invalid.
+    """
     raw = os.environ.get("APME_OPA_MAX_CONSECUTIVE_TIMEOUTS", "3")
     try:
         n = int(raw)
