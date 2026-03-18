@@ -120,7 +120,8 @@ def count_by_remediation_class(violations: list[ViolationDict]) -> dict[str, int
         RemediationClass.MANUAL_REVIEW: 0,
     }
     for v in violations:
-        rc = v.get("remediation_class", RemediationClass.AI_CANDIDATE)
+        rc_raw = v.get("remediation_class", RemediationClass.AI_CANDIDATE)
+        rc = str(rc_raw) if rc_raw else RemediationClass.AI_CANDIDATE
         if rc in counts:
             counts[rc] += 1
         else:

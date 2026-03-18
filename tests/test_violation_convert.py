@@ -1,4 +1,5 @@
 """Tests for violation_convert: dict ↔ proto conversion."""
+# mypy: disable-error-code="attr-defined"
 
 from apme.v1 import common_pb2
 from apme.v1.common_pb2 import LineRange, Violation
@@ -6,7 +7,7 @@ from apme_engine.daemon.violation_convert import (
     violation_dict_to_proto,
     violation_proto_to_dict,
 )
-from apme_engine.engine.models import RemediationClass
+from apme_engine.engine.models import RemediationClass, ViolationDict
 
 
 class TestViolationDictToProto:
@@ -14,7 +15,7 @@ class TestViolationDictToProto:
 
     def test_basic_conversion(self) -> None:
         """Dict fields map to proto fields."""
-        v = {
+        v: ViolationDict = {
             "rule_id": "L021",
             "level": "high",
             "message": "Missing mode",
@@ -32,7 +33,7 @@ class TestViolationDictToProto:
 
     def test_line_range_conversion(self) -> None:
         """Line range tuple converts to LineRange proto."""
-        v = {"rule_id": "L021", "line": [5, 10]}
+        v: ViolationDict = {"rule_id": "L021", "line": [5, 10]}
         proto = violation_dict_to_proto(v)
         assert proto.HasField("line_range")
         assert proto.line_range.start == 5
@@ -133,7 +134,7 @@ class TestRoundTrip:
 
     def test_round_trip_preserves_values(self) -> None:
         """Converting dict to proto and back preserves all fields."""
-        original = {
+        original: ViolationDict = {
             "rule_id": "L021",
             "level": "high",
             "message": "Missing mode",
@@ -154,7 +155,7 @@ class TestRoundTrip:
 
     def test_round_trip_line_range(self) -> None:
         """Line range round-trips correctly."""
-        original = {"rule_id": "L021", "line": [5, 10]}
+        original: ViolationDict = {"rule_id": "L021", "line": [5, 10]}
         proto = violation_dict_to_proto(original)
         result = violation_proto_to_dict(proto)
         assert result["line"] == [5, 10]
