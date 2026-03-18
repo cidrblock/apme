@@ -62,7 +62,7 @@ comment "Find everything wrong..."
 echo ""
 pause 2
 
-type_cmd "apme-scan scan $WORK_DIR/ --no-ansible"
+type_cmd "apme-scan scan $WORK_DIR/"
 pause 6
 
 # ── ACT 6: Fix ───────────────────────────────────────────────────────
@@ -87,7 +87,7 @@ comment "How many violations remain?"
 echo ""
 pause 2
 
-type_cmd "apme-scan scan $WORK_DIR/ --no-ansible"
+type_cmd "apme-scan scan $WORK_DIR/"
 pause 6
 
 # ── ACT 8: Before / After ────────────────────────────────────────────
@@ -109,8 +109,8 @@ banner "Results"
 pause 2
 
 # Count violations before and after
-BEFORE=$(apme-scan scan "$PLAYBOOK_DIR/" --no-ansible --json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('count',0))")
-AFTER=$(apme-scan scan "$WORK_DIR/" --no-ansible --json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('count',0))")
+BEFORE=$(apme-scan scan "$PLAYBOOK_DIR/" --json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('count',0))")
+AFTER=$(apme-scan scan "$WORK_DIR/" --json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('count',0))")
 FIXED=$((BEFORE - AFTER))
 if [ "$BEFORE" -gt 0 ]; then
     PCT=$(( FIXED * 100 / BEFORE ))
