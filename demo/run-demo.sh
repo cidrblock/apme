@@ -108,9 +108,12 @@ fresh
 banner "Results"
 pause 2
 
-# Count violations before and after
+# Count violations before and after, with remediation breakdown
 BEFORE=$(apme-scan scan "$PLAYBOOK_DIR/" --json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('count',0))")
-AFTER=$(apme-scan scan "$WORK_DIR/" --json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('count',0))")
+AFTER_JSON=$(apme-scan scan "$WORK_DIR/" --json 2>/dev/null)
+AFTER=$(echo "$AFTER_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('count',0))")
+AI_COUNT=$(echo "$AFTER_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('remediation_summary',{}).get('ai_candidate',0))")
+MANUAL_COUNT=$(echo "$AFTER_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin).get('remediation_summary',{}).get('manual_review',0))")
 FIXED=$((BEFORE - AFTER))
 if [ "$BEFORE" -gt 0 ]; then
     PCT=$(( FIXED * 100 / BEFORE ))
@@ -123,10 +126,11 @@ printf '  \e[1;37mViolations before:  \e[1;31m%s\e[0m\n' "$BEFORE"
 printf '  \e[1;37mViolations after:   \e[1;32m%s\e[0m\n' "$AFTER"
 printf '  \e[1;37mAuto-fixed:         \e[1;33m%s  (%s%%)\e[0m\n' "$FIXED" "$PCT"
 echo ""
+printf '  \e[2;37mRemaining: %s AI-candidate, %s manual-review\e[0m\n' "$AI_COUNT" "$MANUAL_COUNT"
+echo ""
 pause 4
 
-comment "Remaining violations are Tier 2 (AI-proposable) and Tier 3 (manual)."
-comment "AI escalation should further improve remediation coverage."
+comment "AI escalation via Abbenay will target the $AI_COUNT AI-candidate violations."
 echo ""
 pause 4
 
