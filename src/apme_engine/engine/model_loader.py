@@ -80,7 +80,7 @@ def _safe_int(val: object) -> int:
     Returns:
         Integer value, or 0 if conversion fails.
     """
-    if isinstance(val, (int, float)):
+    if isinstance(val, int | float):
         return int(val)
     if isinstance(val, str):
         try:

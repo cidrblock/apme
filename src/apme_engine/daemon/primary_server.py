@@ -64,11 +64,11 @@ def _sort_violations(violations: list[ViolationDict]) -> list[ViolationDict]:
     def key(v: ViolationDict) -> tuple[str, int | float]:
         f = str(v.get("file") or "")
         line = v.get("line")
-        if isinstance(line, (list, tuple)) and line:
+        if isinstance(line, list | tuple) and line:
             line = line[0]
-        if not isinstance(line, (int, float)):
+        if not isinstance(line, int | float):
             line = 0
-        return (f, line if isinstance(line, (int, float)) else 0)
+        return (f, line if isinstance(line, int | float) else 0)
 
     return sorted(violations, key=key)
 
@@ -86,7 +86,7 @@ def _deduplicate_violations(violations: list[ViolationDict]) -> list[ViolationDi
     out: list[ViolationDict] = []
     for v in violations:
         line: str | int | list[int] | tuple[int, ...] | bool | None = v.get("line")
-        if isinstance(line, (list, tuple)):
+        if isinstance(line, list | tuple):
             line = tuple(line)
         dedup_key = (str(v.get("rule_id", "")), str(v.get("file", "")), line)
         if dedup_key not in seen:
@@ -377,7 +377,13 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                 sys.stderr.flush()
 
             violations = _deduplicate_violations(_sort_violations(violations))
+
             from apme_engine.daemon.violation_convert import violation_dict_to_proto
+            from apme_engine.remediation.partition import add_classification_to_violations
+            from apme_engine.remediation.transforms import build_default_registry
+
+            registry = build_default_registry()
+            add_classification_to_violations(violations, registry)
 
             proto_violations = [violation_dict_to_proto(v) for v in violations]
 

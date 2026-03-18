@@ -83,7 +83,7 @@ def _extract_results(data_report: dict[str, object]) -> NativeRunResult:
                 detail = getattr(r, "detail", None)
                 message = detail["message"] if isinstance(detail, dict) and detail.get("message") else description
                 file_info = getattr(r, "file", None)
-                if isinstance(file_info, (list, tuple)) and len(file_info) >= 1:
+                if isinstance(file_info, list | tuple) and len(file_info) >= 1:
                     file_path = str(file_info[0]) if file_info[0] else ""
                     line = file_info[1] if len(file_info) > 1 else None
                 else:

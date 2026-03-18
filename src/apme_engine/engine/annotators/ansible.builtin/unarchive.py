@@ -36,11 +36,11 @@ class UnarchiveAnnotator(ModuleAnnotator):
         is_remote_src = False
         if remote_src is not None:
             raw_val = getattr(remote_src, "raw", None)
-            if isinstance(raw_val, (str, bool)):
+            if isinstance(raw_val, str | bool):
                 with contextlib.suppress(Exception):
                     is_remote_src = parse_bool(raw_val)
             templated_val = getattr(remote_src, "templated", None)
-            if not is_remote_src and isinstance(templated_val, (str, bool)):
+            if not is_remote_src and isinstance(templated_val, str | bool):
                 with contextlib.suppress(Exception):
                     is_remote_src = parse_bool(templated_val)
 

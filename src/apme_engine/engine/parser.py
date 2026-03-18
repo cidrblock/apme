@@ -399,7 +399,7 @@ class Parser:
                 if ld.yaml_label_list:
                     yaml_labels = ld.yaml_label_list
                     for item in yaml_labels:
-                        if isinstance(item, (list, tuple)) and len(item) >= 2:
+                        if isinstance(item, list | tuple) and len(item) >= 2:
                             _fpath, _label = str(item[0]), str(item[1])
                             if _fpath == file_path:
                                 label = _label

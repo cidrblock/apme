@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from apme_engine.engine.models import ViolationDict
+from apme_engine.engine.models import RemediationClass, RemediationResolution
 from apme_engine.remediation.registry import TransformRegistry
 
 
@@ -66,3 +67,88 @@ def partition_violations(
             tier3.append(v)
 
     return tier1, tier2, tier3
+
+
+def classify_violation(violation: ViolationDict, registry: TransformRegistry) -> RemediationClass:
+    """Return remediation class: auto-fixable, ai-candidate, or manual-review.
+
+    Args:
+        violation: Violation dict with rule_id.
+        registry: Transform registry to check for deterministic transforms.
+
+    Returns:
+        One of RemediationClass.AUTO_FIXABLE, AI_CANDIDATE, or MANUAL_REVIEW.
+    """
+    if is_finding_resolvable(violation, registry):
+        return RemediationClass.AUTO_FIXABLE
+    elif violation.get("ai_proposable", True):
+        return RemediationClass.AI_CANDIDATE
+    else:
+        return RemediationClass.MANUAL_REVIEW
+
+
+def add_classification_to_violations(
+    violations: list[ViolationDict],
+    registry: TransformRegistry,
+) -> None:
+    """Add remediation_class and remediation_resolution fields to each violation (in place).
+
+    Args:
+        violations: List of violation dicts.
+        registry: Transform registry for Tier 1 lookup.
+    """
+    for v in violations:
+        v["remediation_class"] = classify_violation(v, registry)
+        v["remediation_resolution"] = RemediationResolution.UNRESOLVED
+
+
+def _to_str_value(val: object, default: str) -> str:
+    """Extract the string value from an enum member or fallback to str().
+
+    Args:
+        val: Enum member, string, or other value.
+        default: Default string if val is falsy.
+
+    Returns:
+        The underlying string value.
+    """
+    if not val:
+        return default
+    return val.value if hasattr(val, "value") else str(val)
+
+
+def count_by_remediation_class(violations: list[ViolationDict]) -> dict[str, int]:
+    """Count violations by remediation class.
+
+    Args:
+        violations: List of violations with remediation_class field.
+
+    Returns:
+        Dict with counts keyed by remediation class string value.
+    """
+    counts: dict[str, int] = {rc.value: 0 for rc in RemediationClass}
+    default = RemediationClass.AI_CANDIDATE.value
+    for v in violations:
+        rc = _to_str_value(v.get("remediation_class"), default)
+        if rc in counts:
+            counts[rc] += 1
+        else:
+            counts[default] += 1
+    return counts
+
+
+def count_by_resolution(violations: list[ViolationDict]) -> dict[str, int]:
+    """Count violations by remediation resolution.
+
+    Args:
+        violations: List of violations with remediation_resolution field.
+
+    Returns:
+        Dict with counts keyed by resolution string value.
+    """
+    default = RemediationResolution.UNRESOLVED.value
+    counts: dict[str, int] = {}
+    for v in violations:
+        res = _to_str_value(v.get("remediation_resolution"), default)
+        counts[res] = counts.get(res, 0) + 1
+    return counts

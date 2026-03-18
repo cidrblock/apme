@@ -222,7 +222,7 @@ class TestScanViolations:
 
         """
         raw_count = scan_result.get("count", 0)
-        count = int(raw_count) if isinstance(raw_count, (int, float, str)) else 0
+        count = int(raw_count) if isinstance(raw_count, int | float | str) else 0
         assert count > 0, f"Expected >0 violations, got {count}"
 
     # OPA rules
@@ -323,7 +323,7 @@ class TestNoDuplicates:
             key = (
                 str(v.get("rule_id", "")),
                 str(v.get("file", "")),
-                line if isinstance(line, (int, tuple)) else 0,
+                line if isinstance(line, int | tuple) else 0,
             )
             if key in seen:
                 dups.append(key)

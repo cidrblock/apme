@@ -8,8 +8,12 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from apme_engine.engine.models import ViolationDict
-from apme_engine.remediation.partition import normalize_rule_id, partition_violations
+from apme_engine.engine.models import RemediationClass, RemediationResolution, ViolationDict
+from apme_engine.remediation.partition import (
+    add_classification_to_violations,
+    normalize_rule_id,
+    partition_violations,
+)
 from apme_engine.remediation.registry import TransformRegistry
 from apme_engine.remediation.transforms._helpers import violation_line_to_int
 
@@ -189,6 +193,9 @@ class RemediationEngine:
                     file_contents[vf] = result.content
                     all_applied_rules[vf].append(rule_id)
                     applied_this_pass += 1
+                else:
+                    v["remediation_class"] = RemediationClass.AI_CANDIDATE
+                    v["remediation_resolution"] = RemediationResolution.TRANSFORM_FAILED
 
             self._log(f"  Pass {pass_num}: applied {applied_this_pass}")
 
@@ -204,6 +211,9 @@ class RemediationEngine:
             if new_fixable >= prev_count:
                 self._log(f"  Pass {pass_num}: oscillation ({new_fixable} fixable >= {prev_count})")
                 oscillation = True
+                for v in new_tier1:
+                    v["remediation_class"] = RemediationClass.AI_CANDIDATE
+                    v["remediation_resolution"] = RemediationResolution.OSCILLATION
                 break
 
             prev_count = new_fixable
@@ -215,6 +225,7 @@ class RemediationEngine:
         # Final partition of remaining violations
         self._write_files(file_contents)
         final_violations = self._scan_fn(file_paths)
+        add_classification_to_violations(final_violations, self._registry)
         _, tier2, tier3 = partition_violations(final_violations, self._registry)
 
         # Build patches

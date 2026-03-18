@@ -2,6 +2,26 @@ syntax = "proto3";
 
 package apme.v1;
 
+// RemediationClass indicates the complexity of remediating a violation.
+enum RemediationClass {
+  REMEDIATION_CLASS_UNSPECIFIED = 0;
+  REMEDIATION_CLASS_AUTO_FIXABLE = 1;  // Tier 1: deterministic transform exists
+  REMEDIATION_CLASS_AI_CANDIDATE = 2;  // Tier 2: AI can propose fix
+  REMEDIATION_CLASS_MANUAL_REVIEW = 3; // Tier 3: requires human judgment
+}
+
+// RemediationResolution tracks what happened during remediation of a finding.
+enum RemediationResolution {
+  REMEDIATION_RESOLUTION_UNSPECIFIED = 0;
+  REMEDIATION_RESOLUTION_UNRESOLVED = 1;
+  REMEDIATION_RESOLUTION_TRANSFORM_FAILED = 2;
+  REMEDIATION_RESOLUTION_OSCILLATION = 3;
+  REMEDIATION_RESOLUTION_AI_PROPOSED = 4;
+  REMEDIATION_RESOLUTION_AI_FAILED = 5;
+  REMEDIATION_RESOLUTION_AI_LOW_CONFIDENCE = 6;
+  REMEDIATION_RESOLUTION_USER_REJECTED = 7;
+}
+
 // Violation is the shared shape for a single lint/policy violation.
 message Violation {
   string rule_id = 1;
@@ -13,6 +33,8 @@ message Violation {
     LineRange line_range = 6;
   }
   string path = 7;
+  RemediationClass remediation_class = 8;
+  RemediationResolution remediation_resolution = 9;
 }
 
 message LineRange {

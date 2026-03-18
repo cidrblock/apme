@@ -8,6 +8,7 @@ import json
 import os
 from copy import deepcopy
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
@@ -25,6 +26,43 @@ YAMLList = list[YAMLValue]
 
 # Violation dicts from validators (rule_id, level, message, file, line, path, etc.)
 ViolationDict = dict[str, str | int | list[int] | bool | None]
+
+
+class RemediationClass(str, Enum):
+    """Classification of remediation complexity for violations.
+
+    Attributes:
+        AUTO_FIXABLE: Tier 1 — deterministic transform exists.
+        AI_CANDIDATE: Tier 2 — AI can propose a fix.
+        MANUAL_REVIEW: Tier 3 — requires human judgment.
+    """
+
+    AUTO_FIXABLE = "auto-fixable"
+    AI_CANDIDATE = "ai-candidate"
+    MANUAL_REVIEW = "manual-review"
+
+
+class RemediationResolution(str, Enum):
+    """What happened during remediation of a specific finding.
+
+    Attributes:
+        UNRESOLVED: Initial state at scan time.
+        TRANSFORM_FAILED: Deterministic transform returned applied=False.
+        OSCILLATION: Convergence loop detected oscillation.
+        AI_PROPOSED: AI proposed a fix (pending validation).
+        AI_FAILED: AI call failed or returned no result.
+        AI_LOW_CONFIDENCE: AI returned a low-confidence proposal.
+        USER_REJECTED: User rejected the proposed fix.
+    """
+
+    UNRESOLVED = "unresolved"
+    TRANSFORM_FAILED = "transform-failed"
+    OSCILLATION = "oscillation"
+    AI_PROPOSED = "ai-proposed"
+    AI_FAILED = "ai-failed"
+    AI_LOW_CONFIDENCE = "ai-low-confidence"
+    USER_REJECTED = "user-rejected"
+
 
 from . import yaml as ariyaml  # noqa: E402
 from .finder import (  # noqa: E402
@@ -1183,7 +1221,7 @@ class Arguments:
         else:
             if isinstance(self.raw, dict):
                 sub_raw = self.raw.get(key, None)
-                if self.templated and isinstance(self.templated, (list, tuple)):
+                if self.templated and isinstance(self.templated, list | tuple):
                     first: YAMLValue = self.templated[0]
                     sub_templated = first.get(key, None) if isinstance(first, dict) else self.templated
             else:

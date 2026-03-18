@@ -332,8 +332,7 @@ class TestFixApply:
         """
         r = _cli("fix", "--apply", str(messy_file))
         assert r.returncode == 0
-        assert "phase 4: remediating" in r.stderr.lower()
-        assert "phase 5: summary" in r.stderr.lower()
+        assert "remediating" in r.stderr.lower()
         assert "tier 1" in r.stderr.lower()
 
 

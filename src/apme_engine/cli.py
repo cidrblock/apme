@@ -25,6 +25,7 @@ from apme_engine.ansi import (
     green,
     magenta,
     red,
+    remediation_badge,
     severity_badge,
     severity_indicator,
     table,
@@ -40,9 +41,14 @@ from apme_engine.collection_cache import (
 from apme_engine.daemon.chunked_fs import yield_scan_chunks
 from apme_engine.daemon.health_check import run_health_checks
 from apme_engine.daemon.violation_convert import violation_proto_to_dict
-from apme_engine.engine.models import ViolationDict, YAMLDict
+from apme_engine.engine.models import RemediationClass, RemediationResolution, ViolationDict, YAMLDict
 from apme_engine.formatter import format_directory, format_file
 from apme_engine.remediation.engine import RemediationEngine
+from apme_engine.remediation.partition import (
+    add_classification_to_violations,
+    count_by_remediation_class,
+    count_by_resolution,
+)
 from apme_engine.remediation.transforms import build_default_registry
 from apme_engine.runner import run_scan
 from apme_engine.validators.ansible import AnsibleValidator
@@ -67,11 +73,11 @@ def _sort_violations(violations: list[ViolationDict]) -> list[ViolationDict]:
         f = str(v.get("file") or "")
         line = v.get("line")
         resolved: int | float = 0
-        if isinstance(line, (int, float)):
+        if isinstance(line, int | float):
             resolved = line
-        elif isinstance(line, (list, tuple)) and line:
+        elif isinstance(line, list | tuple) and line:
             first = line[0]
-            resolved = first if isinstance(first, (int, float)) else 0
+            resolved = first if isinstance(first, int | float) else 0
         return (f, resolved)
 
     return sorted(violations, key=key)
@@ -91,7 +97,7 @@ def _deduplicate_violations(violations: list[ViolationDict]) -> list[ViolationDi
     out: list[ViolationDict] = []
     for v in violations:
         line: str | int | list[int] | tuple[int, ...] | bool | None = v.get("line")
-        if isinstance(line, (list, tuple)):
+        if isinstance(line, list | tuple):
             line = tuple(line)
         dedup_key = (str(v.get("rule_id", "")), str(v.get("file", "")), line)
         if dedup_key not in seen:
@@ -276,6 +282,38 @@ def _count_by_severity(violations: list[ViolationDict]) -> dict[str, int]:
     return counts
 
 
+def _format_remediation_summary(violations: list[ViolationDict]) -> str:
+    """Format remediation summary line.
+
+    Args:
+        violations: List of violations with remediation_class and remediation_resolution fields.
+
+    Returns:
+        Summary string like "3 auto-fixable, 2 AI-candidate, 1 manual-review".
+    """
+    counts = count_by_remediation_class(violations)
+    parts = []
+    if counts[RemediationClass.AUTO_FIXABLE.value]:
+        parts.append(green(f"{counts[RemediationClass.AUTO_FIXABLE.value]} auto-fixable"))
+    if counts[RemediationClass.AI_CANDIDATE.value]:
+        parts.append(cyan(f"{counts[RemediationClass.AI_CANDIDATE.value]} AI-candidate"))
+    if counts[RemediationClass.MANUAL_REVIEW.value]:
+        parts.append(magenta(f"{counts[RemediationClass.MANUAL_REVIEW.value]} manual-review"))
+
+    res_counts = count_by_resolution(violations)
+    res_parts = []
+    for res_val in RemediationResolution:
+        if res_val == RemediationResolution.UNRESOLVED:
+            continue
+        cnt = res_counts.get(res_val.value, 0)
+        if cnt:
+            res_parts.append(f"{cnt} {res_val.value}")
+    if res_parts:
+        parts.append(dim("(" + ", ".join(res_parts) + ")"))
+
+    return ", ".join(parts) if parts else "none"
+
+
 def _group_by_file(violations: list[ViolationDict]) -> dict[str, list[ViolationDict]]:
     """Group violations by file.
 
@@ -335,6 +373,9 @@ def _render_scan_results(
     else:
         summary_lines.append(green("No issues found"))
 
+    if violations:
+        summary_lines.append("Remediation: " + _format_remediation_summary(violations))
+
     if scan_time_ms is not None:
         summary_lines.append(f"Time: {_fmt_ms(scan_time_ms)}")
 
@@ -344,25 +385,27 @@ def _render_scan_results(
     if not violations:
         return
 
-    headers = ["Rule", "Severity", "Message", "Location"]
+    headers = ["Rule", "Severity", "Remediation", "Message", "Location"]
     rows = []
     for v in violations:
         rule_id = str(v.get("rule_id") or "?")
         level = str(v.get("level") or "none")
+        rem_raw = v.get("remediation_class") or RemediationClass.AI_CANDIDATE
+        rem_class = rem_raw.value if hasattr(rem_raw, "value") else str(rem_raw)
         message = str(v.get("message") or "")
         if len(message) > 50:
             message = message[:47] + "..."
 
         file_path = str(v.get("file") or "")
         line = v.get("line")
-        if isinstance(line, (list, tuple)) and len(line) >= 2:
+        if isinstance(line, list | tuple) and len(line) >= 2:
             location = f"{file_path}:{line[0]}-{line[1]}"
         elif line is not None:
             location = f"{file_path}:{line}"
         else:
             location = file_path
 
-        rows.append([rule_id, severity_badge(level), message, dim(location)])
+        rows.append([rule_id, severity_badge(level), remediation_badge(rem_class), message, dim(location)])
 
     print(bold("Issues"))
     print(table(headers, rows))
@@ -384,9 +427,9 @@ def _render_scan_results(
             v_prefix = TREE_LAST if is_last_v else TREE_MID
             indicator = severity_indicator(str(v.get("level") or "none"))
             line = v.get("line")
-            if isinstance(line, (list, tuple)) and len(line) >= 2:
+            if isinstance(line, list | tuple) and len(line) >= 2:
                 line_str = f"{line[0]}-{line[1]}"
-            elif isinstance(line, (list, tuple)):
+            elif isinstance(line, list | tuple):
                 line_str = str(line[0])
             elif line is not None:
                 line_str = str(line)
@@ -446,6 +489,10 @@ def _run_scan(args: argparse.Namespace) -> None:
         violations.extend(result)  # type: ignore[arg-type]
     violations = _deduplicate_violations(_sort_violations(violations))
 
+    # Add remediation classification to each violation
+    registry = build_default_registry()
+    add_classification_to_violations(violations, registry)
+
     if not validators:
         if args.json:
             print(json.dumps({"hierarchy_payload": context.hierarchy_payload}))
@@ -454,7 +501,24 @@ def _run_scan(args: argparse.Namespace) -> None:
         return
 
     if args.json:
-        print(json.dumps({"violations": violations, "count": len(violations)}, indent=2))
+        rem_counts = count_by_remediation_class(violations)
+        res_counts = count_by_resolution(violations)
+        unresolved = RemediationResolution.UNRESOLVED.value
+        print(
+            json.dumps(
+                {
+                    "violations": violations,
+                    "count": len(violations),
+                    "remediation_summary": {
+                        "auto_fixable": rem_counts[RemediationClass.AUTO_FIXABLE.value],
+                        "ai_candidate": rem_counts[RemediationClass.AI_CANDIDATE.value],
+                        "manual_review": rem_counts[RemediationClass.MANUAL_REVIEW.value],
+                    },
+                    "resolution_summary": {k: v for k, v in res_counts.items() if k != unresolved},
+                },
+                indent=2,
+            )
+        )
         return
 
     payload: YAMLDict = context.hierarchy_payload or {}
@@ -462,6 +526,23 @@ def _run_scan(args: argparse.Namespace) -> None:
         violations,
         scan_id=str(payload.get("scan_id", "")),
     )
+
+    # Handle --auto-fix: apply Tier 1 fixes
+    if getattr(args, "auto_fix", False):
+        rem_counts = count_by_remediation_class(violations)
+        fixable = rem_counts[RemediationClass.AUTO_FIXABLE.value]
+        if fixable > 0:
+            sys.stderr.write(f"\nApplying {fixable} auto-fixable remediation(s)...\n")
+            _apply_remediation(
+                Path(args.target).resolve(),
+                apply=True,
+                opa_bundle=getattr(args, "opa_bundle", None),
+                ansible_version=getattr(args, "ansible_version", None),
+                collection_specs=getattr(args, "collections", None),
+                session_id=getattr(args, "session", None),
+            )
+        else:
+            sys.stderr.write("\nNo auto-fixable issues found.\n")
 
 
 def _run_scan_grpc(args: argparse.Namespace, primary_addr: str) -> None:
@@ -501,7 +582,20 @@ def _run_scan_grpc(args: argparse.Namespace, primary_addr: str) -> None:
     has_diag = resp.HasField("diagnostics")
 
     if args.json:
-        out = {"violations": violations, "count": len(violations), "scan_id": resp.scan_id}
+        rem_counts = count_by_remediation_class(violations)
+        res_counts = count_by_resolution(violations)
+        unresolved = RemediationResolution.UNRESOLVED.value
+        out: dict[str, object] = {
+            "violations": violations,
+            "count": len(violations),
+            "scan_id": resp.scan_id,
+            "remediation_summary": {
+                "auto_fixable": rem_counts[RemediationClass.AUTO_FIXABLE.value],
+                "ai_candidate": rem_counts[RemediationClass.AI_CANDIDATE.value],
+                "manual_review": rem_counts[RemediationClass.MANUAL_REVIEW.value],
+            },
+            "resolution_summary": {k: v for k, v in res_counts.items() if k != unresolved},
+        }
         if verbosity and has_diag:
             out["diagnostics"] = _diag_to_dict(resp.diagnostics)
         print(json.dumps(out, indent=2))
@@ -672,6 +766,96 @@ def _scan_files_local(
     return _deduplicate_violations(_sort_violations(all_violations))
 
 
+def _apply_remediation(
+    target: Path,
+    *,
+    apply: bool = False,
+    max_passes: int = 5,
+    opa_bundle: str | None = None,
+    ansible_version: str | None = None,
+    collection_specs: list[str] | None = None,
+    session_id: str | None = None,
+) -> None:
+    """Scan files and run the remediation convergence loop.
+
+    Args:
+        target: Resolved path to file or directory.
+        apply: If True, write fixes in place.
+        max_passes: Maximum convergence passes.
+        opa_bundle: Optional path to OPA bundle.
+        ansible_version: ansible-core version for introspection.
+        collection_specs: Optional collection specifiers for venv.
+        session_id: Optional session ID for venv reuse.
+    """
+    if target.is_file():
+        yaml_files = [str(target)]
+    else:
+        yaml_files = [
+            str(p)
+            for p in target.rglob("*")
+            if p.suffix in (".yml", ".yaml") and not any(part.startswith(".") for part in p.parts)
+        ]
+
+    if not yaml_files:
+        sys.stderr.write("  No YAML files found.\n")
+        return
+
+    repo_root = str(Path(__file__).resolve().parent.parent)
+
+    session = resolve_session(
+        ansible_version or ANSIBLE_DEFAULT_VERSION,
+        collection_specs=collection_specs,
+        session_id=session_id,
+    )
+    active_session_id = session.session_id if session else None
+
+    def scan_fn(paths: list[str]) -> list[ViolationDict]:
+        return _scan_files_local(
+            paths,
+            repo_root,
+            opa_bundle,
+            ansible_version=ansible_version,
+            collection_specs=collection_specs,
+            session_id=active_session_id,
+        )
+
+    registry = build_default_registry()
+    engine = RemediationEngine(
+        registry=registry,
+        scan_fn=scan_fn,
+        max_passes=max_passes,
+        verbose=True,
+    )
+
+    sys.stderr.write(f"  {len(yaml_files)} YAML file(s), {len(registry)} transforms registered\n")
+    sys.stderr.write(f"  Transforms: {', '.join(registry.rule_ids)}\n")
+    sys.stderr.write("  Remediating...\n")
+
+    report = engine.remediate(yaml_files, apply=apply)
+
+    if apply and report.applied_patches:
+        patched_paths = {p.path for p in report.applied_patches}
+        reformat = [format_file(Path(p)) for p in patched_paths]
+        for r in reformat:
+            if r.changed:
+                r.path.write_text(r.formatted, encoding="utf-8")
+
+    sys.stderr.write(f"  Tier 1 (deterministic):  {report.fixed} fixed\n")
+    sys.stderr.write(f"  Tier 2 (AI-proposable):  {len(report.remaining_ai)} remaining\n")
+    sys.stderr.write(f"  Tier 3 (manual review):  {len(report.remaining_manual)} remaining\n")
+    sys.stderr.write(f"  Passes:                  {report.passes}\n")
+    if report.oscillation_detected:
+        sys.stderr.write("  WARNING: oscillation detected, stopped early\n")
+
+    if active_session_id is not None:
+        release_session(active_session_id)
+
+    if not apply and report.applied_patches:
+        sys.stderr.write(f"\n{len(report.applied_patches)} file(s) would be patched (use --apply to write):\n")
+        for p in report.applied_patches:
+            sys.stdout.write(p.diff)
+
+
 def _run_fix(args: argparse.Namespace) -> None:
     """Format → idempotency check → scan → remediate (convergence loop).
 
@@ -728,83 +912,16 @@ def _run_fix(args: argparse.Namespace) -> None:
     sys.stderr.write("  Passed (zero diffs on second run)\n")
 
     # Phase 3: Scan + Remediate
-    sys.stderr.write("Phase 3: Scanning...\n")
-
-    if target.is_file():
-        yaml_files = [str(target)]
-    else:
-        yaml_files = [
-            str(p)
-            for p in target.rglob("*")
-            if p.suffix in (".yml", ".yaml") and not any(part.startswith(".") for part in p.parts)
-        ]
-
-    if not yaml_files:
-        sys.stderr.write("  No YAML files found.\n")
-        return
-
-    repo_root = str(Path(__file__).resolve().parent.parent)
-    opa_bundle = getattr(args, "opa_bundle", None)
-    ansible_version = getattr(args, "ansible_version", None)
-    collection_specs = getattr(args, "collections", None)
-    session_id = getattr(args, "session", None)
-
-    # Acquire a session venv up-front so the scan closure reuses it
-    session = resolve_session(
-        ansible_version or ANSIBLE_DEFAULT_VERSION,
-        collection_specs=collection_specs,
-        session_id=session_id,
-    )
-    active_session_id = session.session_id if session else None
-
-    def scan_fn(paths: list[str]) -> list[ViolationDict]:
-        return _scan_files_local(
-            paths,
-            repo_root,
-            opa_bundle,
-            ansible_version=ansible_version,
-            collection_specs=collection_specs,
-            session_id=active_session_id,
-        )
-
-    registry = build_default_registry()
-    engine = RemediationEngine(
-        registry=registry,
-        scan_fn=scan_fn,
+    sys.stderr.write("Phase 3: Scanning & remediating...\n")
+    _apply_remediation(
+        target,
+        apply=apply_changes,
         max_passes=max_passes,
-        verbose=True,
+        opa_bundle=getattr(args, "opa_bundle", None),
+        ansible_version=getattr(args, "ansible_version", None),
+        collection_specs=getattr(args, "collections", None),
+        session_id=getattr(args, "session", None),
     )
-
-    sys.stderr.write(f"  {len(yaml_files)} YAML file(s), {len(registry)} transforms registered\n")
-    sys.stderr.write(f"  Transforms: {', '.join(registry.rule_ids)}\n")
-
-    sys.stderr.write("Phase 4: Remediating...\n")
-    report = engine.remediate(yaml_files, apply=apply_changes)
-
-    if apply_changes and report.applied_patches:
-        patched_paths = {p.path for p in report.applied_patches}
-        reformat = [format_file(Path(p)) for p in patched_paths]
-        for r in reformat:
-            if r.changed:
-                r.path.write_text(r.formatted, encoding="utf-8")
-
-    # Phase 5: Report
-    sys.stderr.write("Phase 5: Summary\n")
-    sys.stderr.write(f"  Tier 1 (deterministic):  {report.fixed} fixed\n")
-    sys.stderr.write(f"  Tier 2 (AI-proposable):  {len(report.remaining_ai)} remaining\n")
-    sys.stderr.write(f"  Tier 3 (manual review):  {len(report.remaining_manual)} remaining\n")
-    sys.stderr.write(f"  Passes:                  {report.passes}\n")
-    if report.oscillation_detected:
-        sys.stderr.write("  WARNING: oscillation detected, stopped early\n")
-
-    # Release ephemeral session venvs (named sessions persist for TTL)
-    if active_session_id is not None:
-        release_session(active_session_id)
-
-    if not apply_changes and report.applied_patches:
-        sys.stderr.write(f"\n{len(report.applied_patches)} file(s) would be patched (use --apply to write):\n")
-        for p in report.applied_patches:
-            sys.stdout.write(p.diff)
 
 
 def _run_session(args: argparse.Namespace) -> None:
@@ -974,6 +1091,11 @@ def main() -> None:
         action="count",
         default=0,
         help="Diagnostics verbosity: -v for summary + top 10, -vv for full per-rule breakdown",
+    )
+    scan_parser.add_argument(
+        "--auto-fix",
+        action="store_true",
+        help="Apply auto-fixable (Tier 1) remediations after scan",
     )
 
     cache_parser = subparsers.add_parser(

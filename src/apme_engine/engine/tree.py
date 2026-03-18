@@ -313,7 +313,7 @@ def _safe_list(v: object) -> list[Object | CallObject]:
     if isinstance(v, ObjectList):
         return v.items
     if isinstance(v, list):
-        return [x for x in v if isinstance(x, (Object, CallObject))]
+        return [x for x in v if isinstance(x, Object | CallObject)]
     return []
 
 
@@ -341,7 +341,7 @@ def _ram_match_object(match: object) -> Object | CallObject | None:
     if not isinstance(match, dict):
         return None
     obj = match.get("object")
-    return obj if isinstance(obj, (Object, CallObject)) else None
+    return obj if isinstance(obj, Object | CallObject) else None
 
 
 def _ram_match_defined_in(match: object) -> str:
@@ -389,7 +389,7 @@ def load_single_definition(defs: dict[str, object], key: str) -> ObjectList:
     obj_list = ObjectList()
     items = _safe_list(defs.get(key, []))
     for item in items:
-        if isinstance(item, (Object, CallObject)):
+        if isinstance(item, Object | CallObject):
             obj_list.add(item)
     return obj_list
 
@@ -885,7 +885,7 @@ class TreeLoader:
             p_defs = _safe_list(definitions.get("projects", []))
             if len(p_defs) > 0:
                 first = p_defs[0]
-                if isinstance(first, (Object, CallObject)):
+                if isinstance(first, Object | CallObject):
                     additional_objects.add(first)
         covered_taskfiles = []
         for i, mapping in enumerate(self.playbook_mappings):
@@ -1148,7 +1148,7 @@ class TreeLoader:
             matched_obj = self.ram_client.get_object_by_key(obj_key)
             if matched_obj is not None and isinstance(matched_obj, dict):
                 obj_raw = matched_obj.get("object", None)
-                if obj_raw is not None and isinstance(obj_raw, (Object, CallObject)):
+                if obj_raw is not None and isinstance(obj_raw, Object | CallObject):
                     return obj_raw
 
         return None
@@ -1219,7 +1219,7 @@ class TreeLoader:
                                 for offspr_obj in _ram_match_offspring(m0):
                                     type_str = str(offspr_obj.get("type", "")) + "s"
                                     oo_obj = offspr_obj.get("object")
-                                    if isinstance(oo_obj, (Object, CallObject)):
+                                    if isinstance(oo_obj, Object | CallObject):
                                         self.ext_definitions[type_str].add(oo_obj)
                                 if role_obj.key not in self.extra_requirement_obj_set:
                                     self.extra_requirements.append(
@@ -1233,10 +1233,10 @@ class TreeLoader:
                                     self.extra_requirement_obj_set.add(role_obj.key)
                                 for offspr_obj in _ram_match_offspring(m0):
                                     oo_obj = offspr_obj.get("object")
-                                    if isinstance(oo_obj, (Object, CallObject)) and getattr(oo_obj, "builtin", False):
+                                    if isinstance(oo_obj, Object | CallObject) and getattr(oo_obj, "builtin", False):
                                         continue
                                     if (
-                                        isinstance(oo_obj, (Object, CallObject))
+                                        isinstance(oo_obj, Object | CallObject)
                                         and oo_obj.key not in self.extra_requirement_obj_set
                                     ):
                                         self.extra_requirements.append(
@@ -1372,10 +1372,10 @@ class TreeLoader:
                                     self.extra_requirement_obj_set.add(role_obj.key)
                                 for offspr_obj in _ram_match_offspring(m0):
                                     oo_obj = offspr_obj.get("object")
-                                    if isinstance(oo_obj, (Object, CallObject)) and getattr(oo_obj, "builtin", False):
+                                    if isinstance(oo_obj, Object | CallObject) and getattr(oo_obj, "builtin", False):
                                         continue
                                     if (
-                                        isinstance(oo_obj, (Object, CallObject))
+                                        isinstance(oo_obj, Object | CallObject)
                                         and oo_obj.key not in self.extra_requirement_obj_set
                                     ):
                                         self.extra_requirements.append(
@@ -1435,10 +1435,10 @@ class TreeLoader:
                                     self.extra_requirement_obj_set.add(tf_obj.key)
                                 for offspr_obj in _ram_match_offspring(m0):
                                     oo_obj = offspr_obj.get("object")
-                                    if isinstance(oo_obj, (Object, CallObject)) and getattr(oo_obj, "builtin", False):
+                                    if isinstance(oo_obj, Object | CallObject) and getattr(oo_obj, "builtin", False):
                                         continue
                                     if (
-                                        isinstance(oo_obj, (Object, CallObject))
+                                        isinstance(oo_obj, Object | CallObject)
                                         and oo_obj.key not in self.extra_requirement_obj_set
                                     ):
                                         self.extra_requirements.append(

@@ -4,9 +4,13 @@ import textwrap
 from pathlib import Path
 from typing import cast
 
-from apme_engine.engine.models import ViolationDict
+from apme_engine.engine.models import RemediationClass, RemediationResolution, ViolationDict
 from apme_engine.remediation.engine import RemediationEngine
 from apme_engine.remediation.partition import (
+    add_classification_to_violations,
+    classify_violation,
+    count_by_remediation_class,
+    count_by_resolution,
     is_finding_resolvable,
     normalize_rule_id,
     partition_violations,
@@ -139,6 +143,91 @@ class TestPartition:
         assert t2[0]["rule_id"] == "R118"
         assert len(t3) == 1
         assert t3[0]["rule_id"] == "POLICY"
+
+    def test_classify_violation_auto_fixable(self) -> None:
+        """Verifies classify_violation returns auto-fixable for registered rules."""
+        reg = TransformRegistry()
+        reg.register("L021", lambda c, v: TransformResult(c, False))
+        assert classify_violation({"rule_id": "L021"}, reg) == RemediationClass.AUTO_FIXABLE
+        assert classify_violation({"rule_id": "native:L021"}, reg) == RemediationClass.AUTO_FIXABLE
+
+    def test_classify_violation_ai_candidate(self) -> None:
+        """Verifies classify_violation returns ai-candidate for unregistered rules."""
+        reg = TransformRegistry()
+        assert classify_violation({"rule_id": "R118"}, reg) == RemediationClass.AI_CANDIDATE
+        assert classify_violation({"rule_id": "L999", "ai_proposable": True}, reg) == RemediationClass.AI_CANDIDATE
+
+    def test_classify_violation_manual_review(self) -> None:
+        """Verifies classify_violation returns manual-review when ai_proposable is False."""
+        reg = TransformRegistry()
+        assert classify_violation({"rule_id": "POLICY", "ai_proposable": False}, reg) == RemediationClass.MANUAL_REVIEW
+
+    def test_add_classification_to_violations(self) -> None:
+        """Verifies add_classification_to_violations mutates violations in place."""
+        reg = TransformRegistry()
+        reg.register("L021", lambda c, v: TransformResult(c, False))
+
+        violations: list[ViolationDict] = [
+            {"rule_id": "L021"},
+            {"rule_id": "R118"},
+            {"rule_id": "POLICY", "ai_proposable": False},
+        ]
+        add_classification_to_violations(violations, reg)
+        assert violations[0]["remediation_class"] == RemediationClass.AUTO_FIXABLE
+        assert violations[1]["remediation_class"] == RemediationClass.AI_CANDIDATE
+        assert violations[2]["remediation_class"] == RemediationClass.MANUAL_REVIEW
+        for v in violations:
+            assert v["remediation_resolution"] == RemediationResolution.UNRESOLVED
+
+    def test_count_by_remediation_class(self) -> None:
+        """Verifies count_by_remediation_class returns correct counts."""
+        violations: list[ViolationDict] = [
+            {"rule_id": "L021", "remediation_class": RemediationClass.AUTO_FIXABLE},
+            {"rule_id": "L022", "remediation_class": RemediationClass.AUTO_FIXABLE},
+            {"rule_id": "R118", "remediation_class": RemediationClass.AI_CANDIDATE},
+            {"rule_id": "POLICY", "remediation_class": RemediationClass.MANUAL_REVIEW},
+        ]
+        counts = count_by_remediation_class(violations)
+        assert counts[RemediationClass.AUTO_FIXABLE.value] == 2
+        assert counts[RemediationClass.AI_CANDIDATE.value] == 1
+        assert counts[RemediationClass.MANUAL_REVIEW.value] == 1
+
+    def test_count_by_resolution(self) -> None:
+        """Verifies count_by_resolution returns correct counts."""
+        violations: list[ViolationDict] = [
+            {"rule_id": "L021", "remediation_resolution": RemediationResolution.UNRESOLVED},
+            {"rule_id": "L022", "remediation_resolution": RemediationResolution.TRANSFORM_FAILED},
+            {"rule_id": "R118", "remediation_resolution": RemediationResolution.TRANSFORM_FAILED},
+            {"rule_id": "POLICY", "remediation_resolution": RemediationResolution.OSCILLATION},
+        ]
+        counts = count_by_resolution(violations)
+        assert counts[RemediationResolution.UNRESOLVED.value] == 1
+        assert counts[RemediationResolution.TRANSFORM_FAILED.value] == 2
+        assert counts[RemediationResolution.OSCILLATION.value] == 1
+
+    def test_remediation_class_is_str_enum(self) -> None:
+        """Verifies RemediationClass is iterable and members have string values."""
+        assert list(RemediationClass) == [
+            RemediationClass.AUTO_FIXABLE,
+            RemediationClass.AI_CANDIDATE,
+            RemediationClass.MANUAL_REVIEW,
+        ]
+        assert RemediationClass.AUTO_FIXABLE.value == "auto-fixable"
+
+    def test_remediation_resolution_is_str_enum(self) -> None:
+        """Verifies RemediationResolution members have string values."""
+        assert RemediationResolution.UNRESOLVED.value == "unresolved"
+        assert RemediationResolution.TRANSFORM_FAILED.value == "transform-failed"
+        assert len(list(RemediationResolution)) == 7
+
+    def test_all_registered_rules_classify(self) -> None:
+        """Verifies every registered rule ID classifies as AUTO_FIXABLE."""
+        reg = build_default_registry()
+        for rule_id in reg:
+            v: ViolationDict = {"rule_id": rule_id}
+            assert classify_violation(v, reg) == RemediationClass.AUTO_FIXABLE, (
+                f"Rule {rule_id} should classify as AUTO_FIXABLE"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -665,6 +754,79 @@ class TestRemediationEngine:
         assert len(report.remaining_manual) == 1
         assert report.remaining_ai[0]["rule_id"] == "UNKNOWN_AI"
         assert report.remaining_manual[0]["rule_id"] == "MANUAL"
+
+    def test_transform_failure_sets_resolution(self, tmp_path: Path) -> None:
+        """Verifies transform returning applied=False sets TRANSFORM_FAILED resolution.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+        """
+        playbook = tmp_path / "play.yml"
+        playbook.write_text("- name: test\n  debug: msg=hi\n")
+
+        captured: list[ViolationDict] = []
+
+        def scan_fn(paths: list[str]) -> list[ViolationDict]:
+            return [{"rule_id": "STUB", "file": str(playbook), "line": 1}]
+
+        def noop_transform(content: str, violation: ViolationDict) -> TransformResult:
+            captured.append(violation)
+            return TransformResult(content, False)
+
+        reg = TransformRegistry()
+        reg.register("STUB", noop_transform)
+        engine = RemediationEngine(reg, scan_fn, max_passes=2)
+
+        engine.remediate([str(playbook)], apply=False)
+        assert len(captured) >= 1
+        assert captured[0].get("remediation_class") == RemediationClass.AI_CANDIDATE
+        assert captured[0].get("remediation_resolution") == RemediationResolution.TRANSFORM_FAILED
+
+    def test_oscillation_sets_resolution(self, tmp_path: Path) -> None:
+        """Verifies oscillation sets OSCILLATION resolution on remaining Tier 1 violations.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+        """
+        playbook = tmp_path / "play.yml"
+        playbook.write_text("- name: test\n  debug: msg=hi\n")
+
+        def scan_fn(paths: list[str]) -> list[ViolationDict]:
+            return [{"rule_id": "FLIP", "file": str(playbook), "line": 1}]
+
+        def flip_transform(content: str, violation: ViolationDict) -> TransformResult:
+            return TransformResult(content + "\n# flipped", True)
+
+        reg = TransformRegistry()
+        reg.register("FLIP", flip_transform)
+        engine = RemediationEngine(reg, scan_fn, max_passes=3)
+
+        report = engine.remediate([str(playbook)], apply=True)
+        assert report.oscillation_detected is True
+
+    def test_remaining_violations_have_classification(self, tmp_path: Path) -> None:
+        """Verifies remaining violations carry remediation_class and remediation_resolution.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+        """
+        playbook = tmp_path / "play.yml"
+        playbook.write_text("- name: test\n  debug: msg=hi\n")
+
+        def scan_fn(paths: list[str]) -> list[ViolationDict]:
+            return [
+                {"rule_id": "UNKNOWN", "file": str(playbook), "line": 1},
+                {"rule_id": "MANUAL", "file": str(playbook), "line": 2, "ai_proposable": False},
+            ]
+
+        reg = TransformRegistry()
+        engine = RemediationEngine(reg, scan_fn, max_passes=1)
+
+        report = engine.remediate([str(playbook)], apply=False)
+        for v in report.remaining_ai + report.remaining_manual:
+            assert "remediation_class" in v
+            assert "remediation_resolution" in v
+            assert v["remediation_resolution"] == RemediationResolution.UNRESOLVED
 
 
 # ---------------------------------------------------------------------------
