@@ -396,6 +396,33 @@ def severity_indicator(level: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Remediation badges
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Map remediation class to display label and style
+REMEDIATION_DISPLAY: dict[str, tuple[str, str]] = {
+    "auto-fixable": ("FIX", Style.BG_GREEN + Style.WHITE + Style.BOLD),
+    "ai-candidate": ("AI", Style.BG_BLUE + Style.WHITE),
+    "manual-review": ("MANUAL", Style.BG_MAGENTA + Style.WHITE),
+}
+
+
+def remediation_badge(classification: str) -> str:
+    """Return a colored badge for a remediation classification.
+
+    Args:
+        classification: Remediation class (auto-fixable, ai-candidate, manual-review)
+
+    Returns:
+        Styled badge like " FIX " with colored background
+    """
+    classification_lower = classification.lower() if classification else "ai-candidate"
+    label, styles = REMEDIATION_DISPLAY.get(classification_lower, ("?", Style.DIM))
+    padded = f" {label} "
+    return style(padded, styles)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Box drawing
 # ─────────────────────────────────────────────────────────────────────────────
 

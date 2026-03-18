@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from apme_engine.engine.models import ViolationDict
+from apme_engine.engine.models import RemediationClass
 from apme_engine.remediation.registry import TransformRegistry
 
 
@@ -66,3 +67,62 @@ def partition_violations(
             tier3.append(v)
 
     return tier1, tier2, tier3
+
+
+def classify_violation(violation: ViolationDict, registry: TransformRegistry) -> str:
+    """Return remediation class: auto-fixable, ai-candidate, or manual-review.
+
+    Args:
+        violation: Violation dict with rule_id.
+        registry: Transform registry to check for deterministic transforms.
+
+    Returns:
+        One of RemediationClass.AUTO_FIXABLE, AI_CANDIDATE, or MANUAL_REVIEW.
+    """
+    if is_finding_resolvable(violation, registry):
+        return RemediationClass.AUTO_FIXABLE
+    elif violation.get("ai_proposable", True):
+        return RemediationClass.AI_CANDIDATE
+    else:
+        return RemediationClass.MANUAL_REVIEW
+
+
+def add_classification_to_violations(
+    violations: list[ViolationDict],
+    registry: TransformRegistry,
+) -> list[ViolationDict]:
+    """Add remediation_class field to each violation.
+
+    Args:
+        violations: List of violation dicts.
+        registry: Transform registry for Tier 1 lookup.
+
+    Returns:
+        Same list with remediation_class field added to each violation.
+    """
+    for v in violations:
+        v["remediation_class"] = classify_violation(v, registry)
+    return violations
+
+
+def count_by_remediation_class(violations: list[ViolationDict]) -> dict[str, int]:
+    """Count violations by remediation class.
+
+    Args:
+        violations: List of violations with remediation_class field.
+
+    Returns:
+        Dict with counts keyed by remediation class.
+    """
+    counts = {
+        RemediationClass.AUTO_FIXABLE: 0,
+        RemediationClass.AI_CANDIDATE: 0,
+        RemediationClass.MANUAL_REVIEW: 0,
+    }
+    for v in violations:
+        rc = v.get("remediation_class", RemediationClass.AI_CANDIDATE)
+        if rc in counts:
+            counts[rc] += 1
+        else:
+            counts[RemediationClass.AI_CANDIDATE] += 1
+    return counts

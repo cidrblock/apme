@@ -25,6 +25,7 @@ from apme_engine.ansi import (
     green,
     magenta,
     red,
+    remediation_badge,
     severity_badge,
     severity_indicator,
     table,
@@ -40,9 +41,13 @@ from apme_engine.collection_cache import (
 from apme_engine.daemon.chunked_fs import yield_scan_chunks
 from apme_engine.daemon.health_check import run_health_checks
 from apme_engine.daemon.violation_convert import violation_proto_to_dict
-from apme_engine.engine.models import ViolationDict, YAMLDict
+from apme_engine.engine.models import RemediationClass, ViolationDict, YAMLDict
 from apme_engine.formatter import format_directory, format_file
 from apme_engine.remediation.engine import RemediationEngine
+from apme_engine.remediation.partition import (
+    add_classification_to_violations,
+    count_by_remediation_class,
+)
 from apme_engine.remediation.transforms import build_default_registry
 from apme_engine.runner import run_scan
 from apme_engine.validators.ansible import AnsibleValidator
@@ -67,11 +72,11 @@ def _sort_violations(violations: list[ViolationDict]) -> list[ViolationDict]:
         f = str(v.get("file") or "")
         line = v.get("line")
         resolved: int | float = 0
-        if isinstance(line, (int, float)):
+        if isinstance(line, int | float):
             resolved = line
-        elif isinstance(line, (list, tuple)) and line:
+        elif isinstance(line, list | tuple) and line:
             first = line[0]
-            resolved = first if isinstance(first, (int, float)) else 0
+            resolved = first if isinstance(first, int | float) else 0
         return (f, resolved)
 
     return sorted(violations, key=key)
@@ -91,7 +96,7 @@ def _deduplicate_violations(violations: list[ViolationDict]) -> list[ViolationDi
     out: list[ViolationDict] = []
     for v in violations:
         line: str | int | list[int] | tuple[int, ...] | bool | None = v.get("line")
-        if isinstance(line, (list, tuple)):
+        if isinstance(line, list | tuple):
             line = tuple(line)
         dedup_key = (str(v.get("rule_id", "")), str(v.get("file", "")), line)
         if dedup_key not in seen:
@@ -276,6 +281,26 @@ def _count_by_severity(violations: list[ViolationDict]) -> dict[str, int]:
     return counts
 
 
+def _format_remediation_summary(violations: list[ViolationDict]) -> str:
+    """Format remediation summary line.
+
+    Args:
+        violations: List of violations with remediation_class field.
+
+    Returns:
+        Summary string like "3 auto-fixable, 2 AI-candidate, 1 manual-review".
+    """
+    counts = count_by_remediation_class(violations)
+    parts = []
+    if counts[RemediationClass.AUTO_FIXABLE]:
+        parts.append(green(f"{counts[RemediationClass.AUTO_FIXABLE]} auto-fixable"))
+    if counts[RemediationClass.AI_CANDIDATE]:
+        parts.append(cyan(f"{counts[RemediationClass.AI_CANDIDATE]} AI-candidate"))
+    if counts[RemediationClass.MANUAL_REVIEW]:
+        parts.append(magenta(f"{counts[RemediationClass.MANUAL_REVIEW]} manual-review"))
+    return ", ".join(parts) if parts else "none"
+
+
 def _group_by_file(violations: list[ViolationDict]) -> dict[str, list[ViolationDict]]:
     """Group violations by file.
 
@@ -335,6 +360,9 @@ def _render_scan_results(
     else:
         summary_lines.append(green("No issues found"))
 
+    if violations:
+        summary_lines.append("Remediation: " + _format_remediation_summary(violations))
+
     if scan_time_ms is not None:
         summary_lines.append(f"Time: {_fmt_ms(scan_time_ms)}")
 
@@ -344,25 +372,26 @@ def _render_scan_results(
     if not violations:
         return
 
-    headers = ["Rule", "Severity", "Message", "Location"]
+    headers = ["Rule", "Severity", "Remediation", "Message", "Location"]
     rows = []
     for v in violations:
         rule_id = str(v.get("rule_id") or "?")
         level = str(v.get("level") or "none")
+        rem_class = str(v.get("remediation_class") or RemediationClass.AI_CANDIDATE)
         message = str(v.get("message") or "")
         if len(message) > 50:
             message = message[:47] + "..."
 
         file_path = str(v.get("file") or "")
         line = v.get("line")
-        if isinstance(line, (list, tuple)) and len(line) >= 2:
+        if isinstance(line, list | tuple) and len(line) >= 2:
             location = f"{file_path}:{line[0]}-{line[1]}"
         elif line is not None:
             location = f"{file_path}:{line}"
         else:
             location = file_path
 
-        rows.append([rule_id, severity_badge(level), message, dim(location)])
+        rows.append([rule_id, severity_badge(level), remediation_badge(rem_class), message, dim(location)])
 
     print(bold("Issues"))
     print(table(headers, rows))
@@ -384,9 +413,9 @@ def _render_scan_results(
             v_prefix = TREE_LAST if is_last_v else TREE_MID
             indicator = severity_indicator(str(v.get("level") or "none"))
             line = v.get("line")
-            if isinstance(line, (list, tuple)) and len(line) >= 2:
+            if isinstance(line, list | tuple) and len(line) >= 2:
                 line_str = f"{line[0]}-{line[1]}"
-            elif isinstance(line, (list, tuple)):
+            elif isinstance(line, list | tuple):
                 line_str = str(line[0])
             elif line is not None:
                 line_str = str(line)
@@ -446,6 +475,10 @@ def _run_scan(args: argparse.Namespace) -> None:
         violations.extend(result)  # type: ignore[arg-type]
     violations = _deduplicate_violations(_sort_violations(violations))
 
+    # Add remediation classification to each violation
+    registry = build_default_registry()
+    violations = add_classification_to_violations(violations, registry)
+
     if not validators:
         if args.json:
             print(json.dumps({"hierarchy_payload": context.hierarchy_payload}))
@@ -454,7 +487,21 @@ def _run_scan(args: argparse.Namespace) -> None:
         return
 
     if args.json:
-        print(json.dumps({"violations": violations, "count": len(violations)}, indent=2))
+        rem_counts = count_by_remediation_class(violations)
+        print(
+            json.dumps(
+                {
+                    "violations": violations,
+                    "count": len(violations),
+                    "remediation_summary": {
+                        "auto_fixable": rem_counts[RemediationClass.AUTO_FIXABLE],
+                        "ai_candidate": rem_counts[RemediationClass.AI_CANDIDATE],
+                        "manual_review": rem_counts[RemediationClass.MANUAL_REVIEW],
+                    },
+                },
+                indent=2,
+            )
+        )
         return
 
     payload: YAMLDict = context.hierarchy_payload or {}
@@ -462,6 +509,29 @@ def _run_scan(args: argparse.Namespace) -> None:
         violations,
         scan_id=str(payload.get("scan_id", "")),
     )
+
+    # Handle --auto-fix: apply Tier 1 fixes
+    if getattr(args, "auto_fix", False):
+        rem_counts = count_by_remediation_class(violations)
+        fixable = rem_counts[RemediationClass.AUTO_FIXABLE]
+        if fixable > 0:
+            sys.stderr.write(f"\nApplying {fixable} auto-fixable remediation(s)...\n")
+            # Create a namespace for _run_fix
+            fix_args = argparse.Namespace(
+                target=args.target,
+                apply=True,
+                check=False,
+                exclude=None,
+                max_passes=5,
+                opa_bundle=getattr(args, "opa_bundle", None),
+                ansible_version=getattr(args, "ansible_version", None),
+                collections=getattr(args, "collections", None),
+                session=getattr(args, "session", None),
+                session_ttl=getattr(args, "session_ttl", 3600),
+            )
+            _run_fix(fix_args)
+        else:
+            sys.stderr.write("\nNo auto-fixable issues found.\n")
 
 
 def _run_scan_grpc(args: argparse.Namespace, primary_addr: str) -> None:
@@ -498,10 +568,24 @@ def _run_scan_grpc(args: argparse.Namespace, primary_addr: str) -> None:
     violations: list[ViolationDict] = [violation_proto_to_dict(v) for v in resp.violations]
     violations = _deduplicate_violations(_sort_violations(violations))
 
+    # Add remediation classification if not already present from server
+    registry = build_default_registry()
+    violations = add_classification_to_violations(violations, registry)
+
     has_diag = resp.HasField("diagnostics")
 
     if args.json:
-        out = {"violations": violations, "count": len(violations), "scan_id": resp.scan_id}
+        rem_counts = count_by_remediation_class(violations)
+        out: dict[str, object] = {
+            "violations": violations,
+            "count": len(violations),
+            "scan_id": resp.scan_id,
+            "remediation_summary": {
+                "auto_fixable": rem_counts[RemediationClass.AUTO_FIXABLE],
+                "ai_candidate": rem_counts[RemediationClass.AI_CANDIDATE],
+                "manual_review": rem_counts[RemediationClass.MANUAL_REVIEW],
+            },
+        }
         if verbosity and has_diag:
             out["diagnostics"] = _diag_to_dict(resp.diagnostics)
         print(json.dumps(out, indent=2))
@@ -974,6 +1058,11 @@ def main() -> None:
         action="count",
         default=0,
         help="Diagnostics verbosity: -v for summary + top 10, -vv for full per-rule breakdown",
+    )
+    scan_parser.add_argument(
+        "--auto-fix",
+        action="store_true",
+        help="Apply auto-fixable (Tier 1) remediations after scan",
     )
 
     cache_parser = subparsers.add_parser(

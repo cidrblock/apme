@@ -26,6 +26,21 @@ YAMLList = list[YAMLValue]
 # Violation dicts from validators (rule_id, level, message, file, line, path, etc.)
 ViolationDict = dict[str, str | int | list[int] | bool | None]
 
+
+class RemediationClass:
+    """Classification of remediation complexity for violations.
+
+    Attributes:
+        AUTO_FIXABLE: Tier 1 - deterministic transform exists.
+        AI_CANDIDATE: Tier 2 - AI can propose fix.
+        MANUAL_REVIEW: Tier 3 - requires human judgment.
+    """
+
+    AUTO_FIXABLE = "auto-fixable"
+    AI_CANDIDATE = "ai-candidate"
+    MANUAL_REVIEW = "manual-review"
+
+
 from . import yaml as ariyaml  # noqa: E402
 from .finder import (  # noqa: E402
     identify_lines_with_jsonpath,
@@ -1183,7 +1198,7 @@ class Arguments:
         else:
             if isinstance(self.raw, dict):
                 sub_raw = self.raw.get(key, None)
-                if self.templated and isinstance(self.templated, (list, tuple)):
+                if self.templated and isinstance(self.templated, list | tuple):
                     first: YAMLValue = self.templated[0]
                     sub_templated = first.get(key, None) if isinstance(first, dict) else self.templated
             else:

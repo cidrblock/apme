@@ -4,9 +4,12 @@ import textwrap
 from pathlib import Path
 from typing import cast
 
-from apme_engine.engine.models import ViolationDict
+from apme_engine.engine.models import RemediationClass, ViolationDict
 from apme_engine.remediation.engine import RemediationEngine
 from apme_engine.remediation.partition import (
+    add_classification_to_violations,
+    classify_violation,
+    count_by_remediation_class,
     is_finding_resolvable,
     normalize_rule_id,
     partition_violations,
@@ -139,6 +142,53 @@ class TestPartition:
         assert t2[0]["rule_id"] == "R118"
         assert len(t3) == 1
         assert t3[0]["rule_id"] == "POLICY"
+
+    def test_classify_violation_auto_fixable(self) -> None:
+        """Verifies classify_violation returns auto-fixable for registered rules."""
+        reg = TransformRegistry()
+        reg.register("L021", lambda c, v: TransformResult(c, False))
+        assert classify_violation({"rule_id": "L021"}, reg) == RemediationClass.AUTO_FIXABLE
+        assert classify_violation({"rule_id": "native:L021"}, reg) == RemediationClass.AUTO_FIXABLE
+
+    def test_classify_violation_ai_candidate(self) -> None:
+        """Verifies classify_violation returns ai-candidate for unregistered rules."""
+        reg = TransformRegistry()
+        assert classify_violation({"rule_id": "R118"}, reg) == RemediationClass.AI_CANDIDATE
+        assert classify_violation({"rule_id": "L999", "ai_proposable": True}, reg) == RemediationClass.AI_CANDIDATE
+
+    def test_classify_violation_manual_review(self) -> None:
+        """Verifies classify_violation returns manual-review when ai_proposable is False."""
+        reg = TransformRegistry()
+        assert classify_violation({"rule_id": "POLICY", "ai_proposable": False}, reg) == RemediationClass.MANUAL_REVIEW
+
+    def test_add_classification_to_violations(self) -> None:
+        """Verifies add_classification_to_violations adds remediation_class field."""
+        reg = TransformRegistry()
+        reg.register("L021", lambda c, v: TransformResult(c, False))
+
+        violations: list[ViolationDict] = [
+            {"rule_id": "L021"},
+            {"rule_id": "R118"},
+            {"rule_id": "POLICY", "ai_proposable": False},
+        ]
+        result = add_classification_to_violations(violations, reg)
+        assert len(result) == 3
+        assert result[0]["remediation_class"] == RemediationClass.AUTO_FIXABLE
+        assert result[1]["remediation_class"] == RemediationClass.AI_CANDIDATE
+        assert result[2]["remediation_class"] == RemediationClass.MANUAL_REVIEW
+
+    def test_count_by_remediation_class(self) -> None:
+        """Verifies count_by_remediation_class returns correct counts."""
+        violations: list[ViolationDict] = [
+            {"rule_id": "L021", "remediation_class": RemediationClass.AUTO_FIXABLE},
+            {"rule_id": "L022", "remediation_class": RemediationClass.AUTO_FIXABLE},
+            {"rule_id": "R118", "remediation_class": RemediationClass.AI_CANDIDATE},
+            {"rule_id": "POLICY", "remediation_class": RemediationClass.MANUAL_REVIEW},
+        ]
+        counts = count_by_remediation_class(violations)
+        assert counts[RemediationClass.AUTO_FIXABLE] == 2
+        assert counts[RemediationClass.AI_CANDIDATE] == 1
+        assert counts[RemediationClass.MANUAL_REVIEW] == 1
 
 
 # ---------------------------------------------------------------------------

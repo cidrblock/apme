@@ -16,6 +16,7 @@ from apme_engine.ansi import (
     green,
     ljust_ansi,
     red,
+    remediation_badge,
     reset_color_detection,
     rjust_ansi,
     section_header,
@@ -387,6 +388,73 @@ class TestSeverityBadge:
         indicator = severity_indicator("very_low")
         assert "i" in strip_ansi(indicator)
         assert Style.CYAN in indicator
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Remediation badge tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestRemediationBadge:
+    """Test remediation badge rendering."""
+
+    def test_badge_auto_fixable(self, force_color: None) -> None:
+        """Auto-fixable shows FIX badge with green background.
+
+        Args:
+            force_color: Fixture that enables color output.
+        """
+        badge = remediation_badge("auto-fixable")
+        assert "FIX" in strip_ansi(badge)
+        assert Style.BG_GREEN in badge
+
+    def test_badge_ai_candidate(self, force_color: None) -> None:
+        """AI-candidate shows AI badge with blue background.
+
+        Args:
+            force_color: Fixture that enables color output.
+        """
+        badge = remediation_badge("ai-candidate")
+        assert "AI" in strip_ansi(badge)
+        assert Style.BG_BLUE in badge
+
+    def test_badge_manual_review(self, force_color: None) -> None:
+        """Manual-review shows MANUAL badge with magenta background.
+
+        Args:
+            force_color: Fixture that enables color output.
+        """
+        badge = remediation_badge("manual-review")
+        assert "MANUAL" in strip_ansi(badge)
+        assert Style.BG_MAGENTA in badge
+
+    def test_badge_case_insensitive(self, force_color: None) -> None:
+        """Badge lookup is case-insensitive.
+
+        Args:
+            force_color: Fixture that enables color output.
+        """
+        assert strip_ansi(remediation_badge("AUTO-FIXABLE")) == strip_ansi(remediation_badge("auto-fixable"))
+        assert strip_ansi(remediation_badge("AI-Candidate")) == strip_ansi(remediation_badge("ai-candidate"))
+
+    def test_badge_unknown_class(self, force_color: None) -> None:
+        """Unknown class shows ? badge.
+
+        Args:
+            force_color: Fixture that enables color output.
+        """
+        badge = remediation_badge("unknown")
+        assert "?" in strip_ansi(badge)
+
+    def test_badge_no_color(self, no_color: None) -> None:
+        """Badge shows label without styling when NO_COLOR.
+
+        Args:
+            no_color: Fixture that disables color output.
+        """
+        badge = remediation_badge("auto-fixable")
+        assert badge == " FIX "
+        assert "\033[" not in badge
 
 
 # ─────────────────────────────────────────────────────────────────────────────
