@@ -212,7 +212,7 @@ def _run_argspec_script(
         task_key = rv.get("task_key", "")
         task = task_by_key.get(task_key, {})
         line = task.get("line")
-        line_num = line[0] if isinstance(line, (list, tuple)) and line else 1
+        line_num = line[0] if isinstance(line, list | tuple) and line else 1
         violations.append(
             {
                 "rule_id": RULE_ID,

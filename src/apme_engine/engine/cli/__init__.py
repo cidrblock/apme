@@ -315,7 +315,7 @@ class ARICLI:
                                                 mutated_yaml_list.append(mutated_yaml)
                                                 temp_file_path = target_file_path
                                             line_number = w007_rule["file"][1]
-                                            if isinstance(line_number, (list, tuple)) and len(line_number) >= 2:
+                                            if isinstance(line_number, list | tuple) and len(line_number) >= 2:
                                                 ln_str = f"{line_number[0]}-{line_number[1]}"
                                             elif isinstance(line_number, int):
                                                 ln_str = f"{line_number}-{line_number}"

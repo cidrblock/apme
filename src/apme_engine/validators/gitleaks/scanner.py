@@ -153,8 +153,8 @@ def _convert_findings(
 
         line_val = f.get("StartLine", 0)
         end_val = f.get("EndLine", line_val)
-        line = int(line_val) if isinstance(line_val, (int, float, str)) else 0
-        end_line = int(end_val) if isinstance(end_val, (int, float, str)) else line
+        line = int(line_val) if isinstance(line_val, int | float | str) else 0
+        end_line = int(end_val) if isinstance(end_val, int | float | str) else line
         gitleaks_rule = str(f.get("RuleID", "unknown"))
         desc = str(f.get("Description", f"Secret detected: {gitleaks_rule}"))
 

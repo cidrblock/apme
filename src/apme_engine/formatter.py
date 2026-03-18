@@ -277,7 +277,7 @@ def format_content(text: str, filename: str = "<stdin>") -> FormatResult:
             diff="",
         )
 
-    if data is None or not isinstance(data, (CommentedMap, CommentedSeq, list, dict)):
+    if data is None or not isinstance(data, CommentedMap | CommentedSeq | list | dict):
         return FormatResult(
             path=Path(filename),
             original=original,

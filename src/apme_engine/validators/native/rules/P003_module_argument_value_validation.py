@@ -160,7 +160,7 @@ class ModuleArgumentValueValidationRule(Rule):
                             elif is_loop_var(str(raw_value), task):
                                 # if the variable is loop var, use the element type as actual type
                                 resolved_element: YAMLValue | None = None
-                                if isinstance(resolved_value, (list, tuple)) and resolved_value:
+                                if isinstance(resolved_value, list | tuple) and resolved_value:
                                     resolved_element = resolved_value[0]
                                 if resolved_element is not None:
                                     actual_type = type(resolved_element).__name__

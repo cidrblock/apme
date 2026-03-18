@@ -913,7 +913,7 @@ class SingleScan:
         if spec:
             d["file"] = getattr(spec, "defined_in", "") or ""
             line_num = getattr(spec, "line_num_in_file", None) or getattr(spec, "line_number", None)
-            if line_num and isinstance(line_num, (list, tuple)) and len(line_num) >= 2:
+            if line_num and isinstance(line_num, list | tuple) and len(line_num) >= 2:
                 d["line"] = [int(line_num[0]), int(line_num[1])]
             else:
                 d["line"] = None
@@ -1025,9 +1025,9 @@ class SingleScan:
         """
         if v is None:
             return None
-        if isinstance(v, (str, int, float, bool)):
+        if isinstance(v, str | int | float | bool):
             return v
-        if isinstance(v, (list, tuple)):
+        if isinstance(v, list | tuple):
             return [self._json_safe(x) for x in v]
         if isinstance(v, dict):
             return {str(k): self._json_safe(x) for k, x in v.items()}
@@ -1218,14 +1218,14 @@ class SingleScan:
             defs_dict = defs_val if isinstance(defs_val, dict) else {}
             for key, val in defs_dict.items():
                 _current = ext_counts.get(key, 0)
-                _current += len(val) if isinstance(val, (list, dict)) else 0
+                _current += len(val) if isinstance(val, list | dict) else 0
                 ext_counts[key] = _current
         root_counts: dict[str, int] = {}
         root_defs_val = self.root_definitions.get("definitions")
         root_defs_dict = root_defs_val if isinstance(root_defs_val, dict) else {}
         for key, val in root_defs_dict.items():
             _current = root_counts.get(key, 0)
-            _current += len(val) if isinstance(val, (list, dict)) else 0
+            _current += len(val) if isinstance(val, list | dict) else 0
             root_counts[key] = _current
         return dep_num, ext_counts, root_counts
 
@@ -1642,11 +1642,11 @@ class ARIScanner:
             _tf = defs_dict.get("taskfiles")
             _tk = defs_dict.get("tasks")
             _md = defs_dict.get("modules")
-            playbooks_num = len(_pb) if isinstance(_pb, (list, dict)) else 0
-            roles_num = len(_rl) if isinstance(_rl, (list, dict)) else 0
-            taskfiles_num = len(_tf) if isinstance(_tf, (list, dict)) else 0
-            tasks_num = len(_tk) if isinstance(_tk, (list, dict)) else 0
-            modules_num = len(_md) if isinstance(_md, (list, dict)) else 0
+            playbooks_num = len(_pb) if isinstance(_pb, list | dict) else 0
+            roles_num = len(_rl) if isinstance(_rl, list | dict) else 0
+            taskfiles_num = len(_tf) if isinstance(_tf, list | dict) else 0
+            tasks_num = len(_tk) if isinstance(_tk, list | dict) else 0
+            modules_num = len(_md) if isinstance(_md, list | dict) else 0
             logger.debug(
                 f"playbooks: {playbooks_num}, roles: {roles_num}, taskfiles: {taskfiles_num}, "
                 f"tasks: {tasks_num}, modules: {modules_num}"

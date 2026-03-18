@@ -57,13 +57,13 @@ def _extract_task_nodes(hierarchy_payload: YAMLDict | None) -> list[dict[str, ob
     if hierarchy_payload is None:
         return nodes
     hierarchy = hierarchy_payload.get("hierarchy", [])
-    if not isinstance(hierarchy, (list, tuple)):
+    if not isinstance(hierarchy, list | tuple):
         return nodes
     for tree in hierarchy:
         if not isinstance(tree, dict):
             continue
         raw_nodes = tree.get("nodes", [])
-        if not isinstance(raw_nodes, (list, tuple)):
+        if not isinstance(raw_nodes, list | tuple):
             continue
         for node in raw_nodes:
             if isinstance(node, dict) and node.get("type") == "taskcall":

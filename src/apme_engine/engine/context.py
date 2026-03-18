@@ -305,7 +305,7 @@ class Context:
                 current = self.var_set_history.get(key, [])
                 current.append(Variable(name=key, value=val, type=VariableType.RoleVars, setter=_spec.key))
                 self.var_set_history[key] = current
-        elif isinstance(_spec, (Collection, TaskFile)):
+        elif isinstance(_spec, Collection | TaskFile):
             self.variables.update(_spec.variables)
             self.update_flat_vars(_spec.variables)
         elif isinstance(_spec, Task):
@@ -510,9 +510,9 @@ class Context:
         lines: list[str] = []
         for chain_item in self.chain:
             obj_raw = chain_item.get("obj", None)
-            obj = obj_raw if isinstance(obj_raw, (Object, CallObject)) or obj_raw is None else None
+            obj = obj_raw if isinstance(obj_raw, Object | CallObject) or obj_raw is None else None
             depth_val = chain_item.get("depth", 0)
-            depth = int(depth_val) if isinstance(depth_val, (int, float)) else 0
+            depth = int(depth_val) if isinstance(depth_val, int | float) else 0
             indent = "  " * depth
             obj_type = type(obj).__name__ if obj else "None"
             obj_name = getattr(obj, "name", "") or getattr(obj, "key", "") if obj else ""

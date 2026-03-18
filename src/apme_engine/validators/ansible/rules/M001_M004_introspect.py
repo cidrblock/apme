@@ -146,7 +146,7 @@ def run(
 
         file_path = str(node.get("file", ""))
         line = node.get("line")
-        line_num = line[0] if isinstance(line, (list, tuple)) and line else 1
+        line_num = line[0] if isinstance(line, list | tuple) and line else 1
 
         # M004: Tombstoned / removed module
         if info.get("removed"):

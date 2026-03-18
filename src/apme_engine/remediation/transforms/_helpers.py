@@ -17,10 +17,10 @@ def violation_line_to_int(violation: ViolationDict) -> int:
         1-indexed line number, or 0 if missing/invalid.
     """
     line = violation.get("line", 0)
-    if isinstance(line, (list, tuple)) and line:
+    if isinstance(line, list | tuple) and line:
         val = line[0]
-        return int(val) if isinstance(val, (int, float, str)) else 0
-    if isinstance(line, (int, float)):
+        return int(val) if isinstance(val, int | float | str) else 0
+    if isinstance(line, int | float):
         return int(line)
     if isinstance(line, str):
         raw = line.lstrip("L")
