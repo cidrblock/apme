@@ -1,0 +1,46 @@
+- hosts: all
+  become_user: deployer
+  vars:
+    ansible_python_interpreter: /usr/bin/python2.7
+  tasks:
+    - shell: apt-get update && apt-get install -y nginx
+    - name: copy config
+      copy:
+        src: nginx.conf
+        dest: /etc/nginx/nginx.conf
+    - name: greeting
+      command: echo {{ greeting }}
+    - include: tasks/setup.yml
+    - name: install packages
+      yum:
+        name: "{{ item }}"
+        state: latest
+      with_items:
+        - vim
+        - curl
+        - wget
+    - name: set permissions
+      file:
+        path: /opt/app
+        mode: 755
+        state: directory
+    - name: run deploy script
+      shell: |
+        cd /opt/app && make build | tee build.log
+    - name: check result
+      shell: cat /var/log/deploy.log
+      ignore_errors: true
+      become: true
+    - name: configure app
+      local_action: template src=app.conf.j2 dest=/etc/app/app.conf
+    - name: wait for restart
+      command: sleep 10
+      when: "{{ needs_restart }}"
+    - name: check if empty
+      debug:
+        msg: "variable is empty"
+      when: my_var == ""
+    - name: set flag
+      set_fact:
+        is_ready: true
+      when: deploy_result == true
