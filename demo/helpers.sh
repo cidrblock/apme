@@ -5,6 +5,7 @@ set -euo pipefail
 
 DEMO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TYPE_SPEED="${TYPE_SPEED:-0.04}"
+LINE_DELAY="${LINE_DELAY:-0.03}"
 PROMPT_CHAR="${PROMPT_CHAR:-$}"
 
 # Print a bold section header with a full-width separator
@@ -42,6 +43,23 @@ type_cmd() {
     echo ""
     sleep 0.3
     eval "$cmd"
+}
+
+# Simulate typing a command, execute it, and display output line-by-line
+slow_cmd() {
+    local cmd="$1"
+    local delay="${2:-$LINE_DELAY}"
+    printf '\e[1;32m%s \e[0m' "$PROMPT_CHAR"
+    for ((i = 0; i < ${#cmd}; i++)); do
+        printf '%s' "${cmd:$i:1}"
+        sleep "$TYPE_SPEED"
+    done
+    echo ""
+    sleep 0.3
+    eval "$cmd" 2>&1 | while IFS= read -r line; do
+        printf '%s\n' "$line"
+        sleep "$delay"
+    done
 }
 
 # Simulate typing a command but do NOT execute it (just show it)

@@ -50,7 +50,7 @@ comment "Every org has one. This is ours."
 echo ""
 pause 3
 
-type_cmd "cat $WORK_DIR/site.yml"
+slow_cmd "cat $WORK_DIR/site.yml"
 pause 6
 
 # ── ACT 5: Scan ──────────────────────────────────────────────────────
@@ -62,7 +62,7 @@ comment "Find everything wrong..."
 echo ""
 pause 2
 
-type_cmd "apme-scan scan $WORK_DIR/"
+slow_cmd "apme-scan scan $WORK_DIR/"
 pause 6
 
 # ── ACT 6: Fix ───────────────────────────────────────────────────────
@@ -75,7 +75,7 @@ comment "All deterministic. No AI needed."
 echo ""
 pause 3
 
-type_cmd "apme-scan fix $WORK_DIR/ --apply --no-ai --max-passes 10"
+slow_cmd "apme-scan fix $WORK_DIR/ --apply --no-ai --max-passes 10"
 pause 6
 
 # ── ACT 7: Re-scan ───────────────────────────────────────────────────
@@ -87,20 +87,20 @@ comment "How many violations remain?"
 echo ""
 pause 2
 
-type_cmd "apme-scan scan $WORK_DIR/"
+slow_cmd "apme-scan scan $WORK_DIR/"
 pause 6
 
 # ── ACT 8: Before / After ────────────────────────────────────────────
 fresh
 banner "Before"
 pause 2
-type_cmd "cat $PLAYBOOK_DIR/site.yml"
+slow_cmd "cat $PLAYBOOK_DIR/site.yml"
 pause 6
 
 fresh
 banner "After"
 pause 2
-type_cmd "cat $WORK_DIR/site.yml"
+slow_cmd "cat $WORK_DIR/site.yml"
 pause 6
 
 # ── ACT 9: Summary ───────────────────────────────────────────────────
