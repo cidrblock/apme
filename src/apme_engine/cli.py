@@ -711,13 +711,19 @@ def _scan_files_grpc(
     file_paths: list[str],
     primary_addr: str,
     ansible_version: str | None = None,
+    collection_specs: list[str] | None = None,
 ) -> list[ViolationDict]:
     """Scan files via Primary gRPC daemon (fans out to all validators including OPA).
+
+    Each file gets its own ScanStream call so only the requested files are
+    scanned — avoids pulling in unrelated siblings from a shared parent
+    directory, which would inflate violation counts in the remediation loop.
 
     Args:
         file_paths: Paths to YAML files to scan.
         primary_addr: gRPC address of the Primary daemon (e.g. 127.0.0.1:50051).
         ansible_version: ansible-core version for plugin introspection; None uses default.
+        collection_specs: Optional collection specifiers for venv provisioning.
 
     Returns:
         Deduplicated, sorted list of violation dicts.
@@ -727,28 +733,27 @@ def _scan_files_grpc(
     if not yaml_files:
         return []
 
-    target = Path(yaml_files[0]).resolve().parent
-    if len(yaml_files) > 1:
-        target = Path(os.path.commonpath([str(Path(f).resolve().parent) for f in yaml_files]))
-
-    chunks = yield_scan_chunks(
-        str(target),
-        project_root_name="project",
-        ansible_core_version=ansible_version,
-    )
-
+    all_violations: list[ViolationDict] = []
     channel = grpc.insecure_channel(primary_addr)
     stub = primary_pb2_grpc.PrimaryStub(channel)  # type: ignore[no-untyped-call]
     try:
-        resp = stub.ScanStream(chunks, timeout=120)
-    except grpc.RpcError as e:
-        sys.stderr.write(f"gRPC scan error: {e.details()}\n")
-        return []
+        for fpath in yaml_files:
+            chunks = yield_scan_chunks(
+                fpath,
+                project_root_name="project",
+                ansible_core_version=ansible_version,
+                collection_specs=collection_specs,
+            )
+            try:
+                resp = stub.ScanStream(chunks, timeout=120)
+            except grpc.RpcError as e:
+                sys.stderr.write(f"gRPC scan error for {fpath}: {e.details()}\n")
+                continue
+            all_violations.extend(violation_proto_to_dict(v) for v in resp.violations)
     finally:
         channel.close()
 
-    violations: list[ViolationDict] = [violation_proto_to_dict(v) for v in resp.violations]
-    return _deduplicate_violations(_sort_violations(violations))
+    return _deduplicate_violations(_sort_violations(all_violations))
 
 
 def _scan_files_local(
@@ -849,7 +854,12 @@ def _apply_remediation(
     if primary_addr:
 
         def scan_fn(paths: list[str]) -> list[ViolationDict]:
-            return _scan_files_grpc(paths, primary_addr, ansible_version=ansible_version)
+            return _scan_files_grpc(
+                paths,
+                primary_addr,
+                ansible_version=ansible_version,
+                collection_specs=collection_specs,
+            )
 
         active_session_id = None
     else:
