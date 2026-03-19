@@ -5,7 +5,6 @@ import json
 import os
 import sys
 import time
-from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
 
@@ -765,7 +764,6 @@ def _scan_files_local(
     ansible_version: str | None = None,
     collection_specs: list[str] | None = None,
     session_id: str | None = None,
-    hierarchy_sink: list[Mapping[str, object]] | None = None,
 ) -> list[ViolationDict]:
     """In-process scan: engine + OPA + native + ansible validators. Returns violation dicts.
 
@@ -776,9 +774,6 @@ def _scan_files_local(
         ansible_version: ansible-core version for plugin introspection; None uses default.
         collection_specs: Optional collection specifiers for venv.
         session_id: Optional session ID for venv reuse across invocations.
-        hierarchy_sink: If provided, each scan's hierarchy_payload is
-            appended here so callers can build a NodeIndex without a
-            redundant second scan pass.
 
     Returns:
         Deduplicated, sorted list of violation dicts.
@@ -809,9 +804,6 @@ def _scan_files_local(
         if not context.hierarchy_payload:
             continue
 
-        if hierarchy_sink is not None:
-            hierarchy_sink.append(context.hierarchy_payload)
-
         validators: list[tuple[str, OpaValidator | NativeValidator | AnsibleValidator]] = [
             ("OPA", OpaValidator(opa_bundle)),
             ("Native", NativeValidator()),
@@ -824,25 +816,31 @@ def _scan_files_local(
     return _deduplicate_violations(_sort_violations(all_violations))
 
 
-def _build_node_index_from_payloads(
-    payloads: list[Mapping[str, object]],
+def _build_node_index_local(
+    file_paths: list[str],
+    repo_root: str,
 ) -> NodeIndex | None:
-    """Build a NodeIndex from already-collected hierarchy payloads.
-
-    This avoids a redundant second scan by reusing the payloads
-    captured during ``_scan_files_local`` via ``hierarchy_sink``.
+    """Run a lightweight scan to build a NodeIndex from hierarchy payloads.
 
     Args:
-        payloads: List of hierarchy_payload dicts from prior scans.
+        file_paths: YAML file paths to scan.
+        repo_root: Project root for engine context.
 
     Returns:
         NodeIndex if hierarchy data was found, else None.
     """
+    from apme_engine.runner import run_scan as _run_scan
+
     merged: dict[str, list[object]] = {"hierarchy": []}
-    for payload in payloads:
-        hierarchy = payload.get("hierarchy")
-        if isinstance(hierarchy, list):
-            merged["hierarchy"].extend(hierarchy)
+    for fpath in file_paths:
+        try:
+            context = _run_scan(fpath, repo_root, include_scandata=False)
+        except Exception:  # noqa: BLE001
+            continue
+        if context.hierarchy_payload:
+            merged["hierarchy"].extend(
+                context.hierarchy_payload.get("hierarchy", []),
+            )
     if not merged["hierarchy"]:
         return None
     return NodeIndex(merged)
@@ -905,11 +903,7 @@ def _apply_remediation(
         )
         active_session_id = session.session_id if session else None
 
-        hierarchy_payloads: list[Mapping[str, object]] = []
-        _capture_hierarchy = [True]
-
         def scan_fn(paths: list[str]) -> list[ViolationDict]:
-            sink = hierarchy_payloads if _capture_hierarchy[0] else None
             return _scan_files_local(
                 paths,
                 repo_root,
@@ -917,22 +911,17 @@ def _apply_remediation(
                 ansible_version=ansible_version,
                 collection_specs=collection_specs,
                 session_id=active_session_id,
-                hierarchy_sink=sink,
             )
 
+    # Build hierarchy index for violation enrichment (local mode only)
     node_index: NodeIndex | None = None
-
-    registry = build_default_registry()
-
     if not primary_addr:
-        initial_violations = scan_fn(yaml_files)
-        _capture_hierarchy[0] = False
-        node_index = _build_node_index_from_payloads(hierarchy_payloads)
+        sys.stderr.write("  Building hierarchy index...\n")
+        node_index = _build_node_index_local(yaml_files, repo_root)
         if node_index is not None:
             sys.stderr.write(f"  Indexed {len(node_index)} hierarchy nodes\n")
-    else:
-        initial_violations = None
 
+    registry = build_default_registry()
     engine = RemediationEngine(
         registry=registry,
         scan_fn=scan_fn,
@@ -945,11 +934,7 @@ def _apply_remediation(
     sys.stderr.write(f"  Transforms: {', '.join(registry.rule_ids)}\n")
     sys.stderr.write("  Remediating...\n")
 
-    report = engine.remediate(
-        yaml_files,
-        apply=apply,
-        initial_violations=initial_violations,
-    )
+    report = engine.remediate(yaml_files, apply=apply)
 
     if apply and report.applied_patches:
         patched_paths = {p.path for p in report.applied_patches}
