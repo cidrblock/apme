@@ -225,14 +225,14 @@ New module `src/apme_engine/daemon/launcher.py`:
 
 - `start_daemon()` — fork a background process that starts Primary + Native
   + OPA validators as async gRPC servers on localhost. Write PID and ports
-  to `~/.apme/daemon.json`. Optional services (Ansible, Gitleaks, Cache)
+  to `~/.apme-data/daemon.json`. Optional services (Ansible, Gitleaks, Cache)
   start lazily on first use.
 - `stop_daemon()` — read PID from state file, SIGTERM, remove state file.
 - `daemon_status()` — check PID liveness, return port info and uptime.
 - `ensure_daemon()` — called by CLI before each command: check for running
   daemon, auto-start if not found, wait for health.
 
-State file (`~/.apme/daemon.json`):
+State file (`~/.apme-data/daemon.json`):
 
 ```json
 {
@@ -248,7 +248,7 @@ Version field enables auto-restart when the installed package is updated.
 ### Backend discovery order
 
 1. `APME_PRIMARY_ADDRESS` env var — explicit, wins always (pod, CI)
-2. `~/.apme/daemon.json` exists and PID is alive — reuse running daemon
+2. `~/.apme-data/daemon.json` exists and PID is alive — reuse running daemon
 3. Nothing found — auto-start daemon, wait for health, then proceed
 
 ### CLI subcommand mapping (after refactor)
@@ -262,8 +262,10 @@ Version field enables auto-restart when the installed package is updated.
 | `health-check` | Health RPCs (existing)                | Render status                    |
 | `daemon`       | N/A (local process management)        | start / stop / status            |
 
-The `session` subcommand becomes unnecessary — venv lifecycle is managed by
-the Ansible validator service, not the CLI.
+The `session` subcommand (ADR-022) becomes a gRPC pass-through to the
+Ansible validator service rather than managing venvs locally. The CLI's
+`session list/info/delete/reap` commands remain available but delegate to
+the validator over gRPC instead of directly manipulating `~/.apme-data/`.
 
 ### Phased rollout
 
@@ -287,7 +289,7 @@ imports. At this point a Rust CLI rewrite is feasible.
 ### What the thin CLI keeps
 
 - Argument parsing and subcommand dispatch
-- Backend discovery (env var > daemon.json > auto-start)
+- Backend discovery (env var > `~/.apme-data/daemon.json` > auto-start)
 - File chunking via `yield_scan_chunks()` (already in `chunked_fs.py`)
 - Applying returned patches/diffs to local files
 - Output rendering (tables, JSON, diagnostics)
@@ -318,13 +320,17 @@ no longer imported by the CLI.
   convergence loop into the Primary, where it belongs
 - ADR-011: YAML formatter pre-pass — `FixStream` runs the formatter as
   Phase 1 server-side, matching the current `fix` pipeline
+- ADR-022: Session-scoped venvs — `session` CLI commands become gRPC
+  pass-throughs to the Ansible validator; venv lifecycle management
+  remains per ADR-022 but moves server-side
 
 ## References
 
-- Architecture review and plan: `.cursor/plans/thin_cli_refactor_e47328df.plan.md`
-- Engine architecture review: `.cursor/plans/engine_architecture_review_5e8be78c.plan.md`
-- PR #34 review: identified `collection_specs` divergence between local and
-  gRPC scan paths — a direct consequence of dual code paths
+- [PR #37](https://github.com/ansible/apme/pull/37): This ADR proposal and
+  discussion
+- [PR #34](https://github.com/ansible/apme/pull/34): Identified
+  `collection_specs` divergence between local and gRPC scan paths — a
+  direct consequence of dual code paths
 
 ---
 
