@@ -4776,7 +4776,7 @@ class Rule(RuleMetadata):
         """Return RuleMetadata for this rule.
 
         Returns:
-            RuleMetadata with rule_id, description, name, version, commit_id, severity, tags.
+            RuleMetadata with rule_id, description, name, version, commit_id, severity, tags, scope.
         """
         return RuleMetadata(
             rule_id=self.rule_id,
@@ -4786,6 +4786,7 @@ class Rule(RuleMetadata):
             commit_id=self.commit_id,
             severity=self.severity,
             tags=self.tags,
+            scope=self.scope,
         )
 
 
