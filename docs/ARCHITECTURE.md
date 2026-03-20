@@ -41,8 +41,8 @@ All gRPC servers use **`grpc.aio`** (fully async). Blocking work (engine scan, s
 | Service | Image | Port | Role |
 |---------|-------|------|------|
 | **Primary** | `apme-primary` | 50051 | Runs the engine (parse → annotate → hierarchy); fans out `ValidateRequest` to all validators in parallel; merges, deduplicates, and returns violations |
-| **Native** | `apme-native` | 50055 | Python rules operating on deserialized `scandata` (the full in-memory model). Rules L026–L056, R101–R501 |
-| **OPA** | `apme-opa` | 50054 | OPA binary (REST on 8181 internally) + Python gRPC wrapper. Rego rules L002–L025, R118 on the hierarchy JSON |
+| **Native** | `apme-native` | 50055 | Python rules operating on deserialized `scandata` (the full in-memory model). Rules L026–L060, M005/M010, P001–P004, R101–R501 |
+| **OPA** | `apme-opa` | 50054 | OPA binary (REST on 8181 internally) + Python gRPC wrapper. Rego rules L003–L025, M006/M008/M009/M011, R118 on the hierarchy JSON |
 | **Ansible** | `apme-ansible` | 50053 | Ansible-runtime checks using ephemeral per-request venvs (ansible-core 2.18/2.19/2.20). UV cache pre-warmed at build time; venvs created per request (~1-2s) and destroyed after. Rules L057–L059, M001–M004 |
 | **Gitleaks** | `apme-gitleaks` | 50056 | Gitleaks binary + Python gRPC wrapper. Scans raw files for hardcoded secrets, API keys, private keys. Filters vault-encrypted content and Jinja2 expressions. Rules SEC:* (800+ patterns) |
 | **Cache Maintainer** | `apme-cache-maintainer` | 50052 | Populates the collection cache from Galaxy and GitHub orgs. Writes to `/cache`; Ansible reads it `ro` |
@@ -57,12 +57,18 @@ Proto definitions live in `proto/apme/v1/`. Generated Python stubs in `src/apme/
 ```protobuf
 service Primary {
   rpc Scan(ScanRequest) returns (ScanResponse);
+  rpc ScanStream(stream ScanChunk) returns (ScanResponse);
   rpc Format(FormatRequest) returns (FormatResponse);
+  rpc FormatStream(stream ScanChunk) returns (FormatResponse);
   rpc Health(HealthRequest) returns (HealthResponse);
+  rpc FixSession(stream SessionCommand) returns (stream SessionEvent);  // ADR-028
+  rpc PullGalaxy(PullGalaxyRequest) returns (PullGalaxyResponse);       // cache proxy
+  rpc PullRequirements(PullRequirementsRequest) returns (PullRequirementsResponse);
+  rpc CloneOrg(CloneOrgRequest) returns (CloneOrgResponse);
 }
 ```
 
-The CLI sends a `ScanRequest` containing the project files as a chunked filesystem (`repeated File`), an optional `ScanOptions` (ansible-core version, collection specs), and a `scan_id`. Primary returns `ScanResponse` with merged violations and `ScanDiagnostics` (engine + validator timing data).
+The CLI sends project files as chunked `ScanChunk` messages via `ScanStream` (streaming) or as a single `ScanRequest` (unary). Both include an optional `ScanOptions` (ansible-core version, collection specs) and a `scan_id`. Primary returns `ScanResponse` with merged violations, `ScanDiagnostics` (engine + validator timing data), and a `ScanSummary` (counts by remediation class). The `FixSession` RPC uses bidirectional streaming (ADR-028) for real-time progress, interactive AI proposal review, and session resume.
 
 ### Validator (`validate.proto`) — unified contract
 
@@ -100,9 +106,10 @@ service CacheMaintainer {
 
 ### Common types (`common.proto`)
 
-- **`Violation`** — `rule_id`, `level`, `message`, `file`, `line` (int or range), `path`
+- **`Violation`** — `rule_id`, `level`, `message`, `file`, `line` (int or range), `path`, `remediation_class` (AUTO_FIXABLE / AI_CANDIDATE / MANUAL_REVIEW), `remediation_resolution`
 - **`File`** — `path` (relative), `content` (bytes)
-- **`HealthRequest` / `HealthResponse`** — status string
+- **`HealthRequest` / `HealthResponse`** — status string, downstream `ServiceHealth` list
+- **`ScanSummary`** — `total`, `auto_fixable`, `ai_candidate`, `manual_review`, `by_resolution` map
 - **`RuleTiming`** — per-rule timing: `rule_id`, `elapsed_ms`, `violations` count
 - **`ValidatorDiagnostics`** — per-validator summary: name, request_id, total_ms, file/violation counts, rule timings, metadata map
 
@@ -311,10 +318,12 @@ With `--json`, the `diagnostics` key is included when `-v` or `-vv` is set.
 The CLI `health-check` subcommand calls `Health` on all services and reports status:
 
 ```bash
-apme-scan health-check --primary-addr 127.0.0.1:50051
+apme-scan health-check
 ```
 
-Primary, Native, OPA, Ansible, and Cache Maintainer all implement the `Health` RPC. A service returning `status: "ok"` is healthy; any gRPC error marks it degraded.
+The CLI discovers the Primary via `APME_PRIMARY_ADDRESS` env var, a running daemon, or auto-starts one locally.
+
+Primary, Native, OPA, Ansible, Gitleaks, and Cache Maintainer all implement the `Health` RPC. A service returning `status: "ok"` is healthy; any gRPC error marks it degraded.
 
 ## Decision records
 

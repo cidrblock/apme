@@ -44,8 +44,8 @@ APME is a seven-container gRPC microservice deployed as a single Podman pod. The
 | Service | Image | Port | Role |
 |---------|-------|------|------|
 | **Primary** | apme-primary | 50051 | Runs the engine (parse → annotate → hierarchy); fans out `ValidateRequest` to all validators in parallel; merges, deduplicates, and returns violations |
-| **Native** | apme-native | 50055 | Python rules operating on deserialized scandata (the full in-memory model). Rules L026–L056, R101–R501 |
-| **OPA** | apme-opa | 50054 | OPA binary (REST on 8181 internally) + Python gRPC wrapper. Rego rules L002–L025, R118 on the hierarchy JSON |
+| **Native** | apme-native | 50055 | Python rules operating on deserialized scandata (the full in-memory model). Rules L026–L060, M005/M010, P001–P004, R101–R501 |
+| **OPA** | apme-opa | 50054 | OPA binary (REST on 8181 internally) + Python gRPC wrapper. Rego rules L003–L025, M006/M008/M009/M011, R118 on the hierarchy JSON |
 | **Ansible** | apme-ansible | 50053 | Ansible-runtime checks using ephemeral per-request venvs (ansible-core 2.18/2.19/2.20). UV cache pre-warmed at build time; venvs created per request (~1-2s) and destroyed after. Rules L057–L059, M001–M004 |
 | **Gitleaks** | apme-gitleaks | 50056 | Gitleaks binary + Python gRPC wrapper. Scans raw files for hardcoded secrets, API keys, private keys. Filters vault-encrypted content and Jinja2 expressions. Rules SEC:* (800+ patterns) |
 | **Cache Maintainer** | apme-cache-maintainer | 50052 | Populates the collection cache from Galaxy and GitHub orgs. Writes to `/cache`; Ansible reads it ro |

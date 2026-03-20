@@ -1,6 +1,6 @@
-# Podman pod (4 app containers + 1 infra; CLI on-the-fly)
+# Podman pod (6 app containers + 1 infra; CLI on-the-fly)
 
-Backend services run in a single **pod** so they share a network (localhost). Podman creates one extra **infra** container per pod to hold the pod’s shared network namespace, so `podman pod list` shows **5** containers (primary, ansible, opa, cache-maintainer, plus the infra container). That’s expected. The **CLI is not part of the pod** and is run on-the-fly with your current directory mounted so you can scan any project without baking a path into the pod.
+Backend services run in a single **pod** so they share a network (localhost). Podman creates one extra **infra** container per pod to hold the pod’s shared network namespace, so `podman pod list` shows **7** containers (primary, native, ansible, opa, gitleaks, cache-maintainer, plus the infra container). That’s expected. The **CLI is not part of the pod** and is run on-the-fly with your current directory mounted so you can scan any project without baking a path into the pod.
 
 ## Prerequisites
 
@@ -12,7 +12,7 @@ Backend services run in a single **pod** so they share a network (localhost). Po
 ```bash
 # From repo root
 ./containers/podman/build.sh   # build all images
-./containers/podman/up.sh      # start the pod (primary, ansible, opa, cache-maintainer)
+./containers/podman/up.sh      # start the pod (primary, native, ansible, opa, gitleaks, cache-maintainer)
 ./containers/podman/wait-for-pod.sh   # wait until pod status is Running (not Degraded)
 ```
 
@@ -55,7 +55,7 @@ Run the health-check only after the pod is **Running** (not Degraded). Wait firs
 
 ```bash
 ./containers/podman/wait-for-pod.sh              # wait until pod is Running
-.venv/bin/apme-scan health-check --primary-addr 127.0.0.1:50051
+.venv/bin/apme-scan health-check
 ```
 
 Or wait and run the health-check in one step:
@@ -64,7 +64,7 @@ Or wait and run the health-check in one step:
 ./containers/podman/wait-for-pod.sh --health-check
 ```
 
-This checks **Primary**, **Ansible**, **Cache maintainer** (gRPC) and **OPA** (REST). Use `--json` for machine-readable output. Addresses for Ansible, Cache, and OPA are derived from the primary host (ports 50053, 50052, 8181) or set via env: `ANSIBLE_GRPC_ADDRESS`, `APME_CACHE_GRPC_ADDRESS`, `OPA_URL`.
+This checks **Primary**, **Native**, **Ansible**, **Gitleaks**, **Cache maintainer** (gRPC) and **OPA** (REST). Use `--json` for machine-readable output. Addresses for Ansible, Cache, and OPA are derived from the primary host (ports 50053, 50052, 8181) or set via env: `ANSIBLE_GRPC_ADDRESS`, `APME_CACHE_GRPC_ADDRESS`, `OPA_URL`.
 
 ## Stop the pod
 

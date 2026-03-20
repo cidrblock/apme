@@ -66,9 +66,9 @@ Phase 4: Remediate (Tier 1 — deterministic)
   └─► re-scan → repeat until converged or oscillation (max --max-passes)
 
 Phase 5: AI Escalation (Tier 2 — AI-proposable)
-  └─► route Tier 2 violations to OpenLLM (if available)
+  └─► route Tier 2 violations to Abbenay AIProvider (if --ai)
   └─► generate patches with confidence scores
-  └─► apply accepted patches (--auto) or present for review
+  └─► apply accepted patches (--auto-approve) or present for review
 
 Phase 6: Report
   └─► summary: Tier 1 fixed, Tier 2 proposals, Tier 3 manual review
@@ -80,9 +80,9 @@ Phase 6: Report
 |-----------|----------|-----|
 | Formatter | CLI (in-process) or Primary (`Format` RPC) | No scan needed; operates on raw files |
 | Scan | Primary service (gRPC) or CLI (in-process) | Already implemented |
-| Remediation Engine | Primary service (`Fix` RPC) | Needs access to scan results and file content; can call OpenLLM |
+| Remediation Engine | Primary service (`FixSession` RPC) | Needs access to scan results and file content; can call AIProvider |
 | Transform Registry | `src/apme_engine/remediation/transforms/` | Pure functions, no container needed |
-| AI Escalation | OpenLLM daemon (gRPC) | Separate container, optional |
+| AI Escalation | Abbenay daemon (gRPC) | Separate process/container, optional, enabled via `--ai` |
 
 ## Three-Tier Finding Classification
 
@@ -91,7 +91,7 @@ Every violation flows through a three-tier classification that determines how it
 | Tier | Label | Handler | Confidence | User Action |
 |------|-------|---------|------------|-------------|
 | **1 — Deterministic** | `fixable: true` | Transform Registry | 100% — the transform is a known-correct rewrite | None (auto-applied) |
-| **2 — AI-Proposable** | `ai_proposable: true` | OpenLLM gRPC | Variable — LLM generates a patch with a confidence score | Review proposal, accept/reject (or `--auto` in CI) |
+| **2 — AI-Proposable** | `ai_proposable: true` | AIProvider (Abbenay) | Variable — LLM generates a patch with a confidence score | Review proposal, accept/reject (or `--auto-approve` in CI) |
 | **3 — Manual Review** | neither | Human | N/A — requires judgment, policy, or external context | Fix by hand |
 
 ### Tier 1: Deterministic Fixes (Transform Registry)
@@ -105,7 +105,7 @@ These are mechanical rewrites where the correct output is unambiguous given the 
 
 The transform function receives the file content and violation, returns the corrected content. No ambiguity, no judgment.
 
-### Tier 2: AI-Proposable Fixes (OpenLLM)
+### Tier 2: AI-Proposable Fixes (Abbenay AIProvider)
 
 These violations have a clear "what needs to change" but the "how" requires understanding context that a static transform cannot capture. The AI generates a patch and attaches a confidence score. Examples:
 
@@ -114,7 +114,7 @@ These violations have a clear "what needs to change" but the "how" requires unde
 - **SEC:\*** — replace hardcoded secrets with vault lookups (AI can infer the variable name from context)
 - **L030** — extract complex `ansible.builtin.shell` one-liners into scripts (requires understanding intent)
 
-AI proposals are never auto-applied by default. The user reviews the diff and accepts or rejects. `--auto --min-confidence 0.8` enables unattended mode for CI.
+AI proposals are never auto-applied by default. The user reviews the diff and accepts or rejects. `--auto-approve` enables unattended mode for CI.
 
 ### Tier 3: Manual Review
 
@@ -131,7 +131,7 @@ These are reported as "manual review required" with the rule message and context
 A binary "fixable / not fixable" misrepresents the AI capability. Many violations *can* be fixed by AI with high confidence — they are not "manual review" in any meaningful sense. The three-tier model:
 
 1. Gives users a clear expectation: Tier 1 is always safe, Tier 2 needs a glance, Tier 3 needs thought.
-2. Lets CI pipelines opt in to AI fixes above a confidence threshold (`--auto --min-confidence N`).
+2. Lets CI pipelines opt in to AI fixes (`--auto-approve`).
 3. Keeps the `fixable` flag honest — it means "deterministically correct, zero risk of wrong output."
 
 ## Finding Partition
@@ -148,7 +148,7 @@ def is_finding_resolvable(violation: dict, registry: TransformRegistry) -> bool:
 
 This is intentionally simple. A violation is resolvable if and only if the transform registry has a function for that rule ID. No heuristics, no guessing.
 
-Violations that fail this check proceed to AI escalation (Tier 2) if OpenLLM is available, otherwise they are reported as manual review (Tier 3).
+Violations that fail this check proceed to AI escalation (Tier 2) if an AIProvider is available (via `--ai`), otherwise they are reported as manual review (Tier 3).
 
 ### Rule Metadata
 
@@ -237,20 +237,25 @@ def fix_missing_mode(content: str, violation: dict) -> TransformResult:
 src/apme_engine/remediation/
   ├── __init__.py
   ├── engine.py              # RemediationEngine class (convergence loop)
-  ├── partition.py            # is_finding_resolvable()
+  ├── partition.py            # is_finding_resolvable(), classify_violation()
   ├── registry.py             # TransformRegistry
-  ├── ai_escalation.py        # OpenLLM gRPC client
+  ├── ai_provider.py          # AIProvider Protocol, AIProposal dataclass
+  ├── abbenay_provider.py     # AbbenayProvider (default AI impl via abbenay_grpc)
+  ├── enrich.py               # Enrich violations/context for remediation
+  ├── structured.py           # Structured remediation payloads
+  ├── unit_segmenter.py       # Split content into task snippets for AI
   └── transforms/
       ├── __init__.py          # auto-registers all transforms
-      ├── L021_missing_mode.py
+      ├── _helpers.py          # Shared transform helpers
       ├── L007_shell_to_command.py
+      ├── L021_missing_mode.py
       ├── M001_fqcn.py
       └── ...
 ```
 
 ## AI Escalation Path
 
-When `is_finding_resolvable()` returns `False` and an OpenLLM service is available, the remediation engine escalates to AI.
+When `is_finding_resolvable()` returns `False` and an AIProvider is available (via `--ai`), the remediation engine escalates to AI.
 
 ### Request Packaging
 
@@ -305,14 +310,13 @@ class AIRemediationResponse:
 
 | Flag | Behavior |
 |------|----------|
-| `--no-ai` | Skip AI entirely; report non-fixable violations as "manual review" |
-| `--auto` | Apply AI patches without prompting (CI mode) |
-| (default) | Show AI-proposed patch + diff, prompt user to accept/reject |
-| `--min-confidence 0.8` | Only apply AI patches with confidence >= threshold |
+| (default) | Tier 1 deterministic fixes only; Tier 2 violations reported as "AI-candidate" |
+| `--ai` | Enable AI escalation; show proposed patch + diff, prompt user to accept/reject |
+| `--ai --auto-approve` | Apply AI patches without prompting (CI mode) |
 
 ### Graceful Degradation
 
-If `OPENLLM_GRPC_ADDRESS` is unset or the service is unreachable, the remediation engine skips AI escalation silently. Non-fixable violations are reported as "manual review required." The `fix` pipeline never fails due to missing AI.
+Without `--ai`, Tier 2 violations are reported as "AI-candidate" with a note about `--ai`. With `--ai`, if the Abbenay daemon is unreachable, the CLI exits with a clear error — the user explicitly opted in and deserves an explicit failure.
 
 ## Convergence Loop
 
@@ -385,73 +389,61 @@ class FixReport:
 
 ## gRPC Contract
 
-### New `Fix` RPC on Primary
+### `FixSession` RPC on Primary (ADR-028)
+
+The fix pipeline uses **bidirectional streaming** (`FixSession`) for real-time progress, interactive proposal review, and session resume:
 
 ```protobuf
 service Primary {
   rpc Scan(ScanRequest) returns (ScanResponse);
+  rpc ScanStream(stream ScanChunk) returns (ScanResponse);
   rpc Format(FormatRequest) returns (FormatResponse);
-  rpc Fix(FixRequest) returns (FixResponse);            // new
+  rpc FormatStream(stream ScanChunk) returns (FormatResponse);
+  rpc FixSession(stream SessionCommand) returns (stream SessionEvent);
   rpc Health(HealthRequest) returns (HealthResponse);
-}
-
-message FixRequest {
-  string project_root = 1;
-  repeated File files = 2;
-  FixOptions options = 3;
+  // Cache proxy RPCs (PullGalaxy, PullRequirements, CloneOrg)
 }
 
 message FixOptions {
-  int32 max_passes = 1;            // default 5
-  bool no_ai = 2;                  // skip AI escalation
-  bool auto_apply_ai = 3;          // apply AI patches without prompting
-  float min_confidence = 4;        // AI confidence threshold (default 0.0)
-  string ansible_core_version = 5;
-  repeated string collection_specs = 6;
+  int32 max_passes = 1;
+  string ansible_core_version = 2;
+  repeated string collection_specs = 3;
+  repeated string exclude_patterns = 4;
+  bool enable_ai = 5;               // opt-in AI escalation
+  bool enable_agentic = 6;          // Tier 3 (future)
+  string ai_model = 7;
 }
 
-message FixResponse {
-  int32 passes = 1;
-  repeated FileDiff applied_patches = 2;     // deterministic fixes applied
-  repeated AIProposal ai_proposals = 3;      // AI-suggested patches
-  repeated Violation remaining = 4;          // violations not resolved
-  bool oscillation_detected = 5;
+// Client -> Server: upload chunks, then approval/extend/close commands
+message SessionCommand {
+  oneof command {
+    ScanChunk upload = 1;
+    ApprovalRequest approve = 2;
+    ExtendRequest extend = 3;
+    CloseRequest close = 4;
+    ResumeRequest resume = 5;
+  }
 }
 
-message AIProposal {
-  Violation violation = 1;
-  string suggested_code = 2;
-  float confidence = 3;
-  string reasoning = 4;
-  string diff = 5;
-}
-```
-
-### OpenLLM Service (Phase 3)
-
-```protobuf
-service OpenLLM {
-  rpc Remediate(RemediateRequest) returns (RemediateResponse);
-  rpc Health(HealthRequest) returns (HealthResponse);
-}
-
-message RemediateRequest {
-  string rule_id = 1;
-  string message = 2;
-  string file_path = 3;
-  int32 line = 4;
-  string code_window = 5;
-  string file_content = 6;
-  string ansible_version = 7;
-}
-
-message RemediateResponse {
-  string suggested_code = 1;
-  float confidence = 2;
-  string reasoning = 3;
-  bool applicable = 4;
+// Server -> Client: progress, tier1 summary, proposals, result
+message SessionEvent {
+  oneof event {
+    SessionCreated created = 1;
+    ProgressUpdate progress = 2;
+    Tier1Summary tier1_complete = 3;
+    ProposalsReady proposals = 4;
+    ApprovalAck approval_ack = 5;
+    SessionResult result = 6;
+    ExpirationWarning expiring = 7;
+    SessionClosed closed = 8;
+    DataPayload data = 9;
+  }
 }
 ```
+
+### AI Escalation
+
+AI escalation uses the `AIProvider` protocol (ADR-025) with `AbbenayProvider` as the default implementation. The Abbenay daemon is an external process/container that manages LLM providers and API keys via gRPC. See [DESIGN_AI_ESCALATION.md](DESIGN_AI_ESCALATION.md) for the full design.
 
 ## Container Topology (with Remediation)
 
@@ -467,11 +459,11 @@ message RemediateResponse {
 │  │ remediat │  │ scandata │  │ wrapper  │  │ venvs    │  │ wrapper  │  │
 │  └────┬─────┘  └──────────┘  └──────────┘  └──────────┘  └──────────┘  │
 │       │                                                                  │
-│       │ gRPC (optional)                                                  │
+│       │ gRPC (optional, only when --ai)                                  │
 │       ▼                                                                  │
 │  ┌──────────┐                                                            │
-│  │ OpenLLM  │  Phase 3 — AI escalation                                   │
-│  │  :50057  │  bring-your-own-LLM provider                               │
+│  │ Abbenay  │  AI daemon — manages LLM providers                        │
+│  │  :50057  │  GHCR image or binary                                      │
 │  └──────────┘                                                            │
 │                                                                          │
 │  ┌──────────────────────────────────────────┐                            │
@@ -480,7 +472,7 @@ message RemediateResponse {
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-The remediation engine lives inside Primary. It reuses Primary's existing scan pipeline and adds the transform → re-scan convergence loop. AI escalation is a gRPC call to the optional OpenLLM container.
+The remediation engine lives inside Primary. It reuses Primary's existing scan pipeline and adds the transform → re-scan convergence loop. AI escalation is a gRPC call to the optional Abbenay daemon via the `AIProvider` protocol (ADR-025). See [DESIGN_AI_ESCALATION.md](DESIGN_AI_ESCALATION.md) for the full AI integration design.
 
 ## CLI Integration
 
@@ -492,11 +484,13 @@ apme-scan fix [target] [options]
 Options:
   --apply              Write fixes in place (without this, show diffs only)
   --check              Exit 1 if any fixes would be applied (CI mode)
-  --no-ai              Skip AI escalation; deterministic fixes only
-  --auto               Apply AI patches without prompting
-  --min-confidence N   AI confidence threshold (default: 0.0)
+  --ai                 Enable Tier 2 AI-assisted remediation (opt-in)
+  --auto-approve       Approve all AI proposals without prompting (CI mode)
   --max-passes N       Max convergence passes (default: 5)
   --exclude PATTERN    Glob patterns to skip
+  --ansible-version V  ansible-core version for validation
+  --collections SPEC   Collection specs to make available
+  --json               Output structured data payloads as JSON
 ```
 
 ### Output
@@ -509,7 +503,7 @@ Phase 4: Remediating...
   Pass 1: 28 fixable (Tier 1) → applied 26, 2 failed
   Pass 2: 4 fixable (Tier 1) → applied 4
   Pass 3: 0 fixable → converged
-Phase 5: AI escalation (Tier 2)... 10 candidates → 8 proposals (skipped: --no-ai)
+Phase 5: AI escalation (Tier 2)... 10 candidates (skipped: --ai not set)
 Phase 6: Summary
   Tier 1 (deterministic):  30 fixed
   Tier 2 (AI-proposable):  10 remaining → 8 proposals generated
@@ -519,10 +513,10 @@ Phase 6: Summary
 
 ## Implementation Order
 
-1. **Transform Registry + partition** — the data structures and registry pattern
-2. **First transforms** — L021 (missing mode), L007 (shell→command), M001 (FQCN) as proof-of-concept
-3. **Convergence loop** — scan → transform → re-scan loop with oscillation detection
-4. **`Fix` RPC** — gRPC contract on Primary
-5. **CLI `fix` integration** — wire the existing `_run_fix` stub to the real engine
-6. **AI escalation** — OpenLLM gRPC client + prompt builder (Phase 3)
+1. **Transform Registry + partition** — the data structures and registry pattern (done)
+2. **First transforms** — L021, L007, M001, M006, M008, M009, L046, and more (done — 20+ transforms)
+3. **Convergence loop** — scan → transform → re-scan loop with oscillation detection (done)
+4. **`FixSession` RPC** — bidirectional streaming gRPC contract on Primary (done — ADR-028)
+5. **CLI `fix` integration** — interactive review, `--apply`, `--check`, `--auto-approve` (done)
+6. **AI escalation** — `AIProvider` protocol + `AbbenayProvider` + hybrid validation loop (in progress — Phase 3)
 7. **Web UI remediation queue** — accept/reject AI proposals (Phase 4)

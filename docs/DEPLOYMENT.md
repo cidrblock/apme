@@ -18,7 +18,7 @@ From the repo root:
 ./containers/podman/build.sh
 ```
 
-This builds six images:
+This builds seven images:
 
 | Image | Dockerfile | Purpose |
 |-------|------------|---------|
@@ -26,6 +26,7 @@ This builds six images:
 | `apme-native:latest` | `containers/native/Dockerfile` | Native Python validator |
 | `apme-opa:latest` | `containers/opa/Dockerfile` | OPA + gRPC wrapper |
 | `apme-ansible:latest` | `containers/ansible/Dockerfile` | Ansible validator with pre-built venvs |
+| `apme-gitleaks:latest` | `containers/gitleaks/Dockerfile` | Gitleaks secret scanner + gRPC wrapper |
 | `apme-cache-maintainer:latest` | `containers/cache-maintainer/Dockerfile` | Collection cache manager |
 | `apme-cli:latest` | `containers/cli/Dockerfile` | CLI client |
 
@@ -35,7 +36,7 @@ This builds six images:
 ./containers/podman/up.sh
 ```
 
-This runs `podman play kube containers/podman/pod.yaml`, which starts the pod `apme-pod` with five containers (Primary, Native, OPA, Ansible, Cache Maintainer). A cache directory (`apme-cache/`) is created in the repo root.
+This runs `podman play kube containers/podman/pod.yaml`, which starts the pod `apme-pod` with six containers (Primary, Native, OPA, Ansible, Gitleaks, Cache Maintainer). A cache directory (`apme-cache/`) is created in the repo root.
 
 ### Run CLI commands
 
@@ -71,10 +72,12 @@ podman pod rm apme-pod
 ### Health check
 
 ```bash
-apme-scan health-check --primary-addr 127.0.0.1:50051
+apme-scan health-check
 ```
 
-Reports status of all services (Primary, Native, OPA, Ansible, Cache Maintainer) with latency.
+The CLI discovers the Primary via `APME_PRIMARY_ADDRESS` env var, a running daemon, or auto-starts one locally.
+
+Reports status of all services (Primary, Native, OPA, Ansible, Gitleaks, Cache Maintainer) with latency.
 
 ## Container configuration
 
@@ -88,6 +91,7 @@ Reports status of all services (Primary, Native, OPA, Ansible, Cache Maintainer)
 | `NATIVE_GRPC_ADDRESS` | — | Native validator address (e.g., `127.0.0.1:50055`) |
 | `OPA_GRPC_ADDRESS` | — | OPA validator address (e.g., `127.0.0.1:50054`) |
 | `ANSIBLE_GRPC_ADDRESS` | — | Ansible validator address (e.g., `127.0.0.1:50053`) |
+| `GITLEAKS_GRPC_ADDRESS` | — | Gitleaks validator address (e.g., `127.0.0.1:50056`) |
 
 If a validator address is unset, that validator is skipped during fan-out.
 
@@ -181,8 +185,8 @@ python -m apme_engine.cli daemon stop
 
 Daemon mode starts a local Primary server with Native, OPA, and Ansible
 validators running in-process. Gitleaks is excluded (requires the container
-with the gitleaks binary). OPA runs via the local `opa` binary; skip it
-with `--no-opa` if `opa` is not installed.
+with the gitleaks binary). OPA runs via the local `opa` binary; if `opa`
+is not installed, the OPA validator is automatically skipped.
 
 ## Troubleshooting
 

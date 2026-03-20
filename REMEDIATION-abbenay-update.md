@@ -6,13 +6,13 @@ document lists the items in APME that need updating.
 
 ---
 
-## 1. Update `abbenay-client` version pin
+## 1. ~~Update `abbenay-client` version pin~~ (done)
 
 **File:** `pyproject.toml` (line 26)
 
-The `[ai]` extra pins a specific git commit from March 19 (`5167424`).
+~~The `[ai]` extra pins a specific git commit from March 19 (`5167424`).
 This is now 4 commits behind `main` and does not include the GHCR
-workflow or the `undici` security fix. Update to the release tag:
+workflow or the `undici` security fix.~~ Updated to the release tag:
 
 ```toml
 # Current (stale git commit)
@@ -151,11 +151,11 @@ another host, mention `--grpc-host`.
 
 ## Summary checklist
 
-- [ ] Update `pyproject.toml` `[ai]` pin to `v2026.3.6-alpha` tag (or later)
+- [x] Update `pyproject.toml` `[ai]` pin to `v2026.3.6-alpha` tag (or later)
 - [ ] Run `uv lock` to regenerate lockfile
 - [ ] Update README container section to use GHCR pull
-- [ ] Update `DESIGN_AI_ESCALATION.md` version refs and package names
-- [ ] Update ADR-025 package name references
+- [x] Update `DESIGN_AI_ESCALATION.md` version refs and package names (already uses `abbenay_grpc`, `APME_ABBENAY_TOKEN`, and `v2026.3.6-alpha`)
+- [x] Update ADR-025 package name references (already uses `abbenay_grpc`)
 - [ ] Review ADR-027 against current Abbenay MCP capabilities
-- [ ] Consider adding `[ai]` extra to CI test matrix
+- [x] Consider adding `[ai]` extra to CI test matrix (`test-ai-extra` job in `.github/workflows/test.yml`)
 - [ ] Verify container tag scheme in any scripts/docs

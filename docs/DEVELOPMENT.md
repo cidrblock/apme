@@ -61,10 +61,23 @@ ruff format --check src/ tests/ # format check (CI mode)
 
 ```
 src/apme_engine/
-├── cli.py                  CLI entry point (scan, format, fix, health-check)
-├── ansi.py                 Zero-dependency ANSI styling (NO_COLOR/FORCE_COLOR)
+├── cli/                    CLI package (thin gRPC presentation layer)
+│   ├── __init__.py         main() entry point, subcommand dispatch
+│   ├── __main__.py         python -m apme_engine.cli shim
+│   ├── parser.py           build_parser() — all argparse definitions
+│   ├── scan.py             Scan subcommand (ScanStream RPC)
+│   ├── format_cmd.py       Format subcommand (FormatStream RPC)
+│   ├── fix.py              Fix subcommand (FixSession bidi stream, ADR-028)
+│   ├── cache.py            Cache subcommands via Primary proxy
+│   ├── health.py           Health-check subcommand
+│   ├── daemon_cmd.py       daemon start/stop/status
+│   ├── discovery.py        resolve_primary() — gRPC channel setup
+│   ├── output.py           Human-readable / structured CLI output
+│   ├── ansi.py             Zero-dependency ANSI styling (NO_COLOR/FORCE_COLOR)
+│   ├── _convert.py         Internal proto ↔ dict conversion
+│   └── _models.py          Internal DTOs
 ├── runner.py               run_scan() → ScanContext
-├── formatter.py            YAML formatter (format_file, format_directory)
+├── formatter.py            YAML formatter (format_content)
 ├── opa_client.py           OPA eval (Podman or local binary)
 │
 ├── engine/                 ARI-based scanner
@@ -72,37 +85,61 @@ src/apme_engine/
 │   ├── parser.py           YAML/Ansible content parser
 │   ├── tree.py             TreeLoader (call graph construction)
 │   ├── models.py           SingleScan, TaskCall, RiskAnnotation, etc.
-│   ├── variable_resolver.py  variable tracking and resolution
+│   ├── context.py          Scan/parse context wiring
+│   ├── findings.py         Finding/violation structures
+│   ├── risk_assessment_model.py / risk_detector.py  risk model + detect() bridge
 │   └── annotators/         per-module risk annotators
-│       ├── base.py         RiskAnnotator base class
+│       ├── annotator_base.py / module_annotator_base.py / risk_annotator_base.py
+│       ├── variable_resolver.py
 │       └── ansible.builtin/  shell, command, copy, file, get_url, ...
 │
 ├── validators/
 │   ├── base.py             Validator protocol + ScanContext
 │   ├── native/             Python rules
-│   │   ├── validator.py    NativeValidator (loads + runs rules)
-│   │   ├── risk_detector.py  rule discovery and execution
+│   │   ├── __init__.py     NativeValidator, rule discovery via risk_detector.detect
 │   │   ├── rules/          one file per rule + colocated tests
-│   │   │   ├── L026_non_fqcn_use.py
-│   │   │   ├── L026_non_fqcn_use_test.py
+│   │   │   ├── L026_non_fqcn_use.py ... L060_line_length.py
+│   │   │   ├── M005_data_tagging.py, M010_*.py
+│   │   │   ├── P001–P004, R101–R501
+│   │   │   ├── *_test.py (colocated)
 │   │   │   ├── _test_helpers.py
 │   │   │   └── rule_versions.json
 │   │   └── README.md
 │   ├── opa/
-│   │   ├── validator.py    OpaValidator (calls opa eval)
+│   │   ├── __init__.py     OPA validator
 │   │   └── bundle/         Rego rules + tests + data
 │   │       ├── _helpers.rego
-│   │       ├── L002.rego
-│   │       ├── L002_test.rego
+│   │       ├── L003.rego ... L025.rego, M006/M008/M009/M011, R118
+│   │       ├── *_test.rego (colocated)
 │   │       ├── data.json
 │   │       └── README.md
-│   └── ansible/
-│       ├── validator.py    AnsibleValidator
-│       ├── _venv.py        venv resolution
-│       └── rules/          L057–L059, M001–M004 + .md docs
+│   ├── ansible/
+│   │   ├── __init__.py     AnsibleValidator
+│   │   ├── _venv.py        venv resolution
+│   │   └── rules/          L057–L059, M001–M004 + .md docs
+│   └── gitleaks/
+│       ├── __init__.py
+│       └── scanner.py      gitleaks binary wrapper, vault/Jinja filtering
+│
+├── remediation/            Remediation engine (Tier 1 transforms + Tier 2 AI)
+│   ├── engine.py           RemediationEngine (convergence loop)
+│   ├── partition.py        is_finding_resolvable(), classify_violation()
+│   ├── registry.py         TransformRegistry
+│   ├── ai_provider.py      AIProvider Protocol, AIProposal dataclass
+│   ├── abbenay_provider.py AbbenayProvider (default AI impl via abbenay_grpc)
+│   ├── enrich.py           Enrich violations/context for remediation
+│   ├── structured.py       Structured remediation payloads
+│   ├── unit_segmenter.py   Split content into task snippets for AI
+│   └── transforms/         Per-rule deterministic fix functions
+│       ├── __init__.py     auto-registers all transforms
+│       ├── _helpers.py     Shared transform helpers
+│       └── L007_*, L021_*, L046_*, M001_*, M006_*, M008_*, M009_*, ...
+│
+├── data/
+│   └── ansible_best_practices.yml  structured best practices for AI prompts
 │
 ├── daemon/                 async gRPC servers (all use grpc.aio)
-│   ├── primary_server.py   Primary orchestrator (engine + async fan-out via asyncio.gather)
+│   ├── primary_server.py   Primary orchestrator (engine + fan-out + remediation)
 │   ├── primary_main.py     entry point: apme-primary (asyncio.run)
 │   ├── native_validator_server.py   (async, CPU work in run_in_executor)
 │   ├── native_validator_main.py
@@ -114,10 +151,17 @@ src/apme_engine/
 │   ├── gitleaks_validator_main.py
 │   ├── cache_maintainer_server.py
 │   ├── cache_maintainer_main.py
-│   ├── health_check.py     health check utilities
+│   ├── launcher.py         Local multi-service daemon (start/stop/status)
+│   ├── session.py          FixSession state management (SessionStore)
+│   ├── chunked_fs.py       Chunked file streaming helpers
+│   ├── health_check.py     Health check utilities
 │   └── violation_convert.py  dict ↔ proto Violation conversion
 │
 └── collection_cache/       Galaxy/GitHub cache management
+    ├── config.py            Cache paths / configuration
+    ├── manager.py           Galaxy + GitHub pull operations
+    ├── venv_builder.py / venv_session.py  Ephemeral venv construction
+    └── _fqcn_resolve.py     FQCN resolution against cache
 ```
 
 ## Adding a new rule
@@ -277,7 +321,7 @@ pytest tests/test_validators.py
 pytest src/apme_engine/validators/native/rules/
 
 # With coverage
-pytest --cov=src/apme_engine --cov-report=term-missing --cov-fail-under=28
+pytest --cov=src/apme_engine --cov-report=term-missing --cov-fail-under=36
 
 # Integration test (requires Podman + built images)
 pytest -m integration tests/integration/test_e2e.py
@@ -302,7 +346,7 @@ podman run --rm \
 
 ### Coverage target
 
-Coverage is configured at 36% (`fail_under = 36` in `pyproject.toml`). This is a floor based on current coverage; ratchet it up as tests are added. Rule files under `validators/*/rules/` are excluded from coverage measurement (they have colocated tests instead).
+Coverage is configured at 50% (`fail_under = 50` in `pyproject.toml`). CI runs with `--cov-fail-under=36` as a lower floor; the pyproject.toml target is the ratchet goal. This is a floor based on current coverage; ratchet it up as tests are added. Rule files under `validators/*/rules/` are excluded from coverage measurement (they have colocated tests instead).
 
 ## YAML formatter
 
@@ -339,11 +383,11 @@ The `fix` subcommand chains format → idempotency check → re-scan → moderni
 apme-scan fix --apply /path/to/project
 ```
 
-This runs the formatter, verifies idempotency (a second format pass produces zero diffs), then re-scans. The modernization step will be added in Phase 2.
+This runs the formatter, verifies idempotency (a second format pass produces zero diffs), re-scans, then applies Tier 1 deterministic transforms from the transform registry in a convergence loop (scan → fix → rescan until stable). Uses the `FixSession` bidirectional streaming RPC (ADR-028).
 
 ### gRPC Format RPC
 
-The Primary service exposes a `Format` RPC (`FormatRequest` / `FormatResponse` with `FileDiff` messages) for containerized formatting. The CLI uses local formatting; the gRPC path is for IDE/API integration.
+The Primary service exposes `Format` (unary) and `FormatStream` (streaming) RPCs with `FileDiff` messages. The CLI uses `FormatStream` to stream files to the Primary and receive diffs back.
 
 ## Concurrency model
 
@@ -366,13 +410,13 @@ Every validator collects per-rule timing data and returns it in `ValidateRespons
 
 ```bash
 # Summary: engine time, validator summaries, top 10 slowest rules
-apme-scan scan --primary-addr localhost:50051 -v .
+apme-scan scan -v .
 
 # Full breakdown: per-rule timing for every validator, metadata, engine phases
-apme-scan scan --primary-addr localhost:50051 -vv .
+apme-scan scan -vv .
 
 # JSON output includes diagnostics when -v or -vv is set
-apme-scan scan --primary-addr localhost:50051 -v --json .
+apme-scan scan -v --json .
 ```
 
 ### Color output
@@ -425,4 +469,5 @@ Defined in `pyproject.toml`:
 | `apme-native-validator` | `apme_engine.daemon.native_validator_main:main` | Native validator daemon |
 | `apme-opa-validator` | `apme_engine.daemon.opa_validator_main:main` | OPA validator daemon |
 | `apme-ansible-validator` | `apme_engine.daemon.ansible_validator_main:main` | Ansible validator daemon |
+| `apme-gitleaks-validator` | `apme_engine.daemon.gitleaks_validator_main:main` | Gitleaks validator daemon |
 | `apme-cache-maintainer` | `apme_engine.daemon.cache_maintainer_main:main` | Cache maintainer daemon |

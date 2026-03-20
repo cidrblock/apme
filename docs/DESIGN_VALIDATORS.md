@@ -69,7 +69,7 @@ Every validator returns the same violation shape:
 
 - **Input**: `context.hierarchy_payload` (JSON)
 - **Execution**: Rego bundle evaluated by OPA (`data.apme.rules.violations`)
-- **Rules**: L002–L025, R118
+- **Rules**: L003–L025, M006/M008/M009/M011, R118
 - **Container**: OPA binary + Python gRPC wrapper (`apme-opa`)
 - **Why Rego**: Declarative policy language well-suited for structural checks on JSON; rules are data-driven via `bundle/data.json` (deprecated modules list, package modules, etc.)
 
@@ -77,7 +77,7 @@ Every validator returns the same violation shape:
 
 - **Input**: `context.scandata` (deserialized `SingleScan`)
 - **Execution**: Python `Rule` subclasses with `match()` / `process()` methods, invoked in-process by `NativeValidator`
-- **Rules**: L026–L056 (lint), R101–R501 (risk), P001–P004 (legacy)
+- **Rules**: L026–L060 (lint), M005/M010 (modernize), R101–R501 (risk), P001–P004 (legacy)
 - **Container**: `apme-native`
 - **Why Python**: Full access to the in-memory model (trees, contexts, specs, annotations, variable tracking). Rules that need to walk call graphs, inspect variable resolution, or apply complex heuristics that would be awkward in Rego.
 
@@ -157,7 +157,7 @@ No proto changes, no Primary code changes, no other validators affected.
 
 ## Rule ID independence
 
-Rule IDs (L, M, R, P) describe **what** is checked, not **who** checks it. The user sees `L002` (FQCN check); whether OPA or a Python rule implements it is irrelevant. Multiple validators can fire for the same concept (e.g., OPA L002 is syntactic FQCN; Ansible M001 is semantic FQCN resolution) — they have different rule IDs because they're different checks.
+Rule IDs (L, M, R, P) describe **what** is checked, not **who** checks it. The user sees a rule ID; whether OPA or a Python rule implements it is irrelevant. Multiple validators can fire for the same concept (e.g., OPA L003 is a structural lint check; Ansible M001 is semantic FQCN resolution) — they have different rule IDs because they're different checks.
 
 Deduplication happens at the Primary level by `(rule_id, file, line)`. If two validators produce the same rule/file/line, only one is reported.
 

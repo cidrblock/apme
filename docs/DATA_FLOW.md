@@ -9,7 +9,7 @@ User runs:  apme-scan scan /path/to/project
             │
             ▼
 ┌───────────────────────────────────────────────────────┐
-│  CLI (apme_engine/cli.py)                             │
+│  CLI (apme_engine/cli/)                                │
 │                                                       │
 │  1. Walk project directory                            │
 │  2. Filter: TEXT_EXTENSIONS, skip SKIP_DIRS,          │
@@ -260,7 +260,7 @@ The `rule_id` prefix convention:
 
 ## Local (in-process) mode
 
-When running without the daemon (`apme-scan /path` without `--primary-addr`), the CLI runs everything in-process:
+When running without the daemon, the CLI auto-starts a local daemon and runs everything in-process:
 
 1. Engine runs directly (no temp dir, no gRPC)
 2. `NativeValidator` and `OpaValidator` run in the same process
