@@ -354,6 +354,7 @@ class SingleScan:
             use_ansible_path=self.use_ansible_path,
             is_src_installed=self.is_src_installed(),
             use_src_cache=self.use_src_cache,
+            root_install=root_install,
         )
         self.target_path = target_path
         self.version = version

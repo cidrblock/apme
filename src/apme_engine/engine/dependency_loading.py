@@ -155,6 +155,7 @@ def prepare_dependencies(
     use_ansible_path: bool,
     is_src_installed: bool,
     use_src_cache: bool,
+    root_install: bool = True,
 ) -> tuple[str, str, str, str, list[YAMLDict]]:
     """Install dependencies and prepare dependency directories.
 
@@ -174,6 +175,7 @@ def prepare_dependencies(
         use_ansible_path: Whether to use ansible path resolution.
         is_src_installed: Whether source is already installed.
         use_src_cache: Whether to use source cache.
+        root_install: If True, install the root target.
 
     Returns:
         Tuple of (target_path, version, hash, download_url, dep_dirs list of YAMLDicts).
@@ -193,7 +195,7 @@ def prepare_dependencies(
         periodical_cleanup=persist_dependency_cache,
     )
     dep_dirs = ddp.prepare_dir(
-        root_install=True,
+        root_install=root_install,
         use_ansible_path=use_ansible_path,
         is_src_installed=is_src_installed,
         cache_enabled=use_src_cache,
