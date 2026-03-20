@@ -337,12 +337,21 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
             sys.stderr.flush()
             return [], None
 
+        existing = {s.split(":")[0] for s in collection_specs}
+
         discovered = _discover_collection_specs(files)
-        if discovered:
-            existing = {s.split(":")[0] for s in collection_specs}
-            for spec in discovered:
-                if spec.split(":")[0] not in existing:
-                    collection_specs.append(spec)
+        for spec in discovered:
+            bare = spec.split(":")[0]
+            if bare not in existing:
+                collection_specs.append(spec)
+                existing.add(bare)
+
+        hierarchy_collections = context_obj.hierarchy_payload.get("collection_set", [])
+        if isinstance(hierarchy_collections, list):
+            for coll in hierarchy_collections:
+                if isinstance(coll, str) and coll not in existing:
+                    collection_specs.append(coll)
+                    existing.add(coll)
 
         _normalize_scandata_contexts(context_obj.scandata)
         register_engine_handlers()
