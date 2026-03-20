@@ -139,7 +139,9 @@ Plugins supply AI context through the existing `Violation.metadata` map using a 
 metadata["ai_guidance"] = "This violation fires when a play is missing a department tag. To fix it, add a 'tags' key to the play with at least one tag prefixed 'dept:'. Example: tags: [dept:platform]. The department must match one from the org's approved list."
 ```
 
-The `ai_guidance` value is a free-form string containing whatever context the plugin author believes an AI agent needs to propose a fix: what the rule checks, how to resolve it, constraints, examples, or links to internal documentation. If `ai_guidance` is absent, the AI falls back to the violation's `message` and `level` fields.
+The `ai_guidance` value is a free-form string containing whatever context the plugin author believes an AI agent needs to propose a fix: what the rule checks, how to resolve it, constraints, examples, or links to internal documentation. If `ai_guidance` is absent, the AI falls back to the violation's `message` and `level` fields; Tier 2 prompt templates will be extended to include `level` alongside `rule_id`, `line`, and `message` to support this behavior.
+
+To support this end to end, the daemon's proto-to-dict conversion (see `src/apme_engine/daemon/violation_convert.py`) MUST be updated to preserve the `ai_guidance` metadata key (or all metadata for `EXT-` violations) instead of enforcing an allowlist that would drop it before Tier 2 escalation.
 
 The SDK provides a convenience parameter:
 
@@ -223,7 +225,7 @@ class MyOrgPlugin(PluginBase):
                         message="Plays must have a department tag",
                         file=node["file"],
                         line=node["line"][0],
-                        ai_guidance="Add a 'tags' key with at least one dept:-prefixed tag. "
+                        ai_guidance="Add a 'tags' key with at least one 'dept:'-prefixed tag. "
                                     "Valid departments: platform, security, network, app.",
                     ))
         return violations
