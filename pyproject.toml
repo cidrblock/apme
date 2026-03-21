@@ -25,6 +25,10 @@ dependencies = [
 ai = [
     "abbenay-client @ git+https://github.com/redhat-developer/abbenay.git@v2026.3.6-alpha#subdirectory=packages/python",
 ]
+proxy = [
+    "fastapi>=0.100",
+    "uvicorn[standard]>=0.20",
+]
 dev = [
     "pytest",
     "pytest-cov",
@@ -69,6 +73,7 @@ apme-ansible-validator = "apme_engine.daemon.ansible_validator_main:main"
 apme-native-validator = "apme_engine.daemon.native_validator_main:main"
 apme-opa-validator = "apme_engine.daemon.opa_validator_main:main"
 apme-gitleaks-validator = "apme_engine.daemon.gitleaks_validator_main:main"
+galaxy-proxy = "galaxy_proxy.cli:main"
 
 [tool.ruff]
 target-version = "py310"
@@ -93,6 +98,16 @@ python_version = "3.10"
 mypy_path = "src"
 exclude = ["src/apme/v1/.*_pb2"]
 
+# Vendored galaxy-proxy: parsed Galaxy YAML/JSON is inherently unstructured.
+[[tool.mypy.overrides]]
+module = ["galaxy_proxy", "galaxy_proxy.*"]
+disallow_any_explicit = false
+
+# httpx stubs type Response.content as bytes; ignore is for ambiguous/alternate stubs.
+[[tool.mypy.overrides]]
+module = "galaxy_proxy.galaxy_client"
+disable_error_code = ["unused-ignore"]
+
 [[tool.mypy.overrides]]
 module = [
     "pytest",
@@ -108,6 +123,10 @@ module = [
     "grpc.*",
     "abbenay_grpc",
     "abbenay_grpc.*",
+    "fastapi",
+    "fastapi.*",
+    "uvicorn",
+    "uvicorn.*",
 ]
 ignore_missing_imports = true
 
@@ -142,3 +161,4 @@ where = ["src"]
 "apme_engine.engine.annotators" = ["ansible.builtin/*.py"]
 "apme_engine.validators.opa" = ["bundle/*.rego", "bundle/*.json", "bundle/*.md"]
 "apme_engine.data" = ["*.yml", "*.yaml"]
+"galaxy_proxy" = ["py.typed"]
