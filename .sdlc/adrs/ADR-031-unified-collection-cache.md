@@ -178,8 +178,11 @@ Concretely:
 - **Primary orchestrator**: `_ensure_collections_cached` skips CacheMaintainer pre-pull when proxy is active (on-demand via pip)
 - **Pod topology**: Galaxy proxy container added to `pod.yaml`, env var wired to ansible + primary containers
 
-### Phase 3: Scanner reads from venv / persistent cache
-- Modify `dependency_dir_preparator.py` to resolve collections from the venv's installed packages or a persistent metadata cache instead of downloading its own copies
+### Phase 3: ARI engine `ansible-galaxy` shim
+The vendored ARI engine's `dependency_dir_preparator.py` shells out to `ansible-galaxy collection download/install` in five places to fetch collection dependencies during tree building. Rather than refactoring the preparator's internal structure (which is tightly coupled to ARI's scanning pipeline), we introduce a thin shim function — `install_collection(name, version, target_dir)` — that presents the same contract ARI expects (collection source appears at `{target_dir}/ansible_collections/{ns}/{name}/`) but dispatches to the galaxy proxy via `uv pip install --extra-index-url`. From the preparator's perspective, nothing has changed: it asks for a collection, it appears at the expected path. The implementation switches from `ansible-galaxy` subprocess to standard pip, removing the last use of the proprietary tooling from the engine.
+
+- Replace `download_galaxy_collection()`, `install_galaxy_collection_from_targz()`, `install_galaxy_collection_from_reqfile()`, and related methods with calls to the shim
+- `ansible-galaxy` is no longer required for collection operations (roles remain on the legacy path for now)
 - RAMClient's `root_dir` changes from temp dir to persistent cache location
 - Parsed Findings written to metadata layer alongside collection source
 
