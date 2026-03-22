@@ -54,7 +54,7 @@ from apme_engine.daemon.violation_convert import violation_dict_to_proto, violat
 from apme_engine.engine.jsonpickle_handlers import register_engine_handlers
 from apme_engine.engine.models import AnsibleRunContext, ViolationDict
 from apme_engine.runner import run_scan
-from apme_engine.venv.session import VenvSessionManager
+from apme_engine.venv_manager.session import VenvSessionManager
 
 _MAX_CONCURRENT_RPCS = int(os.environ.get("APME_PRIMARY_MAX_RPCS", "16"))
 _GRPC_MAX_MSG = 50 * 1024 * 1024  # 50 MiB — hierarchy+scandata can exceed the 4 MiB default
@@ -352,7 +352,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
             Tuple of (violations, ScanDiagnostics or None, resolved session_id).
         """
         from apme_engine.validators.ansible._venv import DEFAULT_VERSION
-        from apme_engine.venv.session import _venv_site_packages
+        from apme_engine.venv_manager.session import _venv_site_packages
 
         scan_t0 = time.monotonic()
         collection_specs = list(collection_specs or [])
