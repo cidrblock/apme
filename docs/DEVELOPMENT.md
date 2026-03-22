@@ -145,22 +145,19 @@ src/apme_engine/
 │   ├── native_validator_main.py
 │   ├── opa_validator_server.py      (async, httpx.AsyncClient for OPA REST)
 │   ├── opa_validator_main.py
-│   ├── ansible_validator_server.py  (async, ephemeral venvs in executor)
+│   ├── ansible_validator_server.py  (async, session venvs from /sessions)
 │   ├── ansible_validator_main.py
 │   ├── gitleaks_validator_server.py (async, subprocess in executor)
 │   ├── gitleaks_validator_main.py
-│   ├── cache_maintainer_server.py
-│   ├── cache_maintainer_main.py
 │   ├── launcher.py         Local multi-service daemon (start/stop/status)
 │   ├── session.py          FixSession state management (SessionStore)
 │   ├── chunked_fs.py       Chunked file streaming + .apmeignore filtering
 │   ├── health_check.py     Health check utilities
 │   └── violation_convert.py  dict ↔ proto Violation conversion
 │
-└── collection_cache/       Galaxy/GitHub cache management
-    ├── config.py            Cache paths / configuration
-    ├── manager.py           Galaxy + GitHub pull operations
-    ├── venv_builder.py / venv_session.py  Ephemeral venv construction
+└── collection_cache/       Session venv management (VenvSessionManager)
+    ├── config.py            Data-root path configuration
+    ├── venv_session.py      Session venv lifecycle (VenvSessionManager, galaxy proxy)
     └── _fqcn_resolve.py     FQCN resolution against cache
 ```
 
@@ -289,13 +286,12 @@ To add a new service:
 
 ```
 tests/
-├── test_cli.py                    CLI tests
 ├── test_opa_client.py             OPA client + Rego eval tests
 ├── test_scanner_hierarchy.py      Engine hierarchy tests
 ├── test_formatter.py              YAML formatter tests (transforms, idempotency)
 ├── test_validators.py             Validator tests
 ├── test_validator_servicers.py    async gRPC servicer tests (pytest-asyncio)
-├── test_collection_cache_venv_builder.py
+├── test_session_venv_e2e.py           Session venv + galaxy proxy e2e tests
 ├── test_rule_doc_coverage.py      Asserts every rule has a .md doc
 ├── rule_doc_parser.py             Parses rule .md frontmatter
 ├── rule_doc_integration_test.py   Runs .md examples through engine
@@ -400,7 +396,7 @@ All gRPC servers use `grpc.aio` (fully async). When writing new servicers:
 
 Every validator receives `request.request_id` and should include it in log output (`[req=xxx]`) for end-to-end tracing across concurrent requests. Echo it back in `ValidateResponse.request_id`.
 
-The Ansible validator creates ephemeral venvs per request — no shared venv state. UV's persistent wheel cache makes venv creation fast (~1-2s from warm cache).
+The Ansible validator uses session-scoped venvs provided by the Primary (read-only via `/sessions` volume). Warm sessions pay near-zero cost; cold sessions are built once by the Primary's `VenvSessionManager`.
 
 ## Diagnostics
 
@@ -470,4 +466,3 @@ Defined in `pyproject.toml`:
 | `apme-opa-validator` | `apme_engine.daemon.opa_validator_main:main` | OPA validator daemon |
 | `apme-ansible-validator` | `apme_engine.daemon.ansible_validator_main:main` | Ansible validator daemon |
 | `apme-gitleaks-validator` | `apme_engine.daemon.gitleaks_validator_main:main` | Gitleaks validator daemon |
-| `apme-cache-maintainer` | `apme_engine.daemon.cache_maintainer_main:main` | Cache maintainer daemon |

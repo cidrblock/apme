@@ -11,6 +11,7 @@ import grpc
 from apme.v1 import primary_pb2_grpc
 from apme_engine.cli._convert import violation_proto_to_dict
 from apme_engine.cli._models import ViolationDict
+from apme_engine.cli._project_root import derive_session_id, discover_project_root
 from apme_engine.cli.discovery import resolve_primary
 from apme_engine.cli.output import (
     deduplicate_violations,
@@ -22,6 +23,34 @@ from apme_engine.cli.output import (
 )
 from apme_engine.daemon.chunked_fs import yield_scan_chunks
 
+_SAFE_SESSION_RE = __import__("re").compile(r"^[A-Za-z0-9_\-]+$")
+
+
+def _resolve_session_id(args: argparse.Namespace) -> str:
+    """Resolve the session ID from CLI args or project root discovery.
+
+    Args:
+        args: Parsed CLI arguments with optional ``session`` and ``target``.
+
+    Returns:
+        Session ID string.
+
+    Raises:
+        SystemExit: If explicit --session value contains invalid characters.
+    """
+    explicit: str | None = getattr(args, "session", None)
+    if explicit:
+        if not _SAFE_SESSION_RE.match(explicit):
+            sys.stderr.write(
+                f"Error: --session value {explicit!r} is invalid. "
+                "Must contain only letters, digits, hyphens, and underscores.\n"
+            )
+            raise SystemExit(2)
+        return explicit
+    target: str = getattr(args, "target", ".")
+    project_root = discover_project_root(target)
+    return derive_session_id(project_root)
+
 
 def run_scan(args: argparse.Namespace) -> None:
     """Execute the scan subcommand.
@@ -30,6 +59,7 @@ def run_scan(args: argparse.Namespace) -> None:
         args: Parsed CLI arguments.
     """
     verbosity = getattr(args, "verbose", 0) or 0
+    session_id = _resolve_session_id(args)
 
     try:
         chunks = yield_scan_chunks(
@@ -37,6 +67,7 @@ def run_scan(args: argparse.Namespace) -> None:
             project_root_name="project",
             ansible_core_version=getattr(args, "ansible_version", None),
             collection_specs=getattr(args, "collections", None),
+            session_id=session_id,
         )
     except FileNotFoundError as e:
         sys.stderr.write(f"{e}\n")
