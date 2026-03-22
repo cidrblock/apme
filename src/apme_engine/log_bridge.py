@@ -14,6 +14,7 @@ get their own log collection without interference.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import contextvars
 import logging
 import sys
@@ -39,6 +40,14 @@ class LogSink:
     """Base class for per-request log sinks."""
 
     def emit(self, entry: ProgressUpdate) -> None:
+        """Deliver a single log entry to the sink.
+
+        Args:
+            entry: ProgressUpdate proto to deliver.
+
+        Raises:
+            NotImplementedError: Subclasses must override this method.
+        """
         raise NotImplementedError
 
 
@@ -50,15 +59,26 @@ class CollectorSink(LogSink):
     """
 
     def __init__(self) -> None:
+        """Initialize an empty thread-safe entry list."""
         self._entries: list[ProgressUpdate] = []
         self._lock = threading.Lock()
 
     def emit(self, entry: ProgressUpdate) -> None:
+        """Append a log entry to the collection (thread-safe).
+
+        Args:
+            entry: ProgressUpdate proto to collect.
+        """
         with self._lock:
             self._entries.append(entry)
 
     @property
     def entries(self) -> list[ProgressUpdate]:
+        """Return a snapshot of collected entries.
+
+        Returns:
+            Copy of the collected ProgressUpdate list.
+        """
         with self._lock:
             return list(self._entries)
 
@@ -79,15 +99,16 @@ class StreamSink(LogSink):
         self._queue = queue
 
     def emit(self, entry: ProgressUpdate) -> None:
-        try:
+        """Enqueue a log entry for streaming delivery (drops on full queue).
+
+        Args:
+            entry: ProgressUpdate proto to enqueue.
+        """
+        with contextlib.suppress(asyncio.QueueFull):
             self._queue.put_nowait(entry)
-        except asyncio.QueueFull:
-            pass
 
 
-_current_sink: contextvars.ContextVar[LogSink | None] = contextvars.ContextVar(
-    "apme_log_sink", default=None
-)
+_current_sink: contextvars.ContextVar[LogSink | None] = contextvars.ContextVar("apme_log_sink", default=None)
 
 
 class _AttachCollector:
@@ -172,6 +193,7 @@ class RequestLogHandler(logging.Handler):
     """
 
     def __init__(self) -> None:
+        """Configure handler with DEBUG level and a timestamped stderr formatter."""
         super().__init__(level=logging.DEBUG)
         self._stderr_formatter = logging.Formatter(
             "%(asctime)s %(levelname)-5s [%(name)s] %(message)s",
@@ -179,6 +201,11 @@ class RequestLogHandler(logging.Handler):
         )
 
     def emit(self, record: logging.LogRecord) -> None:
+        """Write to stderr and route to the active per-request gRPC sink.
+
+        Args:
+            record: Python log record to process.
+        """
         # 1. Always write to stderr (-> daemon.log or container log)
         try:
             msg = self._stderr_formatter.format(record)
