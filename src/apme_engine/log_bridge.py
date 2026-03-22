@@ -86,8 +86,14 @@ class CollectorSink(LogSink):
 class StreamSink(LogSink):
     """Async-safe sink backed by an ``asyncio.Queue``.
 
-    Used by Primary for ``FixSession`` streaming — the RPC handler drains
-    the queue and yields ``SessionEvent(progress=...)`` messages.
+    Designed for ``FixSession`` streaming — once wired, the RPC handler
+    would drain the queue and yield ``SessionEvent(progress=...)`` messages.
+
+    .. note::
+
+        Not yet wired into FixSession.  Currently FixSession manually
+        constructs ``ProgressUpdate`` events.  This sink is forward-looking
+        infrastructure for when FixSession adopts the log bridge.
     """
 
     def __init__(self, queue: asyncio.Queue[ProgressUpdate]) -> None:

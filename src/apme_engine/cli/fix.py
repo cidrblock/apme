@@ -119,7 +119,7 @@ def run_fix(args: argparse.Namespace) -> None:
             elif oneof == "progress":
                 p = event.progress
                 verbosity = getattr(args, "verbose", 0) or 0
-                min_level = {0: 3, 1: 2}.get(verbosity, 1)
+                min_level = {0: 2, 1: 2}.get(verbosity, 1)
                 if p.level < min_level:
                     continue
                 phase = f"[{p.phase}] " if p.phase else ""

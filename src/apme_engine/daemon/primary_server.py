@@ -7,6 +7,7 @@ The Primary delegates internally to validators and remediation.
 
 import asyncio
 import contextlib
+import contextvars
 import difflib
 import json
 import logging
@@ -394,8 +395,10 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                 logger.debug("Session(%s): warm venv, ARI dependency_dir=%s", sid, ari_dependency_dir)
 
         # 1. ARI tree build
+        ctx = contextvars.copy_context()
         context_obj = await asyncio.get_event_loop().run_in_executor(
             None,
+            ctx.run,
             lambda: run_scan(
                 str(temp_dir),
                 str(temp_dir),
@@ -406,7 +409,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
 
         if not context_obj.hierarchy_payload:
             logger.warning("Scan: no hierarchy payload produced (req=%s)", scan_id)
-            return [], None, sid, []
+            return [], ScanDiagnostics(), sid, []
 
         # 2. Collection discovery
         discovered = _discover_collection_specs(files)
@@ -426,6 +429,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
         # 3. Venv acquire (always — creates or incrementally installs)
         venv_session = await asyncio.get_event_loop().run_in_executor(
             None,
+            ctx.run,
             self._get_venv_manager().acquire,
             sid,
             core_version,
