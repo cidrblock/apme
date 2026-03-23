@@ -223,16 +223,24 @@ def _build_unit_prompt(
 def discover_abbenay() -> str | None:
     """Auto-discover Abbenay daemon address from runtime socket.
 
-    Checks XDG_RUNTIME_DIR/abbenay/daemon.sock first, then ~/.abbenay/daemon.sock.
+    Search order mirrors the daemon's path conventions (paths.ts):
+      1. $XDG_RUNTIME_DIR/abbenay/daemon.sock
+      2. /run/user/<uid>/abbenay/daemon.sock  (Linux without XDG)
+      3. /tmp/abbenay/daemon.sock             (fallback)
 
     Returns:
         A 'unix://' address string, or None if no socket found.
     """
-    xdg = os.environ.get("XDG_RUNTIME_DIR")
     candidates: list[Path] = []
+
+    xdg = os.environ.get("XDG_RUNTIME_DIR")
     if xdg:
         candidates.append(Path(xdg) / "abbenay" / "daemon.sock")
-    candidates.append(Path.home() / ".abbenay" / "daemon.sock")
+
+    uid = os.getuid()
+    candidates.append(Path(f"/run/user/{uid}/abbenay/daemon.sock"))
+    candidates.append(Path("/tmp/abbenay/daemon.sock"))
+
     for sock in candidates:
         if sock.exists():
             return f"unix://{sock}"
@@ -663,6 +671,12 @@ class AbbenayProvider:
             )
             return None, []
 
+        logger.debug(
+            "Abbenay raw response (%d chars) for %s: %.500s",
+            len(response_text),
+            file_path,
+            response_text,
+        )
         return _parse_batch_response(response_text, file_content)
 
     async def propose_unit_fixes(

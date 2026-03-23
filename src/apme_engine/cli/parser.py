@@ -112,6 +112,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Enable Tier 2 AI-assisted remediation",
     )
     fix_p.add_argument(
+        "--model",
+        default=None,
+        help=("AI model identifier (e.g. 'openai/gpt-4o'); falls back to APME_AI_MODEL env var"),
+    )
+    fix_p.add_argument(
         "--json",
         action="store_true",
         default=False,
