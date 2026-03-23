@@ -330,6 +330,36 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
     """
 
     _venv_mgr: VenvSessionManager | None = None
+    _SCAN_DEDUP_WINDOW_S: float = 10.0
+
+    def __init__(self) -> None:
+        """Initialise servicer with an empty scan dedup cache."""
+        super().__init__()
+        self._recent_scan_keys: dict[str, float] = {}
+
+    def _is_duplicate_scan(self, session_id: str, file_count: int, source: str) -> bool:
+        """Check if an identical scan was emitted recently (dedup window).
+
+        Cleans up expired entries and returns True if a matching key exists.
+
+        Args:
+            session_id: Session ID of the scan.
+            file_count: Number of files in the scan.
+            source: Origin of the scan (cli, ci, gateway).
+
+        Returns:
+            True if this is a duplicate within the dedup window.
+        """
+        now = time.monotonic()
+        expired = [k for k, t in self._recent_scan_keys.items() if now - t > self._SCAN_DEDUP_WINDOW_S]
+        for k in expired:
+            del self._recent_scan_keys[k]
+
+        key = f"{session_id}:{file_count}:{source}"
+        if key in self._recent_scan_keys:
+            return True
+        self._recent_scan_keys[key] = now
+        return False
 
     def _get_venv_manager(self) -> VenvSessionManager:
         """Return (or create) the singleton VenvSessionManager.
@@ -645,8 +675,8 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                 all_logs = merge_logs(sink.entries, vlogs)
                 proto_violations = [violation_dict_to_proto(v) for v in violations]
 
-                asyncio.create_task(
-                    emit_scan_completed(
+                if not self._is_duplicate_scan(resolved_sid, len(request.files), "cli"):
+                    await emit_scan_completed(
                         ScanCompletedEvent(
                             scan_id=scan_id,
                             session_id=resolved_sid,
@@ -658,7 +688,8 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                             logs=all_logs,
                         )
                     )
-                )
+                else:
+                    logger.info("Scan: skipping duplicate event emission for session=%s req=%s", resolved_sid, scan_id)
 
                 return ScanResponse(
                     violations=proto_violations,
@@ -707,7 +738,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
 
         with attach_stream_sink(queue):
             try:
-                logger.info("Scan: start (%d files, req=%s)", len(all_files), scan_id)
+                logger.info("ScanStream: start (%d files, req=%s)", len(all_files), scan_id)
 
                 if not all_files:
                     yield ScanEvent(result=ScanResponse(scan_id=scan_id, violations=[], logs=[]))
@@ -774,8 +805,8 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                 all_logs = merge_logs(streamed_entries, vlogs)
                 proto_violations = [violation_dict_to_proto(v) for v in violations]
 
-                asyncio.create_task(
-                    emit_scan_completed(
+                if not self._is_duplicate_scan(resolved_sid, len(all_files), "cli"):
+                    await emit_scan_completed(
                         ScanCompletedEvent(
                             scan_id=scan_id,
                             session_id=resolved_sid,
@@ -787,7 +818,8 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                             logs=all_logs,
                         )
                     )
-                )
+                else:
+                    logger.info("ScanStream: skipping duplicate emission for session=%s req=%s", resolved_sid, scan_id)
 
                 yield ScanEvent(
                     result=ScanResponse(
@@ -1379,7 +1411,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
             ),
         )
 
-        asyncio.create_task(emit_fix_completed(self._build_fix_event(session, remaining_violations)))
+        await emit_fix_completed(self._build_fix_event(session, remaining_violations))
 
     @staticmethod
     def _build_fix_event(

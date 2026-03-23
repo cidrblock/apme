@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterator
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -230,17 +230,31 @@ async def test_stop_sinks_clears_list() -> None:
 # ---------------------------------------------------------------------------
 
 
-async def test_grpc_sink_skips_when_unavailable() -> None:
-    """Events are silently dropped when endpoint is unavailable."""
+async def test_grpc_sink_attempts_delivery_when_unavailable() -> None:
+    """Events are still attempted even when endpoint was previously unavailable."""
     sink = GrpcReportingSink("localhost:99999")
     sink._available = False
-    sink._stub = MagicMock()
+
+    mock_stub = AsyncMock()
+    mock_stub.ReportScanCompleted.return_value = ReportAck()
+    mock_stub.ReportFixCompleted.return_value = ReportAck()
+    sink._stub = mock_stub
 
     await sink.on_scan_completed(_scan_event())
     await sink.on_fix_completed(_fix_event())
 
-    sink._stub.ReportScanCompleted.assert_not_called()
-    sink._stub.ReportFixCompleted.assert_not_called()
+    mock_stub.ReportScanCompleted.assert_awaited_once()
+    mock_stub.ReportFixCompleted.assert_awaited_once()
+    assert sink._available is True
+
+
+async def test_grpc_sink_skips_when_stub_is_none() -> None:
+    """Events are silently dropped when stub has not been initialized."""
+    sink = GrpcReportingSink("localhost:99999")
+    sink._stub = None
+
+    await sink.on_scan_completed(_scan_event())
+    await sink.on_fix_completed(_fix_event())
 
 
 async def test_grpc_sink_sends_when_available() -> None:

@@ -1,7 +1,8 @@
 """gRPC reporting sink -- pushes events to a Reporting service (ADR-020).
 
-Health-gated: a background task probes the endpoint every 30 s.
-When the service is down, emit calls skip instantly (no timeout penalty).
+Health-gated: a background task probes the endpoint every 10 s.
+When the service is down, emit calls attempt delivery anyway (with a
+short timeout) so events are not silently dropped during brief outages.
 When it recovers, emission resumes automatically.
 """
 
@@ -18,8 +19,10 @@ from apme.v1 import reporting_pb2, reporting_pb2_grpc
 
 logger = logging.getLogger("apme.events.grpc")
 
-_TIMEOUT_S = 2.0
-_HEALTH_INTERVAL_S = 30.0
+_TIMEOUT_S = 10.0
+_HEALTH_INTERVAL_S = 10.0
+_STARTUP_PROBE_RETRIES = 5
+_STARTUP_PROBE_DELAY_S = 2.0
 
 
 class GrpcReportingSink:
@@ -38,10 +41,28 @@ class GrpcReportingSink:
         self._health_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
-        """Open channel, create stub, probe once, then launch health-check loop."""
+        """Open channel, create stub, probe with retries, then launch health-check loop."""
         self._channel = grpc.aio.insecure_channel(self._endpoint)
         self._stub = reporting_pb2_grpc.ReportingStub(self._channel)  # type: ignore[no-untyped-call]
-        await self._probe()
+        for attempt in range(1, _STARTUP_PROBE_RETRIES + 1):
+            await self._probe()
+            if self._available:
+                break
+            if attempt < _STARTUP_PROBE_RETRIES:
+                logger.info(
+                    "Reporting endpoint not ready, retrying in %.0fs (%d/%d)",
+                    _STARTUP_PROBE_DELAY_S,
+                    attempt,
+                    _STARTUP_PROBE_RETRIES,
+                )
+                await asyncio.sleep(_STARTUP_PROBE_DELAY_S)
+        if not self._available:
+            logger.warning(
+                "Reporting endpoint %s not available after %d startup probes; "
+                "events will be delivered once the endpoint becomes healthy",
+                self._endpoint,
+                _STARTUP_PROBE_RETRIES,
+            )
         self._health_task = asyncio.create_task(self._health_loop())
 
     async def stop(self) -> None:
@@ -54,32 +75,53 @@ class GrpcReportingSink:
             await self._channel.close(grace=None)
 
     async def on_scan_completed(self, event: reporting_pb2.ScanCompletedEvent) -> None:
-        """Push scan event; silently skip if endpoint is unavailable.
+        """Push scan event to the Reporting service.
+
+        Attempts delivery even when the endpoint was previously marked
+        unavailable, to avoid silently dropping events during brief
+        outages.  On failure the endpoint is re-probed on the next
+        health-check cycle.
 
         Args:
             event: Completed scan event to deliver.
         """
-        if not self._available or self._stub is None:
+        if self._stub is None:
             return
         try:
             await self._stub.ReportScanCompleted(event, timeout=_TIMEOUT_S)
+            if not self._available:
+                logger.info("Reporting endpoint recovered (scan delivery): %s", self._endpoint)
+                self._available = True
         except Exception:
+            logger.warning(
+                "Failed to emit ScanCompletedEvent scan_id=%s to %s",
+                event.scan_id,
+                self._endpoint,
+                exc_info=True,
+            )
             self._available = False
-            logger.warning("Failed to emit ScanCompletedEvent scan_id=%s", event.scan_id)
 
     async def on_fix_completed(self, event: reporting_pb2.FixCompletedEvent) -> None:
-        """Push fix event; silently skip if endpoint is unavailable.
+        """Push fix event to the Reporting service.
 
         Args:
             event: Completed fix event to deliver.
         """
-        if not self._available or self._stub is None:
+        if self._stub is None:
             return
         try:
             await self._stub.ReportFixCompleted(event, timeout=_TIMEOUT_S)
+            if not self._available:
+                logger.info("Reporting endpoint recovered (fix delivery): %s", self._endpoint)
+                self._available = True
         except Exception:
+            logger.warning(
+                "Failed to emit FixCompletedEvent scan_id=%s to %s",
+                event.scan_id,
+                self._endpoint,
+                exc_info=True,
+            )
             self._available = False
-            logger.warning("Failed to emit FixCompletedEvent scan_id=%s", event.scan_id)
 
     async def _probe(self) -> None:
         """Single gRPC health probe — sets ``_available`` accordingly.

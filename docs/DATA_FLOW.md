@@ -271,6 +271,32 @@ The `rule_id` prefix convention:
 - `native:` → native Python rule
 - No prefix → Ansible/Modernize rule (M001–M004, L057–L059)
 
+## Event reporting (Primary → Gateway → UI)
+
+After every scan or fix, the Primary pushes a `ScanCompletedEvent` or `FixCompletedEvent` to the Gateway's gRPC Reporting service (if `APME_REPORTING_ENDPOINT` is configured). The Gateway persists the event to SQLite and the UI reads it via the REST API.
+
+```
+Primary (scan completes)
+    │
+    │  await emit_scan_completed(ScanCompletedEvent)
+    │    ↓
+    │  GrpcReportingSink.on_scan_completed()
+    │    ↓
+    │  gRPC → Gateway :50060 ReportScanCompleted
+    │
+    ▼
+Gateway (grpc_reporting/servicer.py)
+    │  Upsert session row
+    │  Insert scan + violations + logs → SQLite
+    │
+    ▼
+UI (React SPA on :8081)
+    │  GET /api/v1/scans (nginx proxies to Gateway :8080)
+    │  Renders scan history, violations, session trends
+```
+
+The Primary deduplicates scan events within a 10-second window per session to prevent duplicate entries from gRPC framework retries.
+
 ## Local daemon mode
 
 When running without the Podman pod, the CLI connects to a local daemon via `ensure_daemon()`:
