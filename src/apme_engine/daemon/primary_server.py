@@ -1245,28 +1245,12 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
             ),
         )
 
-        # Present AI proposals if the engine produced them, or fall back to
-        # stub proposals from remaining violations when AI is enabled but the
-        # provider didn't generate fixes.
-        ai_enabled = fix_opts.enable_ai if fix_opts else False
+        # Only present proposals when the AI engine produced real fixes
+        # with before/after text.  Stub proposals (violations without diffs)
+        # are not actionable and just confuse the user.
         if report.ai_proposed:
             session.current_tier = 2
             proposals = self._build_proposals_from_ai(report.ai_proposed)
-            session.proposals = {p.id: p for p in proposals}
-            session.status = 1  # AWAITING_APPROVAL
-            yield SessionEvent(
-                proposals=ProposalsReady(
-                    proposals=proposals,
-                    tier=2,
-                    status=1,
-                ),
-            )
-        elif report.remaining_ai and ai_enabled:
-            session.current_tier = 2
-            proposals = self._build_proposals_from_remaining(
-                report.remaining_ai,
-                tier=2,
-            )
             session.proposals = {p.id: p for p in proposals}
             session.status = 1  # AWAITING_APPROVAL
             yield SessionEvent(
@@ -1375,49 +1359,6 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                 idx += 1
         return proposals
 
-    @staticmethod
-    def _build_proposals_from_remaining(
-        violations: list[ViolationDict],
-        *,
-        tier: int,
-    ) -> list[Proposal]:
-        """Convert remaining violations into stub Proposal protos.
-
-        Used as a fallback when AI is enabled but the provider did not
-        generate fixes (e.g. provider unavailable, all patches failed
-        validation).  These stubs omit before_text/after_text/diff_hunk
-        so the client can still display them for informational review.
-
-        Args:
-            violations: Violation dicts from the remediation report.
-            tier: Remediation tier (2=AI, 3=agentic).
-
-        Returns:
-            List of Proposal protos (without diff data).
-        """
-        proposals: list[Proposal] = []
-        for i, v in enumerate(violations):
-            line = v.get("line", 0)
-            if isinstance(line, list | tuple):
-                line_start = line[0] if line else 0
-                line_end = line[1] if len(line) > 1 else line_start
-            else:
-                line_start = int(line) if line else 0
-                line_end = line_start
-
-            proposals.append(
-                Proposal(
-                    id=f"t{tier}-{i:04d}",
-                    file=str(v.get("file", "")),
-                    rule_id=str(v.get("rule_id", "")),
-                    line_start=line_start,
-                    line_end=line_end,
-                    explanation=str(v.get("description", "")),
-                    confidence=0.0,
-                    tier=tier,
-                )
-            )
-        return proposals
 
     @staticmethod
     def _session_apply_approved(

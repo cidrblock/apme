@@ -378,38 +378,44 @@ class TestSessionStoreReaper:
 
 
 class TestBuildProposals:
-    """Unit tests for _build_proposals_from_remaining."""
+    """Unit tests for _build_proposals_from_ai."""
 
-    def test_converts_violations_to_proposals(self) -> None:
-        """Violations map to Proposal messages with tier and line ranges."""
+    def test_converts_ai_proposals_to_protos(self) -> None:
+        """AIProposal patches become Proposal protos with diff data."""
         from apme_engine.daemon.primary_server import PrimaryServicer
+        from apme_engine.remediation.ai_provider import AIPatch, AIProposal
 
-        violations = [
-            {"file": "a.yml", "rule_id": "L001", "line": 5, "description": "Missing name"},
-            {"file": "b.yml", "rule_id": "L002", "line": [10, 15], "description": "FQCN"},
+        ai_proposals = [
+            AIProposal(
+                file="a.yml",
+                original_yaml="line1\nline2\nline3\n",
+                fixed_yaml="line1\nfixed2\nline3\n",
+                patches=[
+                    AIPatch(
+                        rule_id="L001",
+                        line_start=2,
+                        line_end=2,
+                        fixed_lines="fixed2\n",
+                        explanation="Fixed line 2",
+                        confidence=0.95,
+                        diff_hunk="@@ -2 +2 @@\n-line2\n+fixed2",
+                    ),
+                ],
+                diff="",
+            ),
         ]
-        proposals = PrimaryServicer._build_proposals_from_remaining(violations, tier=2)  # type: ignore[arg-type]
+        proposals = PrimaryServicer._build_proposals_from_ai(ai_proposals)
 
-        assert len(proposals) == 2
+        assert len(proposals) == 1
         assert proposals[0].id == "t2-0000"
         assert proposals[0].file == "a.yml"
-        assert proposals[0].line_start == 5
-        assert proposals[0].line_end == 5
+        assert proposals[0].rule_id == "L001"
+        assert proposals[0].line_start == 2
+        assert proposals[0].line_end == 2
+        assert proposals[0].before_text == "line2\n"
+        assert proposals[0].after_text == "fixed2\n"
+        assert proposals[0].confidence == pytest.approx(0.95)
         assert proposals[0].tier == 2
-        assert proposals[1].line_start == 10
-        assert proposals[1].line_end == 15
-
-    def test_missing_line_defaults_to_zero(self) -> None:
-        """Omitted line info becomes zero line_start and line_end."""
-        from apme_engine.daemon.primary_server import PrimaryServicer
-
-        proposals = PrimaryServicer._build_proposals_from_remaining(
-            [{"file": "x.yml", "rule_id": "L003"}],
-            tier=3,
-        )
-        assert proposals[0].line_start == 0
-        assert proposals[0].line_end == 0
-        assert proposals[0].tier == 3
 
 
 class TestSessionApplyApproved:
