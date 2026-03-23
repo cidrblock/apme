@@ -126,9 +126,7 @@ async def _collect_uploads(ws: WebSocket, temp_dir: Path) -> dict[str, Any]:
             try:
                 content = base64.b64decode(msg["content"], validate=True)
             except Exception:
-                await ws.send_json(
-                    {"type": "error", "message": f"Invalid base64 content for {safe}"}
-                )
+                await ws.send_json({"type": "error", "message": f"Invalid base64 content for {safe}"})
                 continue
             dest = temp_dir / safe
             dest.parent.mkdir(parents=True, exist_ok=True)
