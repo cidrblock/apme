@@ -10,17 +10,20 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import shutil
 import tempfile
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import grpc
 import grpc.aio
 
 from apme.v1 import primary_pb2_grpc
 from apme_engine.daemon.chunked_fs import yield_scan_chunks
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -34,6 +37,30 @@ class UploadedFile:
 
     relative_path: str
     content: bytes
+
+
+def _sanitize_path(relative_path: str) -> str:
+    """Sanitize a user-provided relative path to prevent directory traversal.
+
+    Strips leading slashes, rejects ``..`` components, and normalises to
+    a POSIX-style relative path safe for joining with a temp directory.
+
+    Args:
+        relative_path: Raw path from the upload filename.
+
+    Returns:
+        Sanitized relative path string.
+
+    Raises:
+        ValueError: If the path contains traversal components.
+    """
+    cleaned = PurePosixPath(relative_path.replace("\\", "/"))
+    parts = [p for p in cleaned.parts if p != "/"]
+    if ".." in parts:
+        raise ValueError(f"Path traversal detected: {relative_path!r}")
+    if cleaned.is_absolute():
+        parts = parts[1:]
+    return str(PurePosixPath(*parts)) if parts else "unnamed"
 
 
 def _sse(event: str, data: dict[str, object]) -> str:
@@ -76,23 +103,22 @@ async def run_scan_stream(
     temp_dir = Path(tempfile.mkdtemp(prefix="apme-gw-scan-"))
     try:
         for f in files:
-            dest = temp_dir / f.relative_path
+            safe_path = _sanitize_path(f.relative_path)
+            dest = temp_dir / safe_path
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes(f.content)
 
-        chunks = list(
-            yield_scan_chunks(
-                temp_dir,
-                project_root_name="upload",
-                ansible_core_version=ansible_version or None,
-                collection_specs=collections,
-            )
+        chunks = yield_scan_chunks(
+            temp_dir,
+            project_root_name="upload",
+            ansible_core_version=ansible_version or None,
+            collection_specs=collections,
         )
 
         channel = grpc.aio.insecure_channel(primary_address)
         try:
             stub = primary_pb2_grpc.PrimaryStub(channel)  # type: ignore[no-untyped-call]
-            response_stream = stub.ScanStream(iter(chunks), timeout=timeout)
+            response_stream = stub.ScanStream(chunks, timeout=timeout)
 
             scan_id: str | None = None
             async for event in response_stream:
@@ -124,6 +150,7 @@ async def run_scan_stream(
         finally:
             await channel.close(grace=None)
     except Exception as exc:
-        yield _sse("error", {"message": str(exc)})
+        logger.exception("Scan stream failed: %s", exc)
+        yield _sse("error", {"message": "Scan failed — check gateway logs for details"})
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)

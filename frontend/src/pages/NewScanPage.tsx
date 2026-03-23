@@ -154,6 +154,7 @@ export function NewScanPage() {
                     <button
                       className="apme-file-remove"
                       onClick={() => removeFile(i)}
+                      aria-label={`Remove ${f.name}`}
                     >
                       x
                     </button>
