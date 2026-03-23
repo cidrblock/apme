@@ -473,8 +473,16 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
             collection_specs,
         )
         venv_path = str(venv_session.venv_root)
+        if venv_session.failed_collections:
+            logger.warning(
+                "Venv: %d collection(s) failed to install (session=%s, req=%s): %s — scan will continue without them",
+                len(venv_session.failed_collections),
+                sid,
+                scan_id,
+                ", ".join(venv_session.failed_collections),
+            )
         logger.info(
-            "Venv: ready (%d collections, session=%s, req=%s)",
+            "Venv: ready (%d collections installed, session=%s, req=%s)",
             len(venv_session.installed_collections),
             sid,
             scan_id,
