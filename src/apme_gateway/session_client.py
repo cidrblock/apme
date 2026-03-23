@@ -252,6 +252,7 @@ async def _forward_events(
                             "file": p.path,
                             "diff": p.diff,
                             "applied_rules": list(p.applied_rules),
+                            "patched": base64.b64encode(p.patched).decode() if p.patched else None,
                         }
                         for p in t1.applied_patches
                     ],
@@ -308,6 +309,7 @@ async def _forward_events(
                             "file": p.path,
                             "diff": p.diff,
                             "applied_rules": list(p.applied_rules),
+                            "patched": base64.b64encode(p.patched).decode() if p.patched else None,
                         }
                         for p in r.patches
                     ],

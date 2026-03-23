@@ -21,6 +21,7 @@ export interface Patch {
   file: string;
   diff: string;
   applied_rules: string[];
+  patched?: string;
 }
 
 export interface Tier1Result {

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import JSZip from "jszip";
 import {
   useSessionStream,
+  type Patch,
   type Proposal,
   type SessionStatus,
   type ProgressEntry,
@@ -585,6 +587,44 @@ function SessionComplete({
     result.patches.length + (tier1?.patches.length ?? 0);
   const remaining = result.remaining_violations.length;
 
+  const patchedFiles = useMemo(() => {
+    const byPath = new Map<string, Patch>();
+    for (const p of tier1?.patches ?? []) {
+      if (p.patched) byPath.set(p.file, p);
+    }
+    for (const p of result.patches) {
+      if (p.patched) byPath.set(p.file, p);
+    }
+    return byPath;
+  }, [tier1, result]);
+
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownload = useCallback(async () => {
+    if (patchedFiles.size === 0) return;
+    setDownloading(true);
+    try {
+      const zip = new JSZip();
+      for (const [path, patch] of patchedFiles) {
+        const bytes = Uint8Array.from(atob(patch.patched!), (c) =>
+          c.charCodeAt(0),
+        );
+        zip.file(path, bytes);
+      }
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `apme-fixed-${scanId ?? "files"}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } finally {
+      setDownloading(false);
+    }
+  }, [patchedFiles, scanId]);
+
   return (
     <div className="apme-session-complete">
       <div className="apme-complete-icon">&#10003;</div>
@@ -617,6 +657,20 @@ function SessionComplete({
           </div>
         </div>
       </div>
+
+      {patchedFiles.size > 0 && (
+        <div style={{ textAlign: "center", margin: "16px auto" }}>
+          <button
+            className="apme-btn-primary"
+            onClick={handleDownload}
+            disabled={downloading}
+          >
+            {downloading
+              ? "Preparing download..."
+              : `Download Fixed Files (${patchedFiles.size})`}
+          </button>
+        </div>
+      )}
 
       {result.patches.length > 0 && (
         <details className="apme-options-panel" style={{ maxWidth: 700, margin: "0 auto" }}>
