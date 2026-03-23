@@ -1133,9 +1133,9 @@ body,
 }
 
 .apme-proposal-explanation {
-  padding: 0 16px 12px 46px;
+  padding: 8px 16px 12px 46px;
   font-size: 13px;
-  color: var(--apme-text-muted);
+  color: var(--apme-text-secondary);
   line-height: 1.5;
 }
 

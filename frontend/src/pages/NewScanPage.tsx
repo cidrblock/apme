@@ -465,6 +465,7 @@ function ProposalCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   const hasDiff = Boolean(proposal.before_text || proposal.diff_hunk);
+  const hasDetails = Boolean(proposal.explanation || hasDiff);
   const confidencePct = Math.round(proposal.confidence * 100);
 
   return (
@@ -510,7 +511,7 @@ function ProposalCard({
           </div>
           <span className="apme-confidence-label">{confidencePct}%</span>
         </div>
-        {hasDiff && (
+        {hasDetails && (
           <button
             className="apme-btn-secondary apme-proposal-expand"
             onClick={(e) => {
@@ -518,26 +519,29 @@ function ProposalCard({
               setExpanded(!expanded);
             }}
           >
-            {expanded ? "Hide" : "Diff"}
+            {expanded ? "Hide" : hasDiff ? "Diff" : "Details"}
           </button>
         )}
       </div>
 
-      {proposal.explanation && (
-        <div className="apme-proposal-explanation">{proposal.explanation}</div>
-      )}
-
-      {expanded && hasDiff && (
-        <div className="apme-proposal-diff">
-          {proposal.diff_hunk ? (
-            <pre className="apme-diff-content">{proposal.diff_hunk}</pre>
-          ) : (
-            <DiffView
-              before={proposal.before_text}
-              after={proposal.after_text}
-            />
+      {expanded && (
+        <>
+          {proposal.explanation && (
+            <div className="apme-proposal-explanation">{proposal.explanation}</div>
           )}
-        </div>
+          {hasDiff && (
+            <div className="apme-proposal-diff">
+              {proposal.diff_hunk ? (
+                <pre className="apme-diff-content">{proposal.diff_hunk}</pre>
+              ) : (
+                <DiffView
+                  before={proposal.before_text}
+                  after={proposal.after_text}
+                />
+              )}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
