@@ -387,6 +387,35 @@ class FixReport:
     oscillation_detected: bool      # True if loop bailed due to no progress
 ```
 
+## Progress Streaming
+
+`RemediationEngine.remediate()` runs synchronously inside a thread-pool executor, which blocks the `_session_process` async generator from yielding events. Without explicit progress plumbing, the gRPC stream (and downstream WebSocket) goes silent for the entire remediation duration — often minutes for large projects with AI escalation.
+
+Three layers ensure continuous feedback:
+
+### ProgressCallback
+
+A `Callable[[str, str, float], None]` (`phase`, `message`, `fraction`) is threaded into both `RemediationEngine` and `_scan_pipeline`. Each component calls back at key milestones:
+
+| Source | Phase | Example messages |
+|--------|-------|-----------------|
+| `_scan_pipeline` | `scan` | `Dispatching to 4 validators...`, `Gitleaks: 0 findings` |
+| `RemediationEngine` | `tier1` | `Pass 1/5: scanning...`, `Pass 1: 113 transforms applied` |
+| `RemediationEngine` | `ai` | `AI: site.yml — 42 unit(s)`, `AI: site.yml unit 12/42` |
+
+### Thread-safe Queue and Drain Loop
+
+Because `remediate()` runs in an executor thread, callbacks cannot directly `yield` into the async generator. Instead:
+
+1. `_session_process` creates an `asyncio.Queue[ProgressUpdate | None]`.
+2. The callback posts updates via `loop.call_soon_threadsafe(queue.put_nowait, update)`.
+3. A drain loop (`while not remediate_future.done()`) polls the queue with a 1-second timeout and yields each `ProgressUpdate` as a `SessionEvent(progress=...)`.
+4. After the future completes, remaining queued items are drained.
+
+### Heartbeat
+
+A concurrent `asyncio` task sends a generic `ProgressUpdate(phase="heartbeat", message="Processing...")` every 15 seconds. This fills gaps where neither the engine nor the scan pipeline emits application-level progress (e.g., during long ARI scans or venv setup), preventing WebSocket idle timeouts from browsers or reverse proxies.
+
 ## gRPC Contract
 
 ### `FixSession` RPC on Primary (ADR-028)
