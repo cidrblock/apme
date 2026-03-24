@@ -1,6 +1,6 @@
 # APME: Abbenay Integration Remediation
 
-Abbenay `v2026.3.6-alpha` has been released with container support, GHCR
+Abbenay `v2026.3.7-alpha` has been released with container support, GHCR
 images, gRPC TCP listener changes, and a new CI/CD pipeline. This
 document lists the items in APME that need updating.
 
@@ -20,14 +20,14 @@ ai = [
     "abbenay-client @ git+https://github.com/redhat-developer/abbenay.git@516742428c5b074ce7d098cfcf4f69413658f5f6#subdirectory=packages/python",
 ]
 
-# Option A: pin to release tag
+# Current: pin to release wheel with SHA256 verification
 ai = [
-    "abbenay-client @ git+https://github.com/redhat-developer/abbenay.git@v2026.3.6-alpha#subdirectory=packages/python",
+    "abbenay-client @ https://github.com/redhat-developer/abbenay/releases/download/v2026.3.7-alpha/abbenay_client-2026.3.7a0-py3-none-any.whl#sha256=44b502731174bc942ebc56127e5dfae9ae0f81d3885fd42f5d33cd6e5bf66080",
 ]
 
-# Option B: install from release wheel (when published to PyPI)
+# Future: install from PyPI (when published)
 ai = [
-    "abbenay-client>=2026.3.6a0",
+    "abbenay-client>=2026.3.7a0",
 ]
 ```
 
@@ -73,7 +73,7 @@ works on both x86_64 and Apple Silicon / Graviton hosts.
 Several items are out of date:
 
 - **Version reference**: The health-check example shows `v2026.3.3`.
-  Update to `v2026.3.6-alpha` or just say "current version".
+  Update to `v2026.3.7-alpha` or just say "current version".
 
 - **Optional dependency example**: Shows `abbenay-client>=2026.3.3a0`
   as a hypothetical PyPI pin. Update to match whatever is chosen in
@@ -126,7 +126,7 @@ Abbenay GHCR images use tags **without** a `v` prefix:
 |-----|---------|
 | `:main` | Latest merged code |
 | `:sha-<short>` | Specific commit |
-| `:2026.3.6-alpha` | Release (no `v` prefix) |
+| `:2026.3.7-alpha` | Release (no `v` prefix) |
 | `:latest` | Latest stable release |
 
 If APME docs or scripts reference container tags, use this scheme.
@@ -151,10 +151,10 @@ another host, mention `--grpc-host`.
 
 ## Summary checklist
 
-- [x] Update `pyproject.toml` `[ai]` pin to `v2026.3.6-alpha` tag (or later)
+- [x] Update `pyproject.toml` `[ai]` pin to `v2026.3.7-alpha` tag (or later)
 - [ ] Run `uv lock` to regenerate lockfile
 - [ ] Update README container section to use GHCR pull
-- [x] Update `DESIGN_AI_ESCALATION.md` version refs and package names (already uses `abbenay_grpc`, `APME_ABBENAY_TOKEN`, and `v2026.3.6-alpha`)
+- [x] Update `DESIGN_AI_ESCALATION.md` version refs and package names (already uses `abbenay_grpc`, `APME_ABBENAY_TOKEN`, and `v2026.3.7-alpha`)
 - [x] Update ADR-025 package name references (already uses `abbenay_grpc`)
 - [ ] Review ADR-027 against current Abbenay MCP capabilities
 - [x] Consider adding `[ai]` extra to CI test matrix (`test-ai-extra` job in `.github/workflows/test.yml`)
