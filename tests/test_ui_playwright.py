@@ -44,8 +44,9 @@ def dashboard(page: Page) -> Page:
     page.goto(_BASE, wait_until="networkidle")
     page.wait_for_selector("[data-testid='page-navigation']", timeout=10_000)
     nav = page.locator("[data-testid='page-navigation']")
-    for group_btn in nav.locator("button.pf-v6-c-nav__link[aria-expanded='false']").all():
-        group_btn.click()
+    collapsed = nav.locator("button.pf-v6-c-nav__link[aria-expanded='false']")
+    while collapsed.count() > 0:
+        collapsed.first.click()
     return page
 
 
@@ -66,7 +67,7 @@ def test_sidebar_nav_groups(dashboard: Page) -> None:
     """
     nav = dashboard.locator("[data-testid='page-navigation']")
     for group in ["Reporting", "Operations", "Settings"]:
-        expect(nav.locator(f"button.pf-v6-c-nav__link:has-text('{group}')").first).to_be_visible()
+        expect(nav.locator(f"button[aria-expanded]:has-text('{group}')").first).to_be_visible()
 
 
 def test_sidebar_nav_items(dashboard: Page) -> None:
