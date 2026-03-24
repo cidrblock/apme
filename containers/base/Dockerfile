@@ -15,11 +15,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --frozen --no-install-project --no-dev \
-            --extra gateway --extra proxy
+            --extra ai --extra gateway --extra proxy
 
 # Full source; install the project itself (deps already cached).
 COPY . /app
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --extra gateway --extra proxy
+    uv sync --frozen --no-dev --extra ai --extra gateway --extra proxy
 
 ENV PATH="/app/.venv/bin:$PATH"
