@@ -1390,8 +1390,8 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
         applied = 0
         for pid in approved_ids:
             proposal = session.proposals.get(pid)
-            if not proposal or not proposal.after_text:
-                logger.warning("Skipping proposal %s: not found or empty after_text", pid)
+            if not proposal:
+                logger.warning("Skipping proposal %s: not found", pid)
                 continue
             content = session.working_files.get(proposal.file, b"")
             text = content.decode("utf-8", errors="replace") if isinstance(content, bytes) else str(content)
