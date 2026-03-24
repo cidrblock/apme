@@ -16,7 +16,7 @@ import shutil
 import tempfile
 import time
 import uuid
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -356,6 +356,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
         collection_specs: list[str] | None = None,
         include_scandata: bool = True,
         session_id: str = "",
+        progress_callback: Callable[[str, str, float], None] | None = None,
     ) -> tuple[
         list[ViolationDict], ScanDiagnostics | None, str, list[list[ProgressUpdate]], Mapping[str, object] | None
     ]:
@@ -383,6 +384,8 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
             collection_specs: Collection specifiers (may be extended by discovery).
             include_scandata: Whether to include scandata in engine call.
             session_id: Client-provided session ID for venv reuse.
+            progress_callback: Optional callback ``(phase, message, fraction)``
+                for streaming per-validator progress to callers.
 
         Returns:
             Tuple of (violations, ScanDiagnostics or None, resolved session_id,
@@ -476,36 +479,61 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
             venv_path=venv_path,
         )
 
-        tasks = {}
+        _pcb = progress_callback
+
+        task_names: list[str] = []
+        task_coros: list[object] = []
         for name, env_var in VALIDATOR_ENV_VARS.items():
             addr = os.environ.get(env_var)
             if not addr:
                 continue
-            tasks[name] = _call_validator(addr, validate_request)
+            task_names.append(name)
+            task_coros.append(_call_validator(addr, validate_request))
 
         violations: list[ViolationDict] = []
         validator_diagnostics: list[ValidatorDiagnostics] = []
         validator_logs: list[list[ProgressUpdate]] = []
         fan_out_ms = 0.0
 
-        if tasks:
-            logger.info("Fan-out: dispatching to %d validators (req=%s)", len(tasks), scan_id)
+        if task_coros:
+            num_validators = len(task_coros)
+            if _pcb:
+                _pcb("scan", f"Dispatching to {num_validators} validators...", 0.0)
+            logger.info("Fan-out: dispatching to %d validators (req=%s)", num_validators, scan_id)
             fan_t0 = time.monotonic()
-            results = await asyncio.gather(*tasks.values(), return_exceptions=True)
+
+            validators_done = 0
+
+            async def _run_validator(
+                name: str,
+                coro: object,
+            ) -> tuple[str, _ValidatorResult]:
+                nonlocal validators_done
+                result: _ValidatorResult = await coro  # type: ignore[misc]
+                validators_done += 1
+                if _pcb:
+                    count = len(result.violations)
+                    _pcb("scan", f"{name.title()}: {count} findings", validators_done / num_validators)
+                return name, result
+
+            named_results = await asyncio.gather(
+                *[_run_validator(n, c) for n, c in zip(task_names, task_coros, strict=True)],
+                return_exceptions=True,
+            )
             fan_out_ms = (time.monotonic() - fan_t0) * 1000
 
             counts: dict[str, int] = {}
-            for name, result in zip(tasks.keys(), results, strict=False):
-                if isinstance(result, BaseException):
-                    logger.error("%s raised (req=%s): %s", name, scan_id, result)
-                    counts[name] = 0
-                else:
-                    counts[name] = len(result.violations)
-                    violations.extend(result.violations)
-                    if result.diagnostics:
-                        validator_diagnostics.append(result.diagnostics)
-                    if result.logs:
-                        validator_logs.append(list(result.logs))
+            for item in named_results:
+                if isinstance(item, BaseException):
+                    logger.error("Validator raised (req=%s): %s", scan_id, item)
+                    continue
+                name, result = item
+                counts[name] = len(result.violations)
+                violations.extend(result.violations)
+                if result.diagnostics:
+                    validator_diagnostics.append(result.diagnostics)
+                if result.logs:
+                    validator_logs.append(list(result.logs))
 
             parts = " ".join(f"{n.title()}={counts.get(n, 0)}" for n in VALIDATOR_ENV_VARS)
             logger.info("Fan-out: done (%.0fms) %s Total=%d (req=%s)", fan_out_ms, parts, len(violations), scan_id)
@@ -1157,6 +1185,17 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
         node_index_set = False
         engine_ref: list[RemediationEngine | None] = [None]
 
+        # Thread-safe progress queue: the executor thread posts here,
+        # the async generator drains and yields SessionEvents.
+        _HEARTBEAT_INTERVAL = 15
+        progress_queue: asyncio.Queue[ProgressUpdate | None] = asyncio.Queue()
+
+        def _progress_callback(phase: str, message: str, fraction: float = 0.0) -> None:
+            loop.call_soon_threadsafe(
+                progress_queue.put_nowait,
+                ProgressUpdate(message=message, phase=phase, progress=fraction, level=2),
+            )
+
         def scan_fn(file_paths: list[str]) -> list[ViolationDict]:
             nonlocal node_index_set
             rel_files = []
@@ -1171,6 +1210,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                 ansible_core_version=ansible_core_version,
                 collection_specs=collection_specs,
                 session_id=fix_session_id,
+                progress_callback=_progress_callback,
             )
             future = asyncio.run_coroutine_threadsafe(coro, loop)
             violations, _, _, _, hierarchy_payload = future.result(timeout=300)
@@ -1192,16 +1232,43 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
             max_passes=max_passes,
             verbose=True,
             ai_provider=ai_provider,  # type: ignore[arg-type]
+            progress_callback=_progress_callback,
         )
         engine_ref[0] = engine
 
         yaml_paths = [str(temp_dir / f.path) for f in formatted_files if f.path.endswith((".yml", ".yaml"))]
 
-        report = await asyncio.get_event_loop().run_in_executor(
-            None,
-            engine.remediate,
-            yaml_paths,
-        )
+        async def _heartbeat() -> None:
+            """Send periodic heartbeats while remediation is running."""
+            while True:
+                await asyncio.sleep(_HEARTBEAT_INTERVAL)
+                progress_queue.put_nowait(ProgressUpdate(message="Processing...", phase="heartbeat", level=1))
+
+        heartbeat_task = asyncio.create_task(_heartbeat())
+        remediate_future = loop.run_in_executor(None, engine.remediate, yaml_paths)
+
+        # Drain progress queue while remediation runs, yielding events
+        while not remediate_future.done():
+            try:
+                update = await asyncio.wait_for(progress_queue.get(), timeout=1.0)
+            except asyncio.TimeoutError:
+                continue
+            if update is not None:
+                session.progress_logs.append(update)
+                yield SessionEvent(progress=update)
+
+        heartbeat_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await heartbeat_task
+
+        # Drain any remaining queued progress
+        while not progress_queue.empty():
+            update = progress_queue.get_nowait()
+            if update is not None:
+                session.progress_logs.append(update)
+                yield SessionEvent(progress=update)
+
+        report = remediate_future.result()
 
         # Post-remediation format pass
         for patch in report.applied_patches:

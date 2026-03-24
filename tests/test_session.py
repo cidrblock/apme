@@ -648,6 +648,85 @@ class TestSessionNodeIndexWiring:
             assert ni.get("task1") is not None
 
 
+class TestSessionProgressStreaming:
+    """Verify _session_process yields progress events during remediation."""
+
+    async def test_progress_events_during_remediation(self) -> None:
+        """Progress events from the engine drain loop appear in the stream.
+
+        Mocks _scan_pipeline and RemediationEngine.remediate so the
+        convergence loop produces progress callbacks which should be
+        yielded as SessionEvent(progress=...) through the drain loop.
+        """
+        from unittest.mock import MagicMock
+
+        from apme_engine.daemon.primary_server import PrimaryServicer
+        from apme_engine.remediation.engine import RemediationEngine
+
+        servicer = PrimaryServicer.__new__(PrimaryServicer)
+
+        async def fake_scan_pipeline(
+            temp_dir: object,
+            files: object,
+            scan_id: object,
+            **kwargs: object,
+        ) -> tuple[list[object], None, str, list[object], None]:
+            return [], None, "sid", [], None
+
+        servicer._scan_pipeline = fake_scan_pipeline  # type: ignore[assignment]
+
+        session = SessionState(session_id="test-prog")
+        session.working_files = {"play.yml": b"- name: test\n  debug:\n    msg: hi\n"}
+        session.original_files = dict(session.working_files)
+        session.fix_options = MagicMock()
+        session.fix_options.ansible_core_version = ""
+        session.fix_options.collection_specs = []
+        session.fix_options.session_id = ""
+        session.fix_options.max_passes = 1
+        session.fix_options.enable_ai = False
+        session.fix_options.ai_model = ""
+        session.scan_options = None
+
+        def fake_remediate(
+            engine_self: RemediationEngine,
+            file_paths: list[str],
+            **kwargs: object,
+        ) -> MagicMock:
+            if engine_self._progress_cb is not None:
+                engine_self._progress_cb("tier1", "Pass 1/1: scanning...", 0.0)
+                engine_self._progress_cb("tier1", "Pass 1: 3 fixable violations", 0.0)
+                engine_self._progress_cb("tier1", "Pass 1: 3 transforms applied", 0.0)
+                engine_self._progress_cb("tier1", "Converged at pass 1 (0 fixable)", 1.0)
+            return MagicMock(
+                applied_patches=[],
+                ai_proposed=[],
+                remaining_ai=[],
+                remaining_manual=[],
+                passes=1,
+                fixed=3,
+                oscillation_detected=False,
+            )
+
+        with (
+            patch.object(PrimaryServicer, "_format_files", return_value=[]),
+            patch.object(RemediationEngine, "remediate", fake_remediate),
+        ):
+            events: list[SessionEvent] = []
+            async for event in servicer._session_process(session, "scan-1"):
+                events.append(event)
+
+        progress_events = [e for e in events if e.HasField("progress")]
+        progress_msgs = [e.progress.message for e in progress_events]
+
+        assert any("Pass 1" in m for m in progress_msgs), (
+            f"Expected 'Pass 1' progress from drain loop, got: {progress_msgs}"
+        )
+        assert any("scanning" in m for m in progress_msgs), f"Expected 'scanning' progress, got: {progress_msgs}"
+        assert any("transforms applied" in m for m in progress_msgs), (
+            f"Expected 'transforms applied' progress, got: {progress_msgs}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Part 3: FixSession RPC integration tests
 # ---------------------------------------------------------------------------

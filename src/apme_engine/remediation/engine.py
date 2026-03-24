@@ -87,6 +87,13 @@ class FixReport:
 
 ScanFn = Callable[[list[str]], list[ViolationDict]]
 
+ProgressCallback = Callable[[str, str, float], None]
+"""``(phase, message, fraction)`` — thread-safe progress reporter.
+
+*phase* groups messages (``"tier1"``, ``"scan"``, ``"ai"``).
+*fraction* is 0.0–1.0 (optional, 0.0 when unknown).
+"""
+
 
 class RemediationEngine:
     """Scan -> transform -> re-scan convergence loop.
@@ -107,6 +114,7 @@ class RemediationEngine:
         verbose: bool = False,
         node_index: NodeIndex | None = None,
         ai_provider: AIProvider | None = None,
+        progress_callback: ProgressCallback | None = None,
     ) -> None:
         """Initialize the remediation engine.
 
@@ -118,6 +126,7 @@ class RemediationEngine:
             verbose: Deprecated — logging is controlled by log level (ADR-033).
             node_index: Optional hierarchy node index for enrichment.
             ai_provider: Optional AI provider for Tier 2 escalation.
+            progress_callback: Optional callback for streaming progress to callers.
         """
         self._registry = registry
         self._scan_fn = scan_fn
@@ -125,6 +134,18 @@ class RemediationEngine:
         self._max_ai_attempts = max_ai_attempts
         self._node_index = node_index
         self._ai_provider = ai_provider
+        self._progress_cb = progress_callback
+
+    def _progress(self, phase: str, message: str, fraction: float = 0.0) -> None:
+        """Report progress if a callback is registered.
+
+        Args:
+            phase: Progress phase (``"tier1"``, ``"scan"``, ``"ai"``).
+            message: Human-readable status message.
+            fraction: Optional 0.0–1.0 completion fraction.
+        """
+        if self._progress_cb is not None:
+            self._progress_cb(phase, message, fraction)
 
     def set_node_index(self, node_index: NodeIndex) -> None:
         """Set or replace the hierarchy node index.
@@ -238,6 +259,7 @@ class RemediationEngine:
 
         for pass_num in range(1, self._max_passes + 1):
             passes = pass_num
+            self._progress("tier1", f"Pass {pass_num}/{self._max_passes}: scanning...")
 
             if initial_violations is not None and pass_num == 1:
                 violations = initial_violations
@@ -248,9 +270,11 @@ class RemediationEngine:
                 self._enrich(violations)
             tier1, _, _ = partition_violations(violations, self._registry)
 
+            self._progress("tier1", f"Pass {pass_num}: {len(tier1)} fixable violations")
             logger.debug("Remediation: pass %d — %d fixable (Tier 1)", pass_num, len(tier1))
 
             if not tier1:
+                self._progress("tier1", f"Converged at pass {pass_num} (0 fixable)")
                 logger.info("Remediation: converged at pass %d (0 fixable)", pass_num)
                 break
 
@@ -290,12 +314,14 @@ class RemediationEngine:
                     file_contents[fp] = sf.serialize()
                     sf.reset_dirty()
 
+            self._progress("tier1", f"Pass {pass_num}: {applied_this_pass} transforms applied")
             logger.debug("Remediation: pass %d applied %d transforms", pass_num, applied_this_pass)
 
             if applied_this_pass == 0:
                 logger.debug("Remediation: pass %d transforms produced no changes, bail", pass_num)
                 break
 
+            self._progress("tier1", f"Pass {pass_num}: re-scanning...")
             self._write_files(file_contents)
             new_violations = self._scan_fn(file_paths)
             self._enrich(new_violations)
@@ -313,8 +339,11 @@ class RemediationEngine:
             prev_count = new_fixable
 
             if new_fixable == 0:
+                self._progress("tier1", f"Fully converged at pass {pass_num} (0 fixable)")
                 logger.info("Remediation: fully converged at pass %d (0 fixable)", pass_num)
                 break
+
+            self._progress("tier1", f"Pass {pass_num}: {new_fixable} remaining, continuing...")
 
             # Re-parse structured files from the serialized content
             # so line numbers match the on-disk state for the next pass
@@ -323,7 +352,7 @@ class RemediationEngine:
                 if sf is not None:
                     structured[fp] = sf
 
-        # Final partition of remaining violations
+        self._progress("tier1", "Final scan...")
         self._write_files(file_contents)
         final_violations = self._scan_fn(file_paths)
         self._enrich(final_violations)
@@ -361,6 +390,7 @@ class RemediationEngine:
         # Tier 2 AI escalation (only if provider is set and violations exist)
         ai_proposals: list[AIProposal] = []
         if self._ai_provider is not None and tier2:
+            self._progress("ai", f"AI escalation: {len(tier2)} Tier 2 candidate(s)")
             logger.info("Remediation: AI escalation — %d Tier 2 candidate(s)", len(tier2))
             ai_proposals = self._escalate_tier2(tier2, file_contents, _resolve_file)
 
@@ -432,19 +462,26 @@ class RemediationEngine:
             by_file[vf].append(v)
 
         results: list[AIProposal] = []
+        file_keys = sorted(by_file)
+        total_files = len(file_keys)
 
-        for file_path in sorted(by_file):
+        for file_idx, file_path in enumerate(file_keys, 1):
             file_violations = by_file[file_path]
             content = file_contents.get(file_path, "")
             if not content:
                 continue
 
-            logger.debug("AI file: %s (%d violations)", Path(file_path).name, len(file_violations))
+            fname = Path(file_path).name
+            self._progress("ai", f"AI: {fname} ({len(file_violations)} violations) [{file_idx}/{total_files}]")
+            logger.debug("AI file: %s (%d violations)", fname, len(file_violations))
 
             if self._node_index is not None and hasattr(self._ai_provider, "propose_unit_fixes"):
                 proposal = await self._escalate_by_units(file_path, file_violations, content)
             else:
                 proposal = await self._try_batch_proposal(file_path, file_violations, content)
+
+            patches_count = len(proposal.patches) if proposal else 0
+            self._progress("ai", f"AI: {fname} complete ({patches_count} patches) [{file_idx}/{total_files}]")
 
             if proposal is not None:
                 results.append(proposal)
@@ -478,15 +515,18 @@ class RemediationEngine:
         orphans = assign_violations_to_units(units, violations)
         units_with_violations = [u for u in units if u.violations]
 
-        logger.debug("%d unit(s) with violations, %d orphan(s)", len(units_with_violations), len(orphans))
+        total_units = len(units_with_violations)
+        self._progress("ai", f"AI: {Path(file_path).name} — {total_units} unit(s), {len(orphans)} orphan(s)")
+        logger.debug("%d unit(s) with violations, %d orphan(s)", total_units, len(orphans))
 
-        # Limit concurrency to avoid overwhelming the LLM backend
         max_concurrent = 8
         semaphore = asyncio.Semaphore(max_concurrent)
+        units_done = 0
 
         async def _process_unit(
             unit: FixableUnit,
         ) -> tuple[list[AIPatch], list[AISkipped]]:
+            nonlocal units_done
             async with semaphore:
                 patches, skipped = await self._ai_provider.propose_unit_fixes(  # type: ignore[union-attr]
                     unit.violations,
@@ -496,9 +536,14 @@ class RemediationEngine:
                     unit.line_end,
                 )
                 valid = [p for p in patches if p.confidence >= 0.01] if patches else []
+                units_done += 1
+                self._progress(
+                    "ai",
+                    f"AI: {Path(file_path).name} unit {units_done}/{total_units}",
+                    units_done / total_units if total_units else 0.0,
+                )
                 return valid, skipped or []
 
-        # Process all units in parallel (bounded by semaphore)
         unit_results: list[tuple[list[AIPatch], list[AISkipped]] | BaseException] = await asyncio.gather(
             *[_process_unit(u) for u in units_with_violations],
             return_exceptions=True,
