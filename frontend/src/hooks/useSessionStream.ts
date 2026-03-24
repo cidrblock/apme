@@ -142,17 +142,15 @@ export function useSessionStream() {
       ws.onopen = async () => {
         updateStatus("uploading");
 
-        ws.send(
-          JSON.stringify({
-            type: "start",
-            options: {
-              ansible_version: options.ansibleVersion || "",
-              collections: options.collections || [],
-              enable_ai: options.enableAi ?? true,
-              ai_model: options.aiModel || "",
-            },
-          }),
-        );
+        const startOptions: Record<string, unknown> = {
+          ansible_version: options.ansibleVersion || "",
+          collections: options.collections || [],
+          enable_ai: options.enableAi ?? true,
+        };
+        if (options.aiModel) {
+          startOptions.ai_model = options.aiModel;
+        }
+        ws.send(JSON.stringify({ type: "start", options: startOptions }));
 
         for (const file of files) {
           const content = await fileToBase64(file);

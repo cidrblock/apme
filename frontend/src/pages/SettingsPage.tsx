@@ -9,12 +9,12 @@ import {
 import { listAiModels } from '../services/api';
 import type { AiModelInfo } from '../types/api';
 
-const STORAGE_KEY = 'apme-ai-model';
+export const AI_MODEL_STORAGE_KEY = 'apme-ai-model';
 
 export function SettingsPage() {
   const [models, setModels] = useState<AiModelInfo[]>([]);
   const [selectedModel, setSelectedModel] = useState(
-    () => localStorage.getItem(STORAGE_KEY) ?? '',
+    () => localStorage.getItem(AI_MODEL_STORAGE_KEY) ?? '',
   );
   const [loading, setLoading] = useState(true);
 
@@ -22,11 +22,19 @@ export function SettingsPage() {
     listAiModels()
       .then((m) => {
         setModels(m);
-        const stored = localStorage.getItem(STORAGE_KEY);
-        const first = m[0];
-        if (!stored && first) {
-          setSelectedModel(first.id);
-          localStorage.setItem(STORAGE_KEY, first.id);
+        const stored = localStorage.getItem(AI_MODEL_STORAGE_KEY);
+        const ids = new Set(m.map((x) => x.id));
+        if (stored && ids.has(stored)) {
+          setSelectedModel(stored);
+        } else {
+          const first = m[0];
+          const fallback = first?.id ?? '';
+          setSelectedModel(fallback);
+          if (fallback) {
+            localStorage.setItem(AI_MODEL_STORAGE_KEY, fallback);
+          } else {
+            localStorage.removeItem(AI_MODEL_STORAGE_KEY);
+          }
         }
       })
       .catch(() => setModels([]))
@@ -36,9 +44,9 @@ export function SettingsPage() {
   const handleChange = useCallback((value: string) => {
     setSelectedModel(value);
     if (value) {
-      localStorage.setItem(STORAGE_KEY, value);
+      localStorage.setItem(AI_MODEL_STORAGE_KEY, value);
     } else {
-      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(AI_MODEL_STORAGE_KEY);
     }
   }, []);
 
