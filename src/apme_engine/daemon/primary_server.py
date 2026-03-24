@@ -356,7 +356,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
         collection_specs: list[str] | None = None,
         include_scandata: bool = True,
         session_id: str = "",
-    ) -> tuple[list[ViolationDict], ScanDiagnostics | None, str, list[list[ProgressUpdate]]]:
+    ) -> tuple[list[ViolationDict], ScanDiagnostics | None, str, list[list[ProgressUpdate]], dict[str, object] | None]:
         """Core scan pipeline: engine → collection discovery → venv → validators.
 
         Reused by Scan, ScanStream, and FixSession (as scan_fn for remediation).
@@ -384,7 +384,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
 
         Returns:
             Tuple of (violations, ScanDiagnostics or None, resolved session_id,
-            merged pipeline logs).
+            merged pipeline logs, hierarchy_payload or None).
         """
         from apme_engine.validators.ansible._venv import DEFAULT_VERSION
         from apme_engine.venv_manager.session import _venv_site_packages
@@ -419,7 +419,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
 
         if not context_obj.hierarchy_payload:
             logger.warning("Scan: no hierarchy payload produced (req=%s)", scan_id)
-            return [], ScanDiagnostics(), sid, []
+            return [], ScanDiagnostics(), sid, [], None
 
         # 2. Collection discovery
         discovered = _discover_collection_specs(files)
@@ -524,7 +524,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
             total_ms=total_ms,
         )
         logger.info("Scan: pipeline done (%.0fms, %d violations, req=%s)", total_ms, len(violations), scan_id)
-        return violations, diag, sid, validator_logs
+        return violations, diag, sid, validator_logs, context_obj.hierarchy_payload
 
     @staticmethod
     def _format_files(files: list[File]) -> list[FileDiff]:
@@ -626,7 +626,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
 
                 opts = request.options if request.HasField("options") else None
                 session_id = request.session_id or (opts.session_id if opts else "") or ""
-                violations, diag, resolved_sid, vlogs = await self._scan_pipeline(
+                violations, diag, resolved_sid, vlogs, _ = await self._scan_pipeline(
                     temp_dir,
                     list(request.files),  # type: ignore[arg-type]
                     scan_id,
@@ -765,7 +765,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                     streamed_entries.append(entry)
                     yield ScanEvent(progress=entry)
 
-                violations, diag, resolved_sid, vlogs = pipeline_task.result()
+                violations, diag, resolved_sid, vlogs, _ = pipeline_task.result()
 
                 for vlog_batch in vlogs:
                     for vlog in vlog_batch:
@@ -1150,6 +1150,11 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
 
         loop = asyncio.get_event_loop()
 
+        from apme_engine.engine.node_index import NodeIndex  # noqa: PLC0415
+
+        hierarchy_payloads: list[dict[str, object]] = []
+        engine_ref: list[RemediationEngine | None] = [None]
+
         def scan_fn(file_paths: list[str]) -> list[ViolationDict]:
             rel_files = []
             for fp in file_paths:
@@ -1165,7 +1170,17 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                 session_id=fix_session_id,
             )
             future = asyncio.run_coroutine_threadsafe(coro, loop)
-            violations, _, _, _ = future.result(timeout=300)
+            violations, _, _, _, hierarchy_payload = future.result(timeout=300)
+
+            if hierarchy_payload and not hierarchy_payloads:
+                hierarchy_payloads.append(hierarchy_payload)
+                merged: dict[str, list[object]] = {"hierarchy": []}
+                merged["hierarchy"].extend(hierarchy_payload.get("hierarchy", []))
+                node_index = NodeIndex(merged)
+                if len(node_index) > 0 and engine_ref[0] is not None:
+                    engine_ref[0].set_node_index(node_index)
+                    logger.info("NodeIndex: indexed %d hierarchy nodes for unit segmentation", len(node_index))
+
             return violations
 
         registry = build_default_registry()
@@ -1177,6 +1192,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
             verbose=True,
             ai_provider=ai_provider,  # type: ignore[arg-type]
         )
+        engine_ref[0] = engine
 
         yaml_paths = [str(temp_dir / f.path) for f in formatted_files if f.path.endswith((".yml", ".yaml"))]
 
