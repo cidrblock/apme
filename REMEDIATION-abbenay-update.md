@@ -20,14 +20,14 @@ ai = [
     "abbenay-client @ git+https://github.com/redhat-developer/abbenay.git@516742428c5b074ce7d098cfcf4f69413658f5f6#subdirectory=packages/python",
 ]
 
-# Option A: pin to release tag
+# Current: pin to release wheel with SHA256 verification
 ai = [
-    "abbenay-client @ git+https://github.com/redhat-developer/abbenay.git@v2026.3.7-alpha#subdirectory=packages/python",
+    "abbenay-client @ https://github.com/redhat-developer/abbenay/releases/download/v2026.3.7-alpha/abbenay_client-2026.3.7a0-py3-none-any.whl#sha256=44b502731174bc942ebc56127e5dfae9ae0f81d3885fd42f5d33cd6e5bf66080",
 ]
 
-# Option B: install from release wheel (when published to PyPI)
+# Future: install from PyPI (when published)
 ai = [
-    "abbenay-client>=2026.3.6a0",
+    "abbenay-client>=2026.3.7a0",
 ]
 ```
 

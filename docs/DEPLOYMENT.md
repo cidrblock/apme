@@ -18,7 +18,7 @@ From the repo root:
 ./containers/podman/build.sh
 ```
 
-This builds nine images and pulls one official image:
+This builds a shared base image, nine service images, and pulls one official image:
 
 | Image | Source | Purpose |
 |-------|--------|---------|

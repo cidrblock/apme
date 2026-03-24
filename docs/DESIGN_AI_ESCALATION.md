@@ -575,19 +575,19 @@ If `--ai` is set but the daemon is unreachable, the CLI exits with a clear error
 
 `abbenay-client` is an optional dependency:
 
-Currently pinned via VCS URL to the release tag:
+Currently pinned via direct wheel URL with SHA256 verification:
 
 ```toml
 [project.optional-dependencies]
 ai = [
-    "abbenay-client @ git+https://github.com/redhat-developer/abbenay.git@v2026.3.7-alpha#subdirectory=packages/python",
+    "abbenay-client @ https://github.com/redhat-developer/abbenay/releases/download/v2026.3.7-alpha/abbenay_client-2026.3.7a0-py3-none-any.whl#sha256=44b502...",
 ]
 ```
 
 Once `abbenay-client` is published to PyPI, this can be simplified to:
 
 ```toml
-ai = ["abbenay-client>=2026.3.6a0"]
+ai = ["abbenay-client>=2026.3.7a0"]
 ```
 
 Install with: `pip install apme-engine[ai]`
