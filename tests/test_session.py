@@ -568,6 +568,86 @@ class TestSessionReplayState:
         assert "result" in types
 
 
+class TestSessionNodeIndexWiring:
+    """Verify _session_process wires NodeIndex from hierarchy payload."""
+
+    async def test_scan_fn_sets_node_index_on_engine(self) -> None:
+        """scan_fn captures hierarchy_payload and calls engine.set_node_index().
+
+        Mocks _scan_pipeline to return a hierarchy payload and verifies that
+        RemediationEngine.set_node_index is called with a populated NodeIndex.
+        """
+        from unittest.mock import MagicMock
+
+        from apme_engine.daemon.primary_server import PrimaryServicer
+        from apme_engine.engine.node_index import NodeIndex
+        from apme_engine.remediation.engine import RemediationEngine
+
+        servicer = PrimaryServicer.__new__(PrimaryServicer)
+
+        hierarchy_payload: dict[str, object] = {
+            "hierarchy": [
+                {
+                    "nodes": [
+                        {"key": "task0", "type": "taskcall", "file": "play.yml", "line": [1, 3]},
+                        {"key": "task1", "type": "taskcall", "file": "play.yml", "line": [5, 7]},
+                    ],
+                },
+            ],
+        }
+
+        async def fake_scan_pipeline(
+            temp_dir: object,
+            files: object,
+            scan_id: object,
+            **kwargs: object,
+        ) -> tuple[list[object], None, str, list[object], dict[str, object]]:
+            return [], None, "sid", [], hierarchy_payload
+
+        servicer._scan_pipeline = fake_scan_pipeline  # type: ignore[assignment]
+
+        session = SessionState(session_id="test-ni")
+        session.working_files = {"play.yml": b"- name: test\n  debug:\n    msg: hi\n"}
+        session.original_files = dict(session.working_files)
+        session.fix_options = MagicMock()
+        session.fix_options.ansible_core_version = ""
+        session.fix_options.collection_specs = []
+        session.fix_options.session_id = ""
+        session.fix_options.max_passes = 1
+        session.fix_options.enable_ai = False
+        session.fix_options.ai_model = ""
+        session.scan_options = None
+
+        captured_node_index: list[NodeIndex | None] = [None]
+
+        def fake_remediate(engine_self: RemediationEngine, file_paths: list[str], apply: bool = True) -> MagicMock:
+            engine_self._scan_fn(file_paths)
+            return MagicMock(applied_patches=[], ai_proposed=[], remaining=[])
+
+        with (
+            patch.object(PrimaryServicer, "_format_files", return_value=[]),
+            patch.object(
+                RemediationEngine,
+                "remediate",
+                fake_remediate,
+            ),
+            patch.object(
+                RemediationEngine,
+                "set_node_index",
+                side_effect=lambda ni: captured_node_index.__setitem__(0, ni),
+            ) as mock_set_ni,
+        ):
+            async for _ in servicer._session_process(session, "scan-1"):
+                pass
+
+            assert mock_set_ni.called, "set_node_index was never called"
+            ni = captured_node_index[0]
+            assert ni is not None
+            assert len(ni) == 2
+            assert ni.get("task0") is not None
+            assert ni.get("task1") is not None
+
+
 # ---------------------------------------------------------------------------
 # Part 3: FixSession RPC integration tests
 # ---------------------------------------------------------------------------

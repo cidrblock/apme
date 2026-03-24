@@ -16,7 +16,7 @@ import shutil
 import tempfile
 import time
 import uuid
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -356,7 +356,9 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
         collection_specs: list[str] | None = None,
         include_scandata: bool = True,
         session_id: str = "",
-    ) -> tuple[list[ViolationDict], ScanDiagnostics | None, str, list[list[ProgressUpdate]], dict[str, object] | None]:
+    ) -> tuple[
+        list[ViolationDict], ScanDiagnostics | None, str, list[list[ProgressUpdate]], Mapping[str, object] | None
+    ]:
         """Core scan pipeline: engine → collection discovery → venv → validators.
 
         Reused by Scan, ScanStream, and FixSession (as scan_fn for remediation).
@@ -384,7 +386,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
 
         Returns:
             Tuple of (violations, ScanDiagnostics or None, resolved session_id,
-            merged pipeline logs, hierarchy_payload or None).
+            merged pipeline logs, hierarchy_payload Mapping or None).
         """
         from apme_engine.validators.ansible._venv import DEFAULT_VERSION
         from apme_engine.venv_manager.session import _venv_site_packages
@@ -1152,10 +1154,11 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
 
         from apme_engine.engine.node_index import NodeIndex  # noqa: PLC0415
 
-        hierarchy_payloads: list[dict[str, object]] = []
+        node_index_set = False
         engine_ref: list[RemediationEngine | None] = [None]
 
         def scan_fn(file_paths: list[str]) -> list[ViolationDict]:
+            nonlocal node_index_set
             rel_files = []
             for fp in file_paths:
                 p = Path(fp)
@@ -1172,11 +1175,9 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
             future = asyncio.run_coroutine_threadsafe(coro, loop)
             violations, _, _, _, hierarchy_payload = future.result(timeout=300)
 
-            if hierarchy_payload and not hierarchy_payloads:
-                hierarchy_payloads.append(hierarchy_payload)
-                merged: dict[str, list[object]] = {"hierarchy": []}
-                merged["hierarchy"].extend(hierarchy_payload.get("hierarchy", []))
-                node_index = NodeIndex(merged)
+            if hierarchy_payload and not node_index_set:
+                node_index_set = True
+                node_index = NodeIndex(hierarchy_payload)
                 if len(node_index) > 0 and engine_ref[0] is not None:
                     engine_ref[0].set_node_index(node_index)
                     logger.info("NodeIndex: indexed %d hierarchy nodes for unit segmentation", len(node_index))
