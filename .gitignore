@@ -20,8 +20,7 @@ htmlcov/
 *.cover
 .tox/
 
-# uv
-uv.lock
+# uv — uv.lock is committed (required by container builds)
 
 # gRPC generated stubs (checked in, but ignore local re-gen artifacts)
 # src/apme/v1/*_pb2.py and *_pb2_grpc.py ARE checked in
