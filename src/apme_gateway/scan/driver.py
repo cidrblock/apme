@@ -192,6 +192,11 @@ async def run_project_operation(
                     await command_queue.put(
                         primary_pb2.SessionCommand(approve=primary_pb2.ApprovalRequest(approved_ids=approved_ids))
                     )
+                elif kind == "proposals":
+                    # No approval_queue — decline all proposals to avoid hanging.
+                    await command_queue.put(
+                        primary_pb2.SessionCommand(approve=primary_pb2.ApprovalRequest(approved_ids=[]))
+                    )
                 elif kind == "result":
                     result = event.result
                     await command_queue.put(primary_pb2.SessionCommand(close=primary_pb2.CloseRequest()))
