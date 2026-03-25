@@ -71,7 +71,7 @@ export function DashboardPage() {
         <MetricCard title="Total Checks" count={summary?.total_scans ?? 0} />
         <MetricCard title="Current Violations" count={summary?.current_violations ?? 0} />
         <MetricCard title="Total Violations" count={summary?.total_violations ?? 0} />
-        <MetricCard title="Total Remediated" count={summary?.total_remediated ?? 0} />
+        <MetricCard title="Total Remediated" count={summary?.total_fixed ?? 0} />
         <MetricCard title="Avg Health" count={summary ? Math.round(summary.avg_health_score) : 0} />
 
         <PageDashboardCard title="Top 10 Cleanest" width="lg" height="md" to="/projects" linkText="View all">

@@ -542,12 +542,11 @@ async def handle_session(
             await ws.send_json({"type": "error", "message": str(exc)})
     except Exception as exc:
         logger.exception("Session failed: %s", exc)
-        detail = f"{type(exc).__name__}: {exc}"
         with contextlib.suppress(Exception):
             await ws.send_json(
                 {
                     "type": "error",
-                    "message": detail,
+                    "message": f"Operation failed ({type(exc).__name__})",
                 }
             )
     finally:

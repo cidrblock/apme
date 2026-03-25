@@ -64,7 +64,7 @@ cd /path/to/your/ansible/project
 /path/to/apme/containers/podman/run-cli.sh check --json .
 
 # Remediate (Tier 1 deterministic fixes; `FixSession` RPC)
-containers/podman/run-cli.sh remediate --check .   # dry-run
+containers/podman/run-cli.sh check --diff .        # dry-run with diffs
 containers/podman/run-cli.sh remediate .           # apply
 
 # Format (YAML normalization)
@@ -214,7 +214,7 @@ python -m apme_engine.cli daemon start
 
 # Run commands (thin CLI talks to local daemon via gRPC)
 python -m apme_engine.cli check /path/to/project
-python -m apme_engine.cli remediate --check .
+python -m apme_engine.cli check --diff .
 python -m apme_engine.cli remediate .
 
 # Stop the daemon

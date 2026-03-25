@@ -125,7 +125,7 @@ def scan_verbose(infrastructure: object) -> subprocess.CompletedProcess[str]:
 def test_milestone_logs_displayed(scan_verbose: subprocess.CompletedProcess[str]) -> None:
     """With -v the CLI renders pipeline milestone logs on stderr in real time.
 
-    The check command uses FixSession (ADR-038) which streams
+    The check command uses FixSession (ADR-039) which streams
     ``SessionEvent(progress=...)`` as milestones are reached.
     This test verifies that key milestones are visible to the user.
 
@@ -347,7 +347,7 @@ def test_scan_persisted_to_gateway(scan_data: YAMLDict, infrastructure: object) 
     )
     assert logs, f"No pipeline logs persisted for scan_id {cli_scan_id}"
     log_phases = {str(row[1]) for row in logs}
-    assert "primary" in log_phases, f"Expected 'primary' phase in persisted logs, got phases: {sorted(log_phases)}"
+    assert "scan" in log_phases, f"Expected 'scan' phase in persisted logs, got phases: {sorted(log_phases)}"
 
     # -- 6. REST /activity/{id} returns full detail matching CLI output ------
     scan_detail = _poll_api(f"{http_url}/api/v1/activity/{cli_scan_id}")
@@ -384,7 +384,7 @@ def test_scan_persisted_to_gateway(scan_data: YAMLDict, infrastructure: object) 
     rest_logs = scan_detail.get("logs", [])
     assert isinstance(rest_logs, list) and len(rest_logs) > 0, "REST /activity/{id} should include pipeline logs"
     rest_log_phases = {str(lg.get("phase", "")) for lg in rest_logs}
-    assert "primary" in rest_log_phases, f"REST logs missing 'primary' phase, got: {sorted(rest_log_phases)}"
+    assert "scan" in rest_log_phases, f"REST logs missing 'scan' phase, got: {sorted(rest_log_phases)}"
 
     # -- 7. REST /sessions lists the session with our scan ---------------
     api_sessions = _poll_api(f"{http_url}/api/v1/sessions")

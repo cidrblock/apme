@@ -1,4 +1,4 @@
-"""Project operation driver — clone, chunk, check/remediate via gRPC (ADR-037, ADR-038).
+"""Project operation driver — clone, chunk, check/remediate via gRPC (ADR-037, ADR-039).
 
 The gateway acts as a gRPC client to Primary for project-initiated operations.
 On each invocation the project repo is shallow-cloned into a temporary directory,

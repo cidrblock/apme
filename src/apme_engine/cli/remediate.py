@@ -1,4 +1,4 @@
-"""Remediate subcommand: full remediation pipeline with Tier 1 auto-fix and optional AI proposals (ADR-028, ADR-038).
+"""Remediate subcommand: full remediation pipeline with Tier 1 auto-fix and optional AI proposals (ADR-028, ADR-039).
 
 Creates a fix session, streams progress events, handles interactive proposal
 review (or --auto-approve), and writes patched files on completion.
@@ -296,7 +296,6 @@ def _write_patches(target: Path, patches: list[object]) -> None:
         sys.stderr.write(f"  Fixed: {p.path} [{rules}]\n")  # type: ignore[attr-defined]
         count += 1
     sys.stderr.write(f"\n{count} file(s) updated.\n")
-
 
 
 def _render_remaining(result: object) -> None:

@@ -694,10 +694,7 @@ async def get_activity_detail(activity_id: str) -> ActivityDetail:
             )
             for lg in scan.logs
         ],
-        patches=[
-            PatchDetail(id=pt.id, file=pt.file, diff=pt.diff)
-            for pt in scan.patches
-        ],
+        patches=[PatchDetail(id=pt.id, file=pt.file, diff=pt.diff) for pt in scan.patches],
     )
 
 
@@ -840,7 +837,7 @@ async def project_operate_ws(
     websocket: WebSocket,
     project_id: str,
 ) -> None:
-    """Bidirectional WebSocket for project check/remediate operations (ADR-037, ADR-038).
+    """Bidirectional WebSocket for project check/remediate operations (ADR-037, ADR-039).
 
     The client sends ``{"action": "check"|"remediate", "options": {...}}`` (or
     ``{"remediate": true}``) to start an operation.  The gateway clones the repo,
@@ -923,20 +920,18 @@ async def project_operate_ws(
                     }
                     for p in props.proposals
                 ]
-                ai_proposed_count = sum(
-                    1 for i in items if i.get("status") != "declined"
-                )
-                ai_declined_count = sum(
-                    1 for i in items if i.get("status") == "declined"
-                )
+                ai_proposed_count = sum(1 for i in items if i.get("status") != "declined")
+                ai_declined_count = sum(1 for i in items if i.get("status") == "declined")
                 await websocket.send_json({"type": "proposals", "proposals": items})
             elif kind == "approval_ack":
                 ack = event.approval_ack  # type: ignore[attr-defined]
                 ai_accepted_count = getattr(ack, "applied_count", 0)
-                await websocket.send_json({
-                    "type": "approval_ack",
-                    "applied_count": ai_accepted_count,
-                })
+                await websocket.send_json(
+                    {
+                        "type": "approval_ack",
+                        "applied_count": ai_accepted_count,
+                    }
+                )
             elif kind == "result":
                 await _ensure_started()
                 res = event.result  # type: ignore[attr-defined]
@@ -966,11 +961,7 @@ async def project_operate_ws(
                 ]
 
                 result_patches = getattr(res, "patches", [])
-                patches_json = [
-                    {"file": p.path, "diff": p.diff}
-                    for p in result_patches
-                    if p.diff
-                ]
+                patches_json = [{"file": p.path, "diff": p.diff} for p in result_patches if p.diff]
                 captured_patches.extend(patches_json)
 
                 remediated = (fixed + ai_accepted_count) if is_remediate else 0
@@ -1059,11 +1050,15 @@ async def project_operate_ws(
             op_scan_type = "remediate" if is_remediate else "check"
             async with get_session() as db:
                 await q.link_scan_to_project(
-                    db, completed_scan_id, proj.id,
-                    trigger="ui", scan_type=op_scan_type,
+                    db,
+                    completed_scan_id,
+                    proj.id,
+                    trigger="ui",
+                    scan_type=op_scan_type,
                 )
                 await q.update_ai_counts(
-                    db, completed_scan_id,
+                    db,
+                    completed_scan_id,
                     ai_proposed=ai_proposed_count,
                     ai_declined=ai_declined_count,
                     ai_accepted=ai_accepted_count,
@@ -1077,9 +1072,8 @@ async def project_operate_ws(
         logger.info("WebSocket disconnected for project %s", project_id)
     except Exception as exc:
         logger.exception("Error during project operation for %s", project_id)
-        detail = f"{type(exc).__name__}: {exc}"
         with contextlib.suppress(Exception):
-            await websocket.send_json({"type": "error", "message": detail})
+            await websocket.send_json({"type": "error", "message": f"Operation failed ({type(exc).__name__})"})
     finally:
         with contextlib.suppress(Exception):
             await websocket.close()

@@ -32,8 +32,8 @@ From **any directory** you want to work with:
 ./containers/podman/run-cli.sh
 ./containers/podman/run-cli.sh check --json .
 
-# Remediate (Tier 1 deterministic fixes, --check for dry-run)
-./containers/podman/run-cli.sh remediate --check .
+# Remediate (Tier 1 deterministic fixes); dry-run: check --diff
+./containers/podman/run-cli.sh check --diff .
 ./containers/podman/run-cli.sh remediate .
 
 # Format (YAML normalization)

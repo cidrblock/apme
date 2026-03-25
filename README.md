@@ -83,13 +83,13 @@ apme-scan format --apply /path/to/project
 apme-scan format --check /path/to/project
 
 # Full remediate pipeline: format → idempotency check → re-scan → modernize
-apme-scan remediate --apply /path/to/playbook-or-project
+apme-scan remediate /path/to/playbook-or-project
 
 # AI-assisted remediation (requires Abbenay daemon)
-apme-scan remediate --ai --apply /path/to/playbook-or-project
+apme-scan remediate --ai /path/to/playbook-or-project
 
 # AI with auto-approve (no interactive review)
-apme-scan remediate --ai --auto-approve --apply /path/to/playbook-or-project
+apme-scan remediate --ai --auto-approve /path/to/playbook-or-project
 ```
 
 ### Container deployment (Podman)
@@ -140,7 +140,7 @@ abbenay daemon start
 export APME_ABBENAY_TOKEN="your-token"
 
 # Remediate with AI
-apme-scan remediate --ai --apply /path/to/playbook-or-project
+apme-scan remediate --ai /path/to/playbook-or-project
 ```
 
 ### Container daemon
@@ -161,7 +161,7 @@ podman run -d --name abbenay \
   ghcr.io/redhat-developer/abbenay:latest
 
 # Point APME at the Abbenay container via gRPC TCP
-APME_ABBENAY_ADDR=localhost:50057 apme-scan remediate --ai --apply .
+APME_ABBENAY_ADDR=localhost:50057 apme-scan remediate --ai .
 ```
 
 ### CLI flags
@@ -171,8 +171,6 @@ APME_ABBENAY_ADDR=localhost:50057 apme-scan remediate --ai --apply .
 | `--ai` | Enable AI escalation (opt-in) |
 | `--auto-approve` | Approve all AI proposals without prompting (CI mode) |
 | `--max-passes N` | Max convergence passes (default: 5) |
-| `--apply` | Write changes in place |
-| `--check` | Exit 1 if changes would be made (CI mode) |
 | `--json` | Output structured data payloads as JSON |
 | `--session ID` | Explicit session ID for venv reuse (default: auto-derived from project root) |
 
@@ -180,7 +178,7 @@ APME_ABBENAY_ADDR=localhost:50057 apme-scan remediate --ai --apply .
 
 1. **Tier 1 (deterministic)**: convergence loop applies transforms until stable
 2. **Tier 2 (AI)**: remaining violations are sent to the AI provider one at a time; each proposal is re-validated, cleaned with Tier 1 transforms, and retried with feedback if needed
-3. **Interactive review**: accepted proposals are applied (or shown as diffs without `--apply`)
+3. **Interactive review**: accepted proposals are applied (or previewed with `check --diff`)
 4. **Tier 3 (manual)**: violations that neither transforms nor AI can fix are reported for human review
 
 ## Scaling

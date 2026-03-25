@@ -1,4 +1,4 @@
-"""Check subcommand: runs full remediation pipeline via FixSession in check mode (ADR-038)."""
+"""Check subcommand: runs full remediation pipeline via FixSession in check mode (ADR-039)."""
 
 from __future__ import annotations
 
