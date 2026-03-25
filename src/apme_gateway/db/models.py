@@ -72,18 +72,22 @@ class Scan(Base):
         source: Origin of the scan (cli, ci, gateway).
         trigger: How the scan was initiated (cli, ui, playground).
         created_at: ISO 8601 timestamp of creation.
-        scan_type: Either "scan" or "fix".
+        scan_type: Either "check" or "remediate".
         total_violations: Total violation count.
         auto_fixable: Count of tier-1 fixable violations.
         ai_candidate: Count of tier-2 AI-candidate violations.
         manual_review: Count of tier-3 manual violations.
         fixed_count: Number of violations fixed (fix scans only).
+        ai_proposed: Count of AI proposals generated.
+        ai_declined: Count of AI proposals declined.
+        ai_accepted: Count of AI proposals accepted by the user.
         diagnostics_json: JSON-serialised ScanDiagnostics.
         session: Back-reference to owning Session.
         project: Back-reference to owning Project (ADR-037).
         violations: Related violation rows.
         proposals: Related proposal rows.
         logs: Related log rows.
+        patches: Related patch rows (per-file diffs).
     """
 
     __tablename__ = "scans"
@@ -95,12 +99,15 @@ class Scan(Base):
     source: Mapped[str] = mapped_column(Text, nullable=False, default="cli")
     trigger: Mapped[str] = mapped_column(Text, nullable=False, default="cli")
     created_at: Mapped[str] = mapped_column(Text, nullable=False)
-    scan_type: Mapped[str] = mapped_column(Text, nullable=False, default="scan")
+    scan_type: Mapped[str] = mapped_column(Text, nullable=False, default="check")
     total_violations: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     auto_fixable: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     ai_candidate: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     manual_review: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     fixed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    ai_proposed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    ai_declined: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    ai_accepted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     diagnostics_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     session: Mapped[Session] = relationship(back_populates="scans")
@@ -108,6 +115,7 @@ class Scan(Base):
     violations: Mapped[list[Violation]] = relationship(back_populates="scan", cascade="all, delete-orphan")
     proposals: Mapped[list[Proposal]] = relationship(back_populates="scan", cascade="all, delete-orphan")
     logs: Mapped[list[ScanLog]] = relationship(back_populates="scan", cascade="all, delete-orphan")
+    patches: Mapped[list[ScanPatch]] = relationship(back_populates="scan", cascade="all, delete-orphan")
 
 
 class Violation(Base):
@@ -195,3 +203,24 @@ class ScanLog(Base):
     level: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     scan: Mapped[Scan] = relationship(back_populates="logs")
+
+
+class ScanPatch(Base):
+    """A per-file diff produced during a check or remediate operation.
+
+    Attributes:
+        id: Auto-increment primary key.
+        scan_id: Owning scan UUID (FK to scans).
+        file: Relative file path.
+        diff: Unified diff text.
+        scan: Back-reference to owning Scan.
+    """
+
+    __tablename__ = "scan_patches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    scan_id: Mapped[str] = mapped_column(Text, ForeignKey("scans.scan_id"), nullable=False)
+    file: Mapped[str] = mapped_column(Text, nullable=False)
+    diff: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    scan: Mapped[Scan] = relationship(back_populates="patches")

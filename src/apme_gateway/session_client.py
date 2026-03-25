@@ -546,7 +546,7 @@ async def handle_session(
             await ws.send_json(
                 {
                     "type": "error",
-                    "message": "Session failed — check gateway logs",
+                    "message": f"Operation failed ({type(exc).__name__})",
                 }
             )
     finally:

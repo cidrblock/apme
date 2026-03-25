@@ -11,7 +11,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from apme_gateway.db.models import Project, Proposal, Scan, ScanLog, Session, Violation
+from apme_gateway.db.models import Project, Proposal, Scan, ScanLog, ScanPatch, Session, Violation
 
 logger = logging.getLogger(__name__)
 
@@ -21,11 +21,14 @@ logger = logging.getLogger(__name__)
 
 _SEVERITY_WEIGHTS: dict[str, int] = {"error": 10, "warning": 3, "info": 1}
 
+_HEALTH_DECAY_RATE = 150
+
 
 def compute_health_score(violations: list[Violation]) -> int:
     """Compute a 0-100 health score from a set of violations.
 
-    Formula: ``max(0, 100 - sum(weight_per_severity))``.
+    Uses exponential decay so the score degrades gradually rather than
+    immediately hitting zero for any non-trivial project.
 
     Args:
         violations: Violation rows from a single scan.
@@ -33,8 +36,10 @@ def compute_health_score(violations: list[Violation]) -> int:
     Returns:
         Integer score clamped to 0-100.
     """
+    if not violations:
+        return 100
     penalty = sum(_SEVERITY_WEIGHTS.get(v.level, 1) for v in violations)
-    return max(0, min(100, 100 - penalty))
+    return max(0, round(100 * math.exp(-penalty / _HEALTH_DECAY_RATE)))
 
 
 async def create_project(
@@ -181,7 +186,12 @@ async def project_scans(
         List of Scan objects.
     """
     stmt = (
-        select(Scan).where(Scan.project_id == project_id).order_by(Scan.created_at.desc()).limit(limit).offset(offset)
+        select(Scan)
+        .options(selectinload(Scan.project))
+        .where(Scan.project_id == project_id)
+        .order_by(Scan.created_at.desc())
+        .limit(limit)
+        .offset(offset)
     )
     result = await db.execute(stmt)
     return list(result.scalars().all())
@@ -213,6 +223,11 @@ async def project_violations(
 ) -> list[Violation]:
     """Return violations for a project's latest scan, with optional filters.
 
+    Uses the latest scan regardless of ``scan_type`` because both check and
+    remediate runs produce a complete violation snapshot of the current project
+    state (ADR-039).  After remediation the remaining violations *are* the
+    current state.
+
     Args:
         db: Active async database session.
         project_id: UUID of the project.
@@ -225,10 +240,7 @@ async def project_violations(
         List of Violation objects.
     """
     latest_scan_stmt = (
-        select(Scan.scan_id)
-        .where(Scan.project_id == project_id, Scan.scan_type == "scan")
-        .order_by(Scan.created_at.desc())
-        .limit(1)
+        select(Scan.scan_id).where(Scan.project_id == project_id).order_by(Scan.created_at.desc()).limit(1)
     )
     latest_result = await db.execute(latest_scan_stmt)
     latest_scan_id = latest_result.scalar_one_or_none()
@@ -243,6 +255,35 @@ async def project_violations(
     stmt = stmt.order_by(Violation.id).limit(limit).offset(offset)
     result = await db.execute(stmt)
     return list(result.scalars().all())
+
+
+async def project_severity_breakdown(
+    db: AsyncSession,
+    project_id: str,
+) -> dict[str, int]:
+    """Count violations by severity for a project's latest scan (no row limit).
+
+    Uses the latest scan regardless of ``scan_type`` — see
+    :func:`project_violations` for rationale.
+
+    Args:
+        db: Active async database session.
+        project_id: UUID of the project.
+
+    Returns:
+        Dict mapping severity level to count.
+    """
+    latest_scan_stmt = (
+        select(Scan.scan_id).where(Scan.project_id == project_id).order_by(Scan.created_at.desc()).limit(1)
+    )
+    latest_result = await db.execute(latest_scan_stmt)
+    latest_scan_id = latest_result.scalar_one_or_none()
+    if latest_scan_id is None:
+        return {}
+
+    stmt = select(Violation.level, func.count()).where(Violation.scan_id == latest_scan_id).group_by(Violation.level)
+    result = await db.execute(stmt)
+    return {row[0]: row[1] for row in result.all()}
 
 
 async def project_trend(
@@ -274,6 +315,9 @@ async def project_top_violations(
 ) -> list[tuple[str, int]]:
     """Return the most frequent rule violations for a project's latest scan.
 
+    Uses the latest scan regardless of ``scan_type`` — see
+    :func:`project_violations` for rationale.
+
     Args:
         db: Active async database session.
         project_id: UUID of the project.
@@ -283,10 +327,7 @@ async def project_top_violations(
         List of (rule_id, count) tuples.
     """
     latest_scan_stmt = (
-        select(Scan.scan_id)
-        .where(Scan.project_id == project_id, Scan.scan_type == "scan")
-        .order_by(Scan.created_at.desc())
-        .limit(1)
+        select(Scan.scan_id).where(Scan.project_id == project_id).order_by(Scan.created_at.desc()).limit(1)
     )
     latest_result = await db.execute(latest_scan_stmt)
     latest_scan_id = latest_result.scalar_one_or_none()
@@ -309,6 +350,7 @@ async def link_scan_to_project(
     scan_id: str,
     project_id: str,
     trigger: str = "ui",
+    scan_type: str | None = None,
 ) -> bool:
     """Associate a scan record with a project after completion.
 
@@ -320,6 +362,9 @@ async def link_scan_to_project(
         scan_id: UUID of the scan to update.
         project_id: UUID of the owning project.
         trigger: Origin of the scan (``ui`` or ``playground``).
+        scan_type: Override the scan_type (``check`` or ``remediate``).
+            The engine always reports via ``ReportFixCompleted`` which
+            sets ``remediate``; the gateway knows the actual intent.
 
     Returns:
         True if the scan row was found and updated, False otherwise.
@@ -336,12 +381,20 @@ async def link_scan_to_project(
         return False
     scan.project_id = project_id
     scan.trigger = trigger
+    if scan_type is not None:
+        scan.scan_type = scan_type
+        if scan_type == "check":
+            scan.fixed_count = 0
     await db.commit()
     return True
 
 
 async def update_project_health(db: AsyncSession, project_id: str) -> int:
     """Recompute and persist health score from the latest scan.
+
+    Uses the latest scan regardless of ``scan_type`` — see
+    :func:`project_violations` for rationale.  After remediation the
+    health score should improve to reflect the project's current state.
 
     Args:
         db: Active async database session.
@@ -352,7 +405,7 @@ async def update_project_health(db: AsyncSession, project_id: str) -> int:
     """
     latest_scan_stmt = (
         select(Scan)
-        .where(Scan.project_id == project_id, Scan.scan_type == "scan")
+        .where(Scan.project_id == project_id)
         .order_by(Scan.created_at.desc())
         .options(selectinload(Scan.violations))
         .limit(1)
@@ -374,7 +427,7 @@ async def dashboard_summary(db: AsyncSession) -> dict[str, object]:
 
     Returns:
         Dict with total_projects, total_scans, total_violations,
-        current_violations, total_fixed, avg_health_score.
+        current_violations, total_remediated (``total_fixed`` key for API), avg_health_score.
     """
     total_projects = await project_count(db)
     total_scans_result = await db.execute(select(func.count()).select_from(Scan).where(Scan.project_id.is_not(None)))
@@ -404,7 +457,7 @@ async def dashboard_summary(db: AsyncSession) -> dict[str, object]:
 
     fixed_result = await db.execute(
         select(func.coalesce(func.sum(Scan.fixed_count), 0)).where(
-            Scan.project_id.is_not(None), Scan.scan_type == "fix"
+            Scan.project_id.is_not(None), Scan.scan_type == "remediate"
         )
     )
     total_fixed = cast(int, fixed_result.scalar_one())
@@ -517,7 +570,11 @@ async def get_session(db: AsyncSession, session_id: str) -> Session | None:
     Returns:
         Session with scans or None.
     """
-    stmt = select(Session).where(Session.session_id == session_id).options(selectinload(Session.scans))
+    stmt = (
+        select(Session)
+        .where(Session.session_id == session_id)
+        .options(selectinload(Session.scans).selectinload(Scan.project))
+    )
     result = await db.execute(stmt)
     return cast("Session | None", result.scalar_one_or_none())
 
@@ -540,7 +597,7 @@ async def list_scans(
     Returns:
         List of Scan objects.
     """
-    stmt = select(Scan).order_by(Scan.created_at.desc())
+    stmt = select(Scan).options(selectinload(Scan.project)).order_by(Scan.created_at.desc())
     if session_id is not None:
         stmt = stmt.where(Scan.session_id == session_id)
     stmt = stmt.limit(limit).offset(offset)
@@ -562,9 +619,11 @@ async def get_scan(db: AsyncSession, scan_id: str) -> Scan | None:
         select(Scan)
         .where(Scan.scan_id == scan_id)
         .options(
+            selectinload(Scan.project),
             selectinload(Scan.violations),
             selectinload(Scan.proposals),
             selectinload(Scan.logs),
+            selectinload(Scan.patches),
         )
     )
     result = await db.execute(stmt)
@@ -684,8 +743,8 @@ async def session_trend(db: AsyncSession, session_id: str) -> list[Scan]:
     return list(result.scalars().all())
 
 
-async def fix_rates(db: AsyncSession, *, limit: int = 20) -> list[tuple[str, int]]:
-    """Return the most frequently violated rules in fix-type scans.
+async def remediation_rates(db: AsyncSession, *, limit: int = 20) -> list[tuple[str, int]]:
+    """Return the most frequently violated rules in remediate-type runs.
 
     Args:
         db: Active async database session.
@@ -697,7 +756,7 @@ async def fix_rates(db: AsyncSession, *, limit: int = 20) -> list[tuple[str, int
     stmt = (
         select(Violation.rule_id, func.count().label("cnt"))
         .join(Scan, Violation.scan_id == Scan.scan_id)
-        .where(Scan.scan_type == "fix")
+        .where(Scan.scan_type == "remediate")
         .group_by(Violation.rule_id)
         .order_by(func.count().desc())
         .limit(limit)
@@ -740,3 +799,52 @@ async def ai_acceptance(db: AsyncSession) -> list[tuple[str, int, int, int, floa
         )
         for row in result.all()
     ]
+
+
+async def update_ai_counts(
+    db: AsyncSession,
+    scan_id: str,
+    *,
+    ai_proposed: int = 0,
+    ai_declined: int = 0,
+    ai_accepted: int = 0,
+) -> None:
+    """Set AI proposal breakdown counts on a scan row.
+
+    Args:
+        db: Active async database session.
+        scan_id: UUID of the scan to update.
+        ai_proposed: Number of proposals the AI offered.
+        ai_declined: Number of violations the AI could not fix.
+        ai_accepted: Number of proposals the user approved.
+    """
+    stmt = select(Scan).where(Scan.scan_id == scan_id)
+    result = await db.execute(stmt)
+    scan = result.scalar_one_or_none()
+    if scan is None:
+        return
+    scan.ai_proposed = ai_proposed
+    scan.ai_declined = ai_declined
+    scan.ai_accepted = ai_accepted
+    if scan.scan_type == "remediate":
+        scan.fixed_count = scan.auto_fixable + ai_accepted
+    else:
+        scan.fixed_count = 0
+    await db.commit()
+
+
+async def store_patches(
+    db: AsyncSession,
+    scan_id: str,
+    patches: list[dict[str, str]],
+) -> None:
+    """Persist per-file diffs for a scan.
+
+    Args:
+        db: Active async database session.
+        scan_id: UUID of the owning scan.
+        patches: List of dicts with ``file`` and ``diff`` keys.
+    """
+    for p in patches:
+        db.add(ScanPatch(scan_id=scan_id, file=p["file"], diff=p["diff"]))
+    await db.commit()
