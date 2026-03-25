@@ -109,15 +109,14 @@ Rules:
 
 
 UNIT_PROMPT_TEMPLATE = """\
-You are an Ansible remediation assistant. A static analysis tool has flagged
-issues in a single task from an Ansible YAML file. Fix ALL issues while
-following Ansible best practices.
+You are an Ansible remediation assistant. Fix the flagged issues in this
+YAML task/block while following Ansible best practices.
 
-## Violations Found
+## Violations
 
 {violation_list}
 
-## Task from {file_path} (lines {line_start}-{line_end}, shown as "N: content")
+## Original YAML from {file_path} (lines {line_start}-{line_end})
 ```yaml
 {snippet}
 ```
@@ -129,42 +128,36 @@ following Ansible best practices.
 
 ## Instructions
 
-Return a JSON object with a "patches" array and a "skipped" array.
-Each patch replaces a range of lines (1-based, inclusive) using the ORIGINAL
-file line numbers shown above.
+Return the COMPLETE corrected YAML for this task/block in "fixed_snippet".
+Do NOT return line numbers — just the corrected YAML text.
 
-Respond with ONLY this JSON (no markdown fences):
+Respond with ONLY this JSON (no markdown fences, no explanation outside JSON):
 {{
-  "patches": [
+  "fixed_snippet": "<the entire corrected YAML for this task/block>",
+  "changes": [
     {{
-      "rule_id": "<the rule ID being fixed>",
-      "line_start": <first line number to replace (1-based, from original file)>,
-      "line_end": <last line number to replace (1-based, inclusive)>,
-      "fixed_lines": "<the corrected YAML for just those lines>",
+      "rule_id": "<rule ID fixed>",
       "explanation": "<one-sentence explanation>",
       "confidence": 0.95
     }}
   ],
   "skipped": [
     {{
-      "rule_id": "<the rule ID that could not be fixed>",
-      "line": <line number of the violation>,
-      "reason": "<1-2 sentences: why this could not be auto-fixed>",
-      "suggestion": "<1-2 sentences: how the user can fix this manually>"
+      "rule_id": "<rule ID that could not be fixed>",
+      "reason": "<why this cannot be auto-fixed>",
+      "suggestion": "<how the user can fix this manually>"
     }}
   ]
 }}
 
 Rules:
-- line_start and line_end MUST use the original file line numbers ({line_start}-{line_end})
-- Preserve all YAML comments
-- Maintain exact indentation (2 spaces)
+- fixed_snippet must contain the COMPLETE corrected YAML, not a partial diff
+- Preserve YAML comments and exact indentation (2 spaces per level)
 - Use FQCN for all modules (e.g., ansible.builtin.copy, not copy)
 - Use YAML syntax for task arguments, not key=value
 - Use true/false for booleans, not yes/no
-- fixed_lines must contain ONLY the replacement for the specified line range
-- If you cannot fix a violation with confidence, add it to "skipped" instead
-- Every violation must appear in either "patches" or "skipped"
+- If you cannot fix a violation confidently, add it to "skipped" instead
+- Every violation must appear in either "changes" or "skipped"
 """
 
 
@@ -206,15 +199,12 @@ def _build_unit_prompt(
             f"## Previous Attempt Feedback\n{feedback}\n\nPlease correct these issues in your new response."
         )
 
-    numbered_lines = [f"{i}: {line}" for i, line in enumerate(snippet.splitlines(), line_start)]
-    numbered_snippet = "\n".join(numbered_lines)
-
     return UNIT_PROMPT_TEMPLATE.format(
         violation_list="\n".join(violation_entries),
         file_path=file_path,
         line_start=line_start,
         line_end=line_end,
-        snippet=numbered_snippet,
+        snippet=snippet,
         best_practices=best_practices,
         feedback_section=feedback_section,
     )
@@ -453,79 +443,91 @@ def _extract_json_object(text: str) -> dict | None:  # type: ignore[type-arg]
     return None
 
 
-def _detect_line_offset(
-    raw_patches: list[object],
-    min_line: int,
-    max_line: int,
-) -> int:
-    """Detect if patches use snippet-relative line numbers and compute offset.
+def _parse_unit_response(
+    response_text: str,
+    original_snippet: str,
+    line_start: int,
+    line_end: int,
+) -> tuple[list[AIPatch] | None, list[AISkipped]]:
+    """Parse a unit-level LLM response that returns a fixed_snippet.
 
-    Some LLMs return line numbers starting at 1 relative to the shown snippet
-    instead of using the original file line numbers.  If all patches fall below
-    ``min_line`` and shifting by ``min_line - 1`` would put them in range, we
-    return that offset so the caller can correct them.
+    The LLM returns the complete corrected YAML for the unit.  We compare
+    it against the original snippet and, if changed, create a single
+    ``AIPatch`` that replaces the entire unit line range.
 
     Args:
-        raw_patches: List of raw patch dicts from the LLM JSON.
-        min_line: Minimum valid absolute line number.
-        max_line: Maximum valid absolute line number.
+        response_text: Raw text response from the LLM.
+        original_snippet: Original YAML text of the unit.
+        line_start: 1-based first line of the unit in the file.
+        line_end: 1-based last line of the unit in the file.
 
     Returns:
-        Offset to add to each patch's line numbers, or 0 if no shift needed.
+        Tuple of (patches or None, skipped violations).
     """
-    if min_line <= 1:
-        return 0
+    data = _extract_json_object(response_text)
+    if data is None:
+        return None, []
 
-    patch_starts: list[int] = []
-    for entry in raw_patches:
-        if not isinstance(entry, dict):
+    fixed_snippet = data.get("fixed_snippet")
+    if not isinstance(fixed_snippet, str):
+        skipped = _parse_skipped(data)
+        if skipped:
+            logger.info("AI unit response has no fixed_snippet but %d skipped entries", len(skipped))
+            return None, skipped
+        logger.warning("AI unit response missing 'fixed_snippet' field")
+        return None, []
+
+    changes: list[object] = data.get("changes", [])
+    skipped = _parse_skipped(data)
+
+    if fixed_snippet.strip() == original_snippet.strip():
+        logger.info("AI returned unchanged snippet (%d skipped)", len(skipped))
+        return None, skipped
+
+    rule_ids: list[str] = []
+    explanations: list[str] = []
+    confidences: list[float] = []
+    for c in changes:
+        if not isinstance(c, dict):
             continue
-        ls = entry.get("line_start")
-        if ls is not None:
-            patch_starts.append(int(ls))
+        rid = c.get("rule_id")
+        if rid:
+            rule_ids.append(str(rid))
+        exp = c.get("explanation")
+        if exp:
+            explanations.append(str(exp))
+        conf = c.get("confidence")
+        if conf is not None:
+            confidences.append(float(conf))
 
-    if not patch_starts:
-        return 0
+    combined_rule = ",".join(rule_ids) if rule_ids else "ai-fix"
+    combined_expl = "; ".join(explanations[:3]) if explanations else "AI-generated fix"
+    avg_conf = sum(confidences) / len(confidences) if confidences else 0.85
 
-    all_below = all(ls < min_line for ls in patch_starts)
-    if not all_below:
-        return 0
+    patch = AIPatch(
+        rule_id=combined_rule,
+        line_start=line_start,
+        line_end=line_end,
+        fixed_lines=fixed_snippet.rstrip("\n"),
+        explanation=combined_expl,
+        confidence=avg_conf,
+    )
 
-    offset = min_line - 1
-    unit_size = max_line - min_line + 1
-    shifted_ok = all(1 <= ls <= unit_size for ls in patch_starts)
-
-    if shifted_ok:
-        for entry in raw_patches:
-            if not isinstance(entry, dict):
-                continue
-            le = entry.get("line_end")
-            if le is not None and int(le) > unit_size:
-                return 0
-        return offset
-
-    return 0
+    return [patch], skipped
 
 
 def _parse_batch_response(
     response_text: str,
     file_content: str,
-    *,
-    min_line_override: int | None = None,
-    max_line_override: int | None = None,
 ) -> tuple[list[AIPatch] | None, list[AISkipped]]:
     """Parse the LLM batch JSON response into patches and skipped entries.
+
+    Used for full-file (non-unit) AI proposals where the LLM returns
+    line-numbered patches.
 
     Args:
         response_text: Raw text response from the LLM.
         file_content: Original file content (for line range validation).
-        min_line_override: If provided, use this as the minimum valid line number.
-            Used for unit-level parsing where patches must stay within the unit's
-            line range.
-        max_line_override: If provided, use this as the max valid line number
-            instead of counting lines in file_content.  Used for unit-level
-            parsing where file_content is just the snippet but line numbers
-            refer to the original file.
 
     Returns:
         Tuple of (patches or None on failure, skipped violations).
@@ -543,17 +545,7 @@ def _parse_batch_response(
         logger.warning("AI response missing 'patches' field and has no skipped entries")
         return None, []
 
-    min_line = min_line_override if min_line_override else 1
-    max_line = max_line_override if max_line_override else len(file_content.splitlines())
-
-    line_offset = _detect_line_offset(raw_patches, min_line, max_line)
-    if line_offset:
-        logger.info(
-            "Detected snippet-relative line numbers, shifting by +%d (unit range %d-%d)",
-            line_offset,
-            min_line,
-            max_line,
-        )
+    max_line = len(file_content.splitlines())
 
     result: list[AIPatch] = []
 
@@ -571,29 +563,26 @@ def _parse_batch_response(
             logger.warning("Skipping malformed patch entry: %s", entry)
             continue
 
-        ls = int(line_start) + line_offset  # type: ignore[arg-type]
-        le = int(line_end) + line_offset  # type: ignore[arg-type]
-        if ls < min_line or le < ls or ls > max_line:
+        ls = int(line_start)  # type: ignore[arg-type]
+        le = int(line_end)  # type: ignore[arg-type]
+        if ls < 1 or le < ls or ls > max_line:
             logger.warning(
-                "Skipping patch %s with line range %d-%d (valid range %d-%d)",
+                "Skipping patch %s with line range %d-%d (valid range 1-%d)",
                 rule_id,
                 ls,
                 le,
-                min_line,
                 max_line,
             )
             continue
 
         le = min(le, max_line)
 
-        fixed_str = str(fixed_lines)
-
         result.append(
             AIPatch(
                 rule_id=rule_id,
                 line_start=ls,
                 line_end=le,
-                fixed_lines=fixed_str,
+                fixed_lines=str(fixed_lines),
                 explanation=explanation,
                 confidence=confidence,
             )
@@ -602,7 +591,11 @@ def _parse_batch_response(
     skipped = _parse_skipped(data)
 
     if not result:
-        logger.warning("No valid patches in AI response")
+        logger.warning(
+            "No valid patches in AI batch response (%d raw, %d skipped)",
+            len(raw_patches),
+            len(skipped),
+        )
         return None, skipped
 
     return result, skipped
@@ -899,4 +892,12 @@ class AbbenayProvider:
         if not response_text.strip():
             return None, []
 
-        return _parse_batch_response(response_text, snippet, min_line_override=line_start, max_line_override=line_end)
+        logger.debug(
+            "Abbenay unit response (%d chars) for %s lines %d-%d: %.500s",
+            len(response_text),
+            file_path,
+            line_start,
+            line_end,
+            response_text,
+        )
+        return _parse_unit_response(response_text, snippet, line_start, line_end)

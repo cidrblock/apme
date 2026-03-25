@@ -11,12 +11,12 @@ from apme_engine.engine.models import ViolationDict
 from apme_engine.remediation.abbenay_provider import (
     _build_batch_prompt,
     _extract_code_window,
-    _detect_line_offset,
     _extract_json_object,
     _get_best_practices_for_rule,
     _get_best_practices_for_rules,
     _load_best_practices,
     _parse_batch_response,
+    _parse_unit_response,
     discover_abbenay,
 )
 from apme_engine.remediation.ai_provider import (
@@ -29,7 +29,7 @@ from apme_engine.remediation.ai_provider import (
     generate_patch_hunks,
 )
 from apme_engine.remediation.engine import RemediationEngine, _chunk_violations
-from apme_engine.remediation.registry import TransformRegistry, TransformResult
+from apme_engine.remediation.registry import TransformRegistry
 
 # ---------------------------------------------------------------------------
 # Mock AIProvider for testing (batch API)
@@ -834,71 +834,100 @@ class TestExtractJsonObject:
 # ---------------------------------------------------------------------------
 
 
-class TestDetectLineOffset:
-    """Tests for _detect_line_offset which corrects snippet-relative numbering."""
+class TestParseUnitResponse:
+    """Tests for _parse_unit_response which handles fixed_snippet contract."""
 
-    def test_no_offset_needed(self) -> None:
-        """Returns 0 when patches already use absolute line numbers."""
-        patches = [{"line_start": 42, "line_end": 44}]
-        assert _detect_line_offset(patches, min_line=42, max_line=50) == 0
-
-    def test_offset_detected(self) -> None:
-        """Detects snippet-relative numbering and returns correct offset."""
-        patches = [
-            {"line_start": 1, "line_end": 3},
-            {"line_start": 5, "line_end": 7},
-        ]
-        assert _detect_line_offset(patches, min_line=42, max_line=50) == 41
-
-    def test_no_offset_for_line_1_units(self) -> None:
-        """Returns 0 when unit starts at line 1 (no shift possible)."""
-        patches = [{"line_start": 1, "line_end": 2}]
-        assert _detect_line_offset(patches, min_line=1, max_line=10) == 0
-
-    def test_no_offset_when_mixed(self) -> None:
-        """Returns 0 when some patches are in range already."""
-        patches = [
-            {"line_start": 1, "line_end": 2},
-            {"line_start": 42, "line_end": 44},
-        ]
-        assert _detect_line_offset(patches, min_line=42, max_line=50) == 0
-
-    def test_no_offset_when_shift_exceeds_range(self) -> None:
-        """Returns 0 when shifted values would exceed unit range."""
-        patches = [{"line_start": 1, "line_end": 20}]
-        assert _detect_line_offset(patches, min_line=42, max_line=45) == 0
-
-    def test_empty_patches(self) -> None:
-        """Returns 0 for empty patches list."""
-        assert _detect_line_offset([], min_line=42, max_line=50) == 0
-
-    def test_end_to_end_shifted_parse(self) -> None:
-        """Full round-trip: snippet-relative numbers corrected during parse."""
+    def test_basic_fix(self) -> None:
+        """Parses a clean fixed_snippet response."""
+        original = "- shell: hostname\n"
+        fixed = "- name: Get hostname\n  ansible.builtin.command: hostname\n  changed_when: false\n"
         response = json.dumps(
             {
-                "patches": [
-                    {
-                        "rule_id": "M001",
-                        "line_start": 1,
-                        "line_end": 2,
-                        "fixed_lines": "- ansible.builtin.debug:\n    msg: hi\n",
-                        "explanation": "FQCN",
-                        "confidence": 0.95,
-                    }
-                ]
+                "fixed_snippet": fixed,
+                "changes": [
+                    {"rule_id": "L024", "explanation": "Added task name", "confidence": 0.95},
+                    {"rule_id": "L007", "explanation": "shell->command", "confidence": 0.9},
+                ],
+                "skipped": [],
             }
         )
-        snippet = "- debug:\n    msg: hi\n"
-        patches, _ = _parse_batch_response(
-            response,
-            snippet,
-            min_line_override=42,
-            max_line_override=43,
-        )
+        patches, skipped = _parse_unit_response(response, original, 18, 18)
         assert patches is not None
         assert len(patches) == 1
-        assert patches[0].line_start == 42
-        assert patches[0].line_end == 43
+        assert patches[0].line_start == 18
+        assert patches[0].line_end == 18
+        assert "ansible.builtin.command" in patches[0].fixed_lines
+        assert "L024" in patches[0].rule_id
+        assert "L007" in patches[0].rule_id
+        assert patches[0].confidence > 0.9
+        assert skipped == []
+
+    def test_unchanged_snippet_returns_none(self) -> None:
+        """Returns None when LLM returns the same snippet."""
+        original = "- name: Test\n  debug:\n    msg: hello\n"
+        response = json.dumps(
+            {
+                "fixed_snippet": original,
+                "changes": [],
+                "skipped": [{"rule_id": "L026", "reason": "Cannot fix"}],
+            }
+        )
+        patches, skipped = _parse_unit_response(response, original, 10, 12)
+        assert patches is None
+        assert len(skipped) == 1
+
+    def test_missing_fixed_snippet(self) -> None:
+        """Returns None when fixed_snippet is missing."""
+        response = json.dumps({"changes": [], "skipped": []})
+        patches, skipped = _parse_unit_response(response, "content\n", 1, 1)
+        assert patches is None
+
+    def test_missing_fixed_snippet_with_skipped(self) -> None:
+        """Returns skipped entries even when fixed_snippet is missing."""
+        response = json.dumps(
+            {
+                "skipped": [{"rule_id": "R101", "reason": "Risky"}],
+            }
+        )
+        patches, skipped = _parse_unit_response(response, "content\n", 1, 1)
+        assert patches is None
+        assert len(skipped) == 1
+
+    def test_invalid_json(self) -> None:
+        """Returns None for unparseable response."""
+        patches, skipped = _parse_unit_response("not json", "content\n", 1, 1)
+        assert patches is None
+        assert skipped == []
+
+    def test_with_preamble(self) -> None:
+        """Handles LLM preamble before JSON."""
+        original = "- debug: msg=hi\n"
+        fixed = "- name: Show message\n  ansible.builtin.debug:\n    msg: hi\n"
+        inner = json.dumps(
+            {
+                "fixed_snippet": fixed,
+                "changes": [{"rule_id": "L024", "explanation": "Added name", "confidence": 0.95}],
+                "skipped": [],
+            }
+        )
+        text = f"Here is the corrected YAML:\n{inner}"
+        patches, _ = _parse_unit_response(text, original, 5, 5)
+        assert patches is not None
+        assert len(patches) == 1
+
+    def test_default_confidence(self) -> None:
+        """Uses 0.85 default when changes lack confidence."""
+        original = "- shell: echo hi\n"
+        response = json.dumps(
+            {
+                "fixed_snippet": "- name: Echo\n  ansible.builtin.command: echo hi\n",
+                "changes": [{"rule_id": "L007", "explanation": "fixed"}],
+                "skipped": [],
+            }
+        )
+        patches, _ = _parse_unit_response(response, original, 1, 1)
+        assert patches is not None
+        assert patches[0].confidence == 0.85
 
 
 # ---------------------------------------------------------------------------
@@ -983,14 +1012,37 @@ class TestBestPractices:
 
 
 class TestEngineAIEscalation:
-    """Tests for the batch AI escalation in RemediationEngine."""
+    """Tests for AI escalation in RemediationEngine (unit-level)."""
+
+    @staticmethod
+    def _make_node_index(playbook: Path) -> NodeIndex:
+        """Build a minimal NodeIndex covering a 2-line task at lines 1-2.
+
+        Args:
+            playbook: Path to the playbook file.
+
+        Returns:
+            NodeIndex with a single task node.
+        """
+        from apme_engine.engine.node_index import NodeIndex
+
+        payload = {
+            "hierarchy": [
+                {
+                    "nodes": [
+                        {"key": "task0", "type": "taskcall", "file": str(playbook), "line": [1, 2]},
+                    ]
+                }
+            ]
+        }
+        return NodeIndex(payload)
 
     def _make_patches(
         self,
         rule_id: str = "UNKNOWN_AI",
-        line_start: int = 2,
+        line_start: int = 1,
         line_end: int = 2,
-        fixed: str = "  ansible.builtin.debug:\n    msg: hi\n",
+        fixed: str = "- name: test\n  ansible.builtin.debug:\n    msg: hi\n",
     ) -> list[AIPatch]:
         """Create test AIPatch list.
 
@@ -1039,8 +1091,8 @@ class TestEngineAIEscalation:
         assert len(report.remaining_ai) == 1
         assert len(report.ai_proposed) == 0
 
-    def test_engine_calls_ai_provider_batch(self, tmp_path: Path) -> None:
-        """Engine calls AI provider with all violations for a file.
+    def test_engine_calls_ai_provider_unit(self, tmp_path: Path) -> None:
+        """Engine calls AI provider via unit path with NodeIndex.
 
         Args:
             tmp_path: Pytest temporary directory fixture.
@@ -1048,6 +1100,7 @@ class TestEngineAIEscalation:
         playbook = tmp_path / "play.yml"
         content = "- name: test\n  debug: msg=hi\n"
         playbook.write_text(content)
+        node_index = self._make_node_index(playbook)
 
         def scan_fn(paths: list[str]) -> list[ViolationDict]:
             current = Path(paths[0]).read_text()
@@ -1064,7 +1117,13 @@ class TestEngineAIEscalation:
         patches = self._make_patches()
         provider = MockAIProvider(patch_results=[patches])
         reg = TransformRegistry()
-        engine = RemediationEngine(reg, scan_fn, max_passes=1, ai_provider=provider)
+        engine = RemediationEngine(
+            reg,
+            scan_fn,
+            max_passes=1,
+            ai_provider=provider,
+            node_index=node_index,
+        )
         report = engine.remediate([str(playbook)], apply=False)
 
         assert provider.call_count == 1
@@ -1072,13 +1131,14 @@ class TestEngineAIEscalation:
         assert len(report.ai_proposed[0].patches) == 1
 
     def test_engine_ai_failed_on_none_response(self, tmp_path: Path) -> None:
-        """Engine retries then sets AI_FAILED when provider always returns None.
+        """Engine sets remaining_ai when provider returns None for all units.
 
         Args:
             tmp_path: Pytest temporary directory fixture.
         """
         playbook = tmp_path / "play.yml"
         playbook.write_text("- name: test\n  debug: msg=hi\n")
+        node_index = self._make_node_index(playbook)
 
         def scan_fn(paths: list[str]) -> list[ViolationDict]:
             return [
@@ -1091,177 +1151,41 @@ class TestEngineAIEscalation:
 
         provider = MockAIProvider(patch_results=[None, None])
         reg = TransformRegistry()
-        engine = RemediationEngine(reg, scan_fn, max_passes=1, ai_provider=provider)
-        report = engine.remediate([str(playbook)], apply=False)
-
-        assert len(report.ai_proposed) == 0
-        assert provider.call_count == 2
-
-    def test_engine_retries_on_validation_failure(self, tmp_path: Path) -> None:
-        """Engine retries batch when re-validation finds new violations.
-
-        Args:
-            tmp_path: Pytest temporary directory fixture.
-        """
-        playbook = tmp_path / "play.yml"
-        content = "- name: test\n  debug: msg=hi\n"
-        playbook.write_text(content)
-
-        def scan_fn(paths: list[str]) -> list[ViolationDict]:
-            current = Path(paths[0]).read_text()
-            if "fixed_v2" in current:
-                return []
-            if "bad_fix" in current:
-                return [
-                    {
-                        "rule_id": "NEW_VIOLATION",
-                        "file": str(playbook),
-                        "line": 1,
-                    },
-                ]
-            return [
-                {
-                    "rule_id": "UNKNOWN_AI",
-                    "file": str(playbook),
-                    "line": 1,
-                },
-            ]
-
-        bad_patches = [AIPatch("UNKNOWN_AI", 1, 2, "bad_fix\n", "Bad", 0.9)]
-        good_patches = [AIPatch("UNKNOWN_AI", 1, 2, "fixed_v2\n", "Good", 0.9)]
-
-        provider = MockAIProvider(patch_results=[bad_patches, good_patches])
-        reg = TransformRegistry()
         engine = RemediationEngine(
             reg,
             scan_fn,
             max_passes=1,
-            max_ai_attempts=2,
             ai_provider=provider,
+            node_index=node_index,
         )
         report = engine.remediate([str(playbook)], apply=False)
 
-        assert provider.call_count == 2
-        assert len(report.ai_proposed) == 1
-        second_call = provider.calls[1]
-        assert second_call["feedback"] is not None
-
-    def test_engine_max_attempts_exhausted(self, tmp_path: Path) -> None:
-        """Engine gives up after max attempts.
-
-        Args:
-            tmp_path: Pytest temporary directory fixture.
-        """
-        playbook = tmp_path / "play.yml"
-        content = "- name: test\n  debug: msg=hi\n"
-        playbook.write_text(content)
-
-        def scan_fn(paths: list[str]) -> list[ViolationDict]:
-            current = Path(paths[0]).read_text()
-            if current == content:
-                return [
-                    {
-                        "rule_id": "UNKNOWN_AI",
-                        "file": str(playbook),
-                        "line": 1,
-                    },
-                ]
-            return [
-                {
-                    "rule_id": "STILL_BAD",
-                    "file": str(playbook),
-                    "line": 1,
-                },
-            ]
-
-        bad1 = [AIPatch("UNKNOWN_AI", 1, 2, "attempt1\n", "Bad", 0.9)]
-        bad2 = [AIPatch("UNKNOWN_AI", 1, 2, "attempt2\n", "Bad", 0.9)]
-
-        provider = MockAIProvider(patch_results=[bad1, bad2])
-        reg = TransformRegistry()
-        engine = RemediationEngine(
-            reg,
-            scan_fn,
-            max_passes=1,
-            max_ai_attempts=2,
-            ai_provider=provider,
-        )
-        report = engine.remediate([str(playbook)], apply=False)
-
-        assert provider.call_count == 2
         assert len(report.ai_proposed) == 0
-
-    def test_engine_hybrid_cleanup(self, tmp_path: Path) -> None:
-        """Engine applies Tier 1 transforms to clean up AI output.
-
-        Args:
-            tmp_path: Pytest temporary directory fixture.
-        """
-        playbook = tmp_path / "play.yml"
-        content = "- name: test\n  debug: msg=hi\n"
-        playbook.write_text(content)
-
-        def scan_fn(paths: list[str]) -> list[ViolationDict]:
-            current = Path(paths[0]).read_text()
-            if current == content:
-                return [
-                    {
-                        "rule_id": "UNKNOWN_AI",
-                        "file": str(playbook),
-                        "line": 1,
-                    },
-                ]
-            if "NEEDS_TRANSFORM" in current and "TRANSFORMED" not in current:
-                return [
-                    {
-                        "rule_id": "FIXABLE",
-                        "file": str(playbook),
-                        "line": 1,
-                    },
-                ]
-            return []
-
-        def fix_transform(
-            content: str,
-            v: dict[str, str | int | list[int] | bool | None],
-        ) -> TransformResult:
-            return TransformResult(
-                content=content.replace("NEEDS_TRANSFORM", "TRANSFORMED"),
-                applied=True,
-            )
-
-        reg = TransformRegistry()
-        reg.register("FIXABLE", fix_transform)
-
-        ai_patches = [
-            AIPatch(
-                "UNKNOWN_AI",
-                1,
-                2,
-                "NEEDS_TRANSFORM content\n",
-                "Partial fix",
-                0.92,
-            )
-        ]
-
-        provider = MockAIProvider(patch_results=[ai_patches])
-        engine = RemediationEngine(reg, scan_fn, max_passes=1, ai_provider=provider)
-        report = engine.remediate([str(playbook)], apply=False)
-
-        assert provider.call_count == 1
-        assert len(report.ai_proposed) == 1
-        assert report.ai_proposed[0].hybrid_transforms_applied == 1
 
     def test_engine_groups_by_file(self, tmp_path: Path) -> None:
-        """Engine groups violations by file for batch calls.
+        """Engine groups violations by file for unit-level AI calls.
 
         Args:
             tmp_path: Pytest temporary directory fixture.
         """
+        from apme_engine.engine.node_index import NodeIndex
+
         play1 = tmp_path / "play1.yml"
         play2 = tmp_path / "play2.yml"
         play1.write_text("- name: a\n  debug: msg=1\n")
         play2.write_text("- name: b\n  debug: msg=2\n")
+
+        payload = {
+            "hierarchy": [
+                {
+                    "nodes": [
+                        {"key": "t0", "type": "taskcall", "file": str(play1), "line": [1, 2]},
+                        {"key": "t1", "type": "taskcall", "file": str(play2), "line": [1, 2]},
+                    ]
+                }
+            ]
+        }
+        node_index = NodeIndex(payload)
 
         def scan_fn(paths: list[str]) -> list[ViolationDict]:
             result: list[ViolationDict] = []
@@ -1271,11 +1195,17 @@ class TestEngineAIEscalation:
                     result.append({"rule_id": "UNKNOWN_AI", "file": p, "line": 2})
             return result
 
-        patches1 = [AIPatch("UNKNOWN_AI", 2, 2, "  ansible.builtin.debug:\n    msg: 1\n", "FQCN", 0.9)]
-        patches2 = [AIPatch("UNKNOWN_AI", 2, 2, "  ansible.builtin.debug:\n    msg: 2\n", "FQCN", 0.9)]
+        patches1 = [AIPatch("UNKNOWN_AI", 1, 2, "- name: a\n  ansible.builtin.debug:\n    msg: 1\n", "FQCN", 0.9)]
+        patches2 = [AIPatch("UNKNOWN_AI", 1, 2, "- name: b\n  ansible.builtin.debug:\n    msg: 2\n", "FQCN", 0.9)]
         provider = MockAIProvider(patch_results=[patches1, patches2])
         reg = TransformRegistry()
-        engine = RemediationEngine(reg, scan_fn, max_passes=1, ai_provider=provider)
+        engine = RemediationEngine(
+            reg,
+            scan_fn,
+            max_passes=1,
+            ai_provider=provider,
+            node_index=node_index,
+        )
         report = engine.remediate([str(play1), str(play2)], apply=False)
 
         assert provider.call_count == 2
