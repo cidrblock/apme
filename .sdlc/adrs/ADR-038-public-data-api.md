@@ -89,18 +89,28 @@ APME does not push data to individual consumers. Instead:
 
 ### API surface for consumers
 
-The existing Gateway routes (ADR-029) already cover most consumer needs. This ADR formalizes them as public:
+The existing Gateway routes (ADR-029) already cover most consumer needs. This ADR formalizes the implemented ones as public and calls out planned extensions separately.
+
+**Existing endpoints (implemented)**
+
+| Endpoint | Consumer Use Case |
+|----------|-------------------|
+| `GET /api/v1/projects/{id}` | Look up project by ID; response includes `repo_url` and `health_score` for correlation and gating |
+| `GET /api/v1/projects/{id}/violations` | Deprecated module report, policy violations, filterable by exact `rule_id` and `severity` query parameters |
+| `GET /api/v1/projects/{id}/scans` | Scan history for trending |
+| `GET /api/v1/projects/{id}/trend` | Scan-over-scan improvement data |
+| `GET /api/v1/dashboard/summary` | Org-wide health overview |
+
+**Planned extensions (not yet implemented)**
 
 | Endpoint | Consumer Use Case |
 |----------|-------------------|
 | `GET /api/v1/projects?repo_url={url}` | Look up project by SCM URL (the correlation key) |
 | `GET /api/v1/projects/{id}/health` | Pre-flight gate: is this project clean enough to run? |
-| `GET /api/v1/projects/{id}/violations` | Deprecated module report, policy violations, filtered by rule prefix (L, M, R, P, SEC) |
-| `GET /api/v1/projects/{id}/scans` | Scan history for trending |
-| `GET /api/v1/projects/{id}/trend` | Scan-over-scan improvement data |
-| `GET /api/v1/dashboard/summary` | Org-wide health overview |
 | `POST /api/v1/webhooks` | Register a callback URL for scan-complete notifications |
 | `DELETE /api/v1/webhooks/{id}` | Unregister a webhook |
+
+The violations endpoint may be extended to support prefix-based rule filters via an optional `rule_id_prefix` query parameter (e.g., `M` for all modernization rules). Until then, consumers use exact-match `rule_id` and `severity` filtering.
 
 ### Webhook notifications
 
@@ -120,7 +130,7 @@ When a scan completes for a project, the Gateway notifies registered webhooks wi
 
 The webhook tells consumers *that* new data is available. Consumers then pull the details they need from the REST API. This keeps the notification payload stable even as violation schemas evolve.
 
-Implementation uses ADR-020's pluggable `EventSink` architecture: a `WebhookSink` registered alongside the existing `GrpcReportingSink`.
+Implementation: the engine continues to use `GrpcReportingSink` (ADR-020) to push scan-completed events to the Gateway's gRPC Reporting server. After persisting the results, the Gateway looks up registered webhooks in its own store and dispatches outbound deliveries. This keeps webhook emission in the Gateway and avoids coupling webhook configuration to the engine's `EventSink` mechanism.
 
 ### Authentication
 
@@ -204,15 +214,13 @@ Routes under `/api/v1` are the public contract. Breaking changes (removed fields
 
 - The CLI continues to work independently, connecting to Primary directly. CLI users are unaffected.
 - The existing UI BFF routes become a subset of the public API. No separate "internal" vs "external" route sets for V1.
-- The `EventSink` protocol (ADR-020) already supports multiple sinks. Adding `WebhookSink` alongside `GrpcReportingSink` requires no architectural change.
+- The `EventSink` protocol (ADR-020) already delivers scan events to the Gateway. Webhook emission is a Gateway concern — no engine-side architectural change required.
 
 ## Implementation Notes
 
-### Webhook sink
+### Webhook dispatch
 
-Implement `WebhookSink` as a new `EventSink` (ADR-020 pattern) in `src/apme_engine/daemon/sinks/`. On `ScanCompletedEvent`, query registered webhooks from the Gateway DB and POST the notification payload. Failures are logged and do not block the scan path (consistent with ADR-020 best-effort delivery).
-
-Alternatively, the Gateway itself can emit webhooks after persisting the scan event (simpler — the Gateway already has the DB connection and the scan data).
+The Gateway emits webhooks after persisting scan events. It already receives `ScanCompletedEvent` via the gRPC Reporting service and has the DB session needed to discover registered webhooks. The engine remains stateless and does not perform any webhook lookup — it simply emits events via `GrpcReportingSink` (ADR-020) and the Gateway handles delivery. Webhook failures are logged and do not block the scan persistence path (consistent with ADR-020 best-effort delivery).
 
 ### Project lookup by URL
 
