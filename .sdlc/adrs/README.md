@@ -166,3 +166,5 @@ Original planning ADRs that were superseded by implementation decisions:
 | 035 | 2026-03 | Secret externalization for Ansible content (proposed, impl. superseded by ADR-036) |
 | 036 | 2026-03 | Two-pass remediation engine with project-level transforms (proposed) |
 | 037 | 2026-03 | Project-centric UI model with session abstraction (proposed) |
+| 038 | 2026-03 | Public data API for platform consumers (proposed) |
+| 040 | 2026-03 | Scan metadata enrichment (proposed) |

@@ -19,6 +19,7 @@ Specs answer "What does this feature do?" They provide:
 | REQ-003 | Security & Compliance | PHASE-003 | Draft |
 | REQ-004 | Enterprise Integration | PHASE-003 | Draft |
 | REQ-008 | ROI Dashboard | PHASE-003 | Draft |
+| REQ-010 | Dependency Health Assessment | PHASE-003 | Draft |
 
 ## Directory Structure
 
@@ -35,7 +36,8 @@ specs/
 ├── REQ-002-automated-remediation/
 ├── REQ-003-security-compliance/
 ├── REQ-004-enterprise-integration/
-└── REQ-008-roi-dashboard/
+├── REQ-008-roi-dashboard/
+└── REQ-010-dependency-health/
 ```
 
 ## Phase Relationship
@@ -52,7 +54,8 @@ PHASE-002: Rewrite Engine
 PHASE-003: Enterprise Dashboard
 ├── REQ-003: Security & Compliance
 ├── REQ-004: Enterprise Integration
-└── REQ-008: ROI Dashboard
+├── REQ-008: ROI Dashboard
+└── REQ-010: Dependency Health Assessment
 ```
 
 See [phases/README.md](../phases/README.md) for phase details.
