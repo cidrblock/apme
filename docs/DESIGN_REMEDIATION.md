@@ -255,56 +255,37 @@ src/apme_engine/remediation/
 
 ## AI Escalation Path
 
-When `is_finding_resolvable()` returns `False` and an AIProvider is available (via `--ai`), the remediation engine escalates to AI.
+When `is_finding_resolvable()` returns `False` and an AIProvider is available (via `--ai`), the remediation engine escalates to AI using **unit-level decomposition**.
 
-### Request Packaging
+### Unit Decomposition
 
-Each violation is packaged with context for the LLM:
+Files are segmented into **fixable units** (individual tasks or blocks) using the `NodeIndex` built during scanning. Each unit with violations is sent to the LLM independently. This provides:
 
-```python
-@dataclass
-class AIRemediationRequest:
-    rule_id: str
-    level: str
-    message: str
-    file_path: str
-    line: int
-    code_window: str        # 10 lines before + after the violation
-    file_content: str       # full file (for broader context)
-    ansible_version: str    # target version (e.g., "2.20")
+- **Focused context** — the LLM sees only the relevant task/block, not the full file
+- **Independent proposals** — each unit fix is a separate proposal the user can approve/reject
+- **No line-number dependency** — the LLM returns corrected YAML, we handle reassembly
+
+Violations that don't map to any unit (e.g., play-level issues) are marked `MANUAL` for human review.
+
+### Prompt Contract
+
+The LLM receives the unit's YAML snippet and its violations. It returns the complete corrected YAML — no line numbers, no partial diffs:
+
+```json
+{
+  "fixed_snippet": "<entire corrected YAML for the unit>",
+  "changes": [
+    {"rule_id": "L024", "explanation": "Added task name", "confidence": 0.95}
+  ],
+  "skipped": [
+    {"rule_id": "R101", "reason": "Cannot fix safely", "suggestion": "Review manually"}
+  ]
+}
 ```
 
-### Structured Prompt
+### Content-Based Application
 
-```
-You are an Ansible modernization assistant. A static analysis rule has
-flagged an issue in the following YAML file.
-
-Rule: {rule_id}
-Message: {message}
-File: {file_path}
-Line: {line}
-
-Code context (lines {start}-{end}):
-```yaml
-{code_window}
-```
-
-Provide a fix for this issue. Respond with ONLY valid YAML for the
-corrected section. Preserve comments and formatting. If you cannot
-fix it with confidence, respond with "SKIP".
-```
-
-### Response Schema
-
-```python
-@dataclass
-class AIRemediationResponse:
-    suggested_code: str     # corrected YAML (or "SKIP")
-    confidence: float       # 0.0-1.0
-    reasoning: str          # why this fix is correct
-    applicable: bool        # False if LLM says "SKIP"
-```
+Each `AIProposal` carries `original_snippet` and `fixed_snippet`. Application uses string replacement rather than line-number indexing. This makes proposals safe to apply in any order **as long as each `original_snippet` is unique within the file** — applying one unit's fix cannot invalidate another's because units are located by content, not position. When identical snippets appear multiple times in the same file, the engine detects the ambiguity and skips those units rather than risking a wrong-location replacement.
 
 ### CLI Modes
 
