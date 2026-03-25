@@ -43,6 +43,7 @@ This directory contains the Architecture Decision Records (ADRs) for APME.
 | [ADR-035](ADR-035-secret-externalization.md) | Secret Externalization for Ansible Content | Proposed (impl. superseded by ADR-036) | 2026-03 |
 | [ADR-036](ADR-036-two-pass-remediation-engine.md) | Two-Pass Remediation Engine with Project-Level Transforms | Proposed | 2026-03 |
 | [ADR-037](ADR-037-project-centric-ui-model.md) | Project-Centric UI Model with Session Abstraction | Proposed | 2026-03 |
+| [ADR-041](ADR-041-rule-catalog-override-architecture.md) | Rule Catalog & Override Architecture | Proposed | 2026-03 |
 
 ## Categories
 
@@ -64,6 +65,7 @@ This directory contains the Architecture Decision Records (ADRs) for APME.
 - ADR-026: Rule scope metadata (accepted)
 - ADR-031: Unified collection cache (accepted)
 - ADR-032: FQCN-based collection auto-discovery
+- ADR-041: Rule catalog & override architecture (proposed)
 
 ### Validators
 - ADR-006: Ansible validator venvs
@@ -168,3 +170,4 @@ Original planning ADRs that were superseded by implementation decisions:
 | 037 | 2026-03 | Project-centric UI model with session abstraction (proposed) |
 | 038 | 2026-03 | Public data API for platform consumers (proposed) |
 | 040 | 2026-03 | Scan metadata enrichment (proposed) |
+| 041 | 2026-03 | Rule catalog & override architecture (proposed) |
