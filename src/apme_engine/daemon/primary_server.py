@@ -1442,9 +1442,15 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
             ),
         )
 
+        # Always emit FixCompletedEvent for both check and remediate modes.
+        # The gateway's link_scan_to_project() sets the correct scan_type
+        # ("check" or "remediate") based on the operation intent (ADR-039).
         await emit_fix_completed(
             self._build_fix_event(
-                session, remaining_violations, list(report.fixed_violations), patches,
+                session,
+                remaining_violations,
+                list(report.fixed_violations),
+                patches,
             )
         )
 

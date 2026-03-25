@@ -46,8 +46,8 @@ This runs `podman play kube containers/podman/pod.yaml`, which starts the pod `a
 cd /path/to/your/ansible/project
 /path/to/apme/containers/podman/run-cli.sh                # check (default)
 /path/to/apme/containers/podman/run-cli.sh check --json . # JSON output
-/path/to/apme/containers/podman/run-cli.sh remediate --check . # dry-run remediate
-/path/to/apme/containers/podman/run-cli.sh remediate .   # apply Tier 1 fixes
+/path/to/apme/containers/podman/run-cli.sh check --diff .  # preview changes
+/path/to/apme/containers/podman/run-cli.sh remediate .    # apply Tier 1 fixes
 /path/to/apme/containers/podman/run-cli.sh format --check .
 /path/to/apme/containers/podman/run-cli.sh health-check
 ```
@@ -168,7 +168,7 @@ python -m apme_engine.cli daemon start
 
 # Run commands (same thin CLI, talks to local daemon via gRPC)
 python -m apme_engine.cli check /path/to/project
-python -m apme_engine.cli remediate --check .
+python -m apme_engine.cli check --diff .
 python -m apme_engine.cli remediate .
 
 # Stop the daemon

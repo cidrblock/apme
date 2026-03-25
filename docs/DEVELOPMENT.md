@@ -373,7 +373,9 @@ apme-scan format --apply --exclude "vendor/*" "tests/fixtures/*" .
 The `remediate` subcommand chains format → idempotency check → re-check → modernize:
 
 ```bash
-apme-scan remediate --apply /path/to/project
+apme-scan remediate /path/to/project        # apply Tier 1 fixes
+apme-scan remediate --ai /path/to/project   # include AI proposals (Tier 2)
+apme-scan check --diff /path/to/project     # preview changes without applying
 ```
 
 This runs the formatter, verifies idempotency (a second format pass produces zero diffs), re-checks the project, then applies Tier 1 deterministic transforms from the transform registry in a convergence loop (check → remediate → re-check until stable). Uses the `FixSession` bidirectional streaming RPC (ADR-028, ADR-039).

@@ -223,6 +223,11 @@ async def project_violations(
 ) -> list[Violation]:
     """Return violations for a project's latest scan, with optional filters.
 
+    Uses the latest scan regardless of ``scan_type`` because both check and
+    remediate runs produce a complete violation snapshot of the current project
+    state (ADR-039).  After remediation the remaining violations *are* the
+    current state.
+
     Args:
         db: Active async database session.
         project_id: UUID of the project.
@@ -257,6 +262,9 @@ async def project_severity_breakdown(
     project_id: str,
 ) -> dict[str, int]:
     """Count violations by severity for a project's latest scan (no row limit).
+
+    Uses the latest scan regardless of ``scan_type`` — see
+    :func:`project_violations` for rationale.
 
     Args:
         db: Active async database session.
@@ -306,6 +314,9 @@ async def project_top_violations(
     limit: int = 10,
 ) -> list[tuple[str, int]]:
     """Return the most frequent rule violations for a project's latest scan.
+
+    Uses the latest scan regardless of ``scan_type`` — see
+    :func:`project_violations` for rationale.
 
     Args:
         db: Active async database session.
@@ -380,6 +391,10 @@ async def link_scan_to_project(
 
 async def update_project_health(db: AsyncSession, project_id: str) -> int:
     """Recompute and persist health score from the latest scan.
+
+    Uses the latest scan regardless of ``scan_type`` — see
+    :func:`project_violations` for rationale.  After remediation the
+    health score should improve to reflect the project's current state.
 
     Args:
         db: Active async database session.
