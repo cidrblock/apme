@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (Phases 1–4 complete)
+Implemented
 
 ## Date
 

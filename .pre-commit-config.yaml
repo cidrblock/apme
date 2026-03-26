@@ -25,3 +25,11 @@ repos:
       - id: pydoclint
         args: [--exclude=src/apme/v1/, src/, tests/, scripts/]
         pass_filenames: false
+  - repo: local
+    hooks:
+      - id: adr-index
+        name: adr-index
+        language: python
+        entry: python scripts/generate_adr_index.py
+        files: ^\.sdlc/adrs/ADR-.*\.md$
+        pass_filenames: false
