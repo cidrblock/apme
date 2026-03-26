@@ -982,17 +982,39 @@ async def all_collections(
     )
     latest = select(latest_scans.c.scan_id).where(latest_scans.c.rn == 1).subquery()
 
-    stmt = (
+    most_recent = (
         select(
             ScanCollection.fqcn,
-            func.max(ScanCollection.version).label("version"),
-            func.max(ScanCollection.source).label("source"),
+            ScanCollection.version,
+            ScanCollection.source,
+            func.row_number().over(partition_by=ScanCollection.fqcn, order_by=Scan.created_at.desc()).label("rn"),
+        )
+        .join(Scan, ScanCollection.scan_id == Scan.scan_id)
+        .where(ScanCollection.scan_id.in_(select(latest.c.scan_id)))
+        .subquery()
+    )
+
+    cnt = (
+        select(
+            ScanCollection.fqcn,
             func.count(func.distinct(Scan.project_id)).label("project_count"),
         )
         .join(Scan, ScanCollection.scan_id == Scan.scan_id)
         .where(ScanCollection.scan_id.in_(select(latest.c.scan_id)))
         .group_by(ScanCollection.fqcn)
-        .order_by(func.count(func.distinct(Scan.project_id)).desc(), ScanCollection.fqcn)
+        .subquery()
+    )
+
+    stmt = (
+        select(
+            most_recent.c.fqcn,
+            most_recent.c.version,
+            most_recent.c.source,
+            cnt.c.project_count,
+        )
+        .join(cnt, most_recent.c.fqcn == cnt.c.fqcn)
+        .where(most_recent.c.rn == 1)
+        .order_by(cnt.c.project_count.desc(), most_recent.c.fqcn)
         .limit(limit)
         .offset(offset)
     )
@@ -1038,6 +1060,7 @@ async def collection_detail(
             ScanCollection.source,
             Scan.project_id,
             Project.name.label("project_name"),
+            Project.health_score,
         )
         .join(Scan, ScanCollection.scan_id == Scan.scan_id)
         .join(Project, Scan.project_id == Project.id)
@@ -1053,11 +1076,19 @@ async def collection_detail(
 
     versions = sorted({r.version for r in rows if r.version})
     sources = sorted({r.source for r in rows if r.source})
-    projects = [{"id": r.project_id, "name": r.project_name} for r in rows]
+    projects = [
+        {
+            "id": r.project_id,
+            "name": r.project_name,
+            "health_score": r.health_score,
+            "version": r.version,
+        }
+        for r in rows
+    ]
     return {
         "fqcn": fqcn,
         "versions": versions,
-        "source": sources[0] if sources else "galaxy",
+        "source": sources[0] if sources else "unknown",
         "project_count": len(projects),
         "projects": projects,
     }
@@ -1140,16 +1171,37 @@ async def all_python_packages(
     )
     latest = select(latest_scans.c.scan_id).where(latest_scans.c.rn == 1).subquery()
 
-    stmt = (
+    most_recent = (
         select(
             ScanPythonPackage.name,
-            func.max(ScanPythonPackage.version).label("version"),
+            ScanPythonPackage.version,
+            func.row_number().over(partition_by=ScanPythonPackage.name, order_by=Scan.created_at.desc()).label("rn"),
+        )
+        .join(Scan, ScanPythonPackage.scan_id == Scan.scan_id)
+        .where(ScanPythonPackage.scan_id.in_(select(latest.c.scan_id)))
+        .subquery()
+    )
+
+    cnt = (
+        select(
+            ScanPythonPackage.name,
             func.count(func.distinct(Scan.project_id)).label("project_count"),
         )
         .join(Scan, ScanPythonPackage.scan_id == Scan.scan_id)
         .where(ScanPythonPackage.scan_id.in_(select(latest.c.scan_id)))
         .group_by(ScanPythonPackage.name)
-        .order_by(func.count(func.distinct(Scan.project_id)).desc(), ScanPythonPackage.name)
+        .subquery()
+    )
+
+    stmt = (
+        select(
+            most_recent.c.name,
+            most_recent.c.version,
+            cnt.c.project_count,
+        )
+        .join(cnt, most_recent.c.name == cnt.c.name)
+        .where(most_recent.c.rn == 1)
+        .order_by(cnt.c.project_count.desc(), most_recent.c.name)
         .limit(limit)
         .offset(offset)
     )
@@ -1193,6 +1245,7 @@ async def python_package_detail(
             ScanPythonPackage.version,
             Scan.project_id,
             Project.name.label("project_name"),
+            Project.health_score,
         )
         .join(Scan, ScanPythonPackage.scan_id == Scan.scan_id)
         .join(Project, Scan.project_id == Project.id)
@@ -1207,7 +1260,15 @@ async def python_package_detail(
         return None
 
     versions = sorted({r.version for r in rows if r.version})
-    projects = [{"id": r.project_id, "name": r.project_name} for r in rows]
+    projects = [
+        {
+            "id": r.project_id,
+            "name": r.project_name,
+            "health_score": r.health_score,
+            "package_version": r.version,
+        }
+        for r in rows
+    ]
     return {
         "name": name,
         "versions": versions,

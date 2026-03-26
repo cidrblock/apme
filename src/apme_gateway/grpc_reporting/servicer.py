@@ -249,7 +249,7 @@ def _add_manifest(db: AsyncSession, scan_id: str, manifest: object) -> None:
                 scan_id=scan_id,
                 fqcn=c.fqcn,
                 version=c.version,
-                source=c.source or "galaxy",
+                source=c.source or "unknown",
             )
         )
     for p in manifest.python_packages:  # type: ignore[attr-defined]

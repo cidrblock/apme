@@ -272,7 +272,7 @@ class ScanCollection(Base):
         scan_id: Owning scan UUID (FK to scans).
         fqcn: Fully-qualified collection name.
         version: Installed version string.
-        source: Origin — galaxy, local, or git.
+        source: Classification — specified, learned, or dependency.
         scan: Back-reference to owning Scan.
     """
 
@@ -283,7 +283,7 @@ class ScanCollection(Base):
     scan_id: Mapped[str] = mapped_column(Text, ForeignKey("scans.scan_id"), nullable=False)
     fqcn: Mapped[str] = mapped_column(Text, nullable=False)
     version: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    source: Mapped[str] = mapped_column(Text, nullable=False, default="galaxy")
+    source: Mapped[str] = mapped_column(Text, nullable=False, default="unknown")
 
     scan: Mapped[Scan] = relationship(back_populates="collections")
 

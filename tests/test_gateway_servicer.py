@@ -40,7 +40,7 @@ def _mock_context() -> MagicMock:
     return ctx
 
 
-async def test_report_fix_completed_persists_check() -> None:
+async def test_report_fix_completed_persists_scan() -> None:
     """FixCompletedEvent is persisted to the database."""
     servicer = ReportingServicer()
     event = reporting_pb2.FixCompletedEvent(

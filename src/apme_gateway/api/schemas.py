@@ -442,8 +442,8 @@ class CollectionSummary(BaseModel):  # type: ignore[misc]
 
     Attributes:
         fqcn: Fully-qualified collection name.
-        version: Most recent version string.
-        source: Origin — galaxy, local, or git.
+        version: Version from the most recently scanned project.
+        source: Classification — specified, learned, or dependency.
         project_count: Number of projects using this collection.
     """
 
@@ -492,7 +492,7 @@ class PythonPackageSummary(BaseModel):  # type: ignore[misc]
 
     Attributes:
         name: PyPI package name.
-        version: Most recent version string.
+        version: Version from the most recently scanned project.
         project_count: Number of projects using this package.
     """
 
@@ -507,10 +507,14 @@ class PythonPackageProjectRef(BaseModel):  # type: ignore[misc]
     Attributes:
         id: Project UUID.
         name: Project display label.
+        health_score: Project health score.
+        package_version: Version of the package in this project.
     """
 
     id: str
     name: str
+    health_score: int = 0
+    package_version: str = ""
 
 
 class PythonPackageDetail(BaseModel):  # type: ignore[misc]

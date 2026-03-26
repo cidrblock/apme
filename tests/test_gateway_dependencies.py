@@ -105,8 +105,12 @@ async def _seed_project_with_manifest(
                 dependency_tree="ansible-core v2.16.3\n├── jinja2 v3.1.4\n└── pyyaml v6.0.3",
             )
         )
-        db.add(ScanCollection(scan_id="scan-" + project_id, fqcn="community.general", version="8.0.0", source="specified"))
-        db.add(ScanCollection(scan_id="scan-" + project_id, fqcn="ansible.netcommon", version="6.1.0", source="dependency"))
+        db.add(
+            ScanCollection(scan_id="scan-" + project_id, fqcn="community.general", version="8.0.0", source="specified")
+        )
+        db.add(
+            ScanCollection(scan_id="scan-" + project_id, fqcn="ansible.netcommon", version="6.1.0", source="dependency")
+        )
         db.add(ScanPythonPackage(scan_id="scan-" + project_id, name="jmespath", version="1.0.1"))
         db.add(ScanPythonPackage(scan_id="scan-" + project_id, name="netaddr", version="0.10.1"))
         await db.commit()

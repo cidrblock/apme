@@ -198,6 +198,4 @@ where = ["src"]
 "galaxy_proxy" = ["py.typed"]
 
 [tool.uv.workspace]
-members = [
-    "test_venv",
-]
+members = []

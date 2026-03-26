@@ -219,18 +219,20 @@ async def create_project(body: CreateProjectRequest) -> ProjectSummary:
     Raises:
         HTTPException: 409 if a project with the same name already exists.
     """
+    from sqlalchemy.exc import IntegrityError
+
     project_id = uuid.uuid4().hex
-    async with get_session() as db:
-        existing = await q.resolve_project(db, body.name)
-        if existing is not None:
-            raise HTTPException(status_code=409, detail=f"Project named '{body.name}' already exists")
-        proj = await q.create_project(
-            db,
-            project_id=project_id,
-            name=body.name,
-            repo_url=body.repo_url,
-            branch=body.branch,
-        )
+    try:
+        async with get_session() as db:
+            proj = await q.create_project(
+                db,
+                project_id=project_id,
+                name=body.name,
+                repo_url=body.repo_url,
+                branch=body.branch,
+            )
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail=f"Project named '{body.name}' already exists") from None
     return ProjectSummary(
         id=proj.id,
         name=proj.name,
@@ -627,7 +629,7 @@ async def get_collection_detail(fqcn: str) -> CollectionDetail:
     return CollectionDetail(
         fqcn=str(detail["fqcn"]),
         versions=cast(list[str], detail.get("versions", [])),
-        source=str(detail.get("source", "galaxy")),
+        source=str(detail.get("source", "unknown")),
         project_count=cast(int, detail.get("project_count", 0)),
         projects=[
             CollectionProjectRef(
@@ -716,6 +718,8 @@ async def get_python_package_detail(name: str) -> PythonPackageDetail:
             PythonPackageProjectRef(
                 id=str(p["id"]),
                 name=str(p["name"]),
+                health_score=cast(int, p.get("health_score", 0)),
+                package_version=str(p.get("package_version", "")),
             )
             for p in pkg_projects
         ],
