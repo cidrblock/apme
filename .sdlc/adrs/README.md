@@ -64,6 +64,7 @@ Decisions under consideration — not yet accepted or implemented.
 | [ADR-038](ADR-038-public-data-api.md) | Public Data API for Platform Consumers | 2026-03-25 |
 | [ADR-041](ADR-041-rule-catalog-override-architecture.md) | Rule Catalog & Override Architecture | 2026-03-25 |
 | [ADR-042](ADR-042-third-party-plugin-services.md) | Third-Party Plugin Services | 2026-03-20 |
+| [ADR-043](ADR-043-default-severity-assignment.md) | Default Severity Assignment for Rule Catalog | 2026-03-26 |
 
 ## Superseded
 
@@ -77,7 +78,7 @@ Decisions replaced by newer ADRs.
 ## Creating New ADRs
 
 1. Copy the template from `../templates/adr.md`
-2. Use the next available number (currently ADR-043)
+2. Use the next available number (currently ADR-044)
 3. Include:
    - Status (Proposed → Accepted → Implemented)
    - Date
