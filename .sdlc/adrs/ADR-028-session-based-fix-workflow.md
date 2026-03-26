@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (implemented in PR #43)
+Implemented
 
 ## Date
 
