@@ -56,8 +56,8 @@ sed "s|path: __APME_CACHE_PATH__|path: ${ESCAPED_PATH}|" containers/podman/pod.y
 
 echo "Pod apme-pod started (cache: $CACHE_PATH). Run a scan: containers/podman/run-cli.sh"
 
-if [[ -n "$APME_FEEDBACK_GITHUB_REPO" && -n "$APME_FEEDBACK_GITHUB_TOKEN" ]]; then
+if [[ "${APME_FEEDBACK_ENABLED:-false}" == "true" && -n "$APME_FEEDBACK_GITHUB_REPO" && -n "$APME_FEEDBACK_GITHUB_TOKEN" ]]; then
   echo "Issue reporting enabled (repo: $APME_FEEDBACK_GITHUB_REPO)"
 else
-  echo "Issue reporting disabled. To enable, export APME_FEEDBACK_GITHUB_REPO and APME_FEEDBACK_GITHUB_TOKEN."
+  echo "Issue reporting disabled. To enable, set APME_FEEDBACK_ENABLED=true and export APME_FEEDBACK_GITHUB_REPO and APME_FEEDBACK_GITHUB_TOKEN."
 fi
