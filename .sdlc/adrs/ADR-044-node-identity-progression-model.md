@@ -245,6 +245,7 @@ The UI renders play-level violations with the play header as the snippet (hosts,
 - [ADR-023](ADR-023-per-finding-classification.md): Per-finding classification — node identity strengthens per-finding resolution tracking
 - [ADR-026](ADR-026-rule-scope-metadata.md): Rule scope metadata — scope becomes a property of identified nodes
 - [ADR-036](ADR-036-two-pass-remediation-engine.md): Two-pass remediation — progression model naturally supports multi-pass
+- [ADR-043](ADR-043-default-severity-assignment.md): Default severity assignment — `PropertyOrigin` enables scope-aware severity modifiers (inherited properties at play scope escalate severity)
 
 ## References
 

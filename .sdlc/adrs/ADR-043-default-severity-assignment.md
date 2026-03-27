@@ -72,6 +72,17 @@ When assigning a default severity, apply these questions in order:
 
 This is a decision tree, not a point system. Each rule gets exactly one default severity based on the **first matching criterion**.
 
+#### Scope-aware severity (future, see ADR-044)
+
+Some violations are more significant when they occur at a broader scope. `become: true` on a play affects every task in the play — that is a higher blast radius than `become: true` on a single task, and should escalate the severity. Conversely, a missing name (L003/L024) has the same impact regardless of scope — a play without a name is no worse than a task without a name.
+
+When [ADR-044](ADR-044-node-identity-progression-model.md) introduces scope-aware node identity, rules that involve inherited properties (R108 privilege escalation, L050 variable naming, L010 ignore_errors) should carry a scope-based severity modifier:
+
+- **Inherited property at play/block scope** → escalate one level (e.g. R108 Medium → High)
+- **Convention/style violations** → no escalation (scope does not change impact)
+
+This modifier is applied after the base severity from the decision tree above. It requires the `PropertyOrigin` tracking from ADR-044 to know whether a violation is inherited or explicit.
+
 ### 4. Representative assignments
 
 These examples illustrate the criteria applied to real rules:
@@ -296,6 +307,7 @@ Third-party plugins ([ADR-042](ADR-042-third-party-plugin-services.md)) provide 
 - [ADR-026](ADR-026-rule-scope-metadata.md): Rule Scope as First-Class Metadata — scope and severity are independent dimensions
 - [ADR-042](ADR-042-third-party-plugin-services.md): Third-Party Plugin Services — plugin severity via `Describe` RPC
 - [ADR-013](ADR-013-structured-diagnostics.md): Structured Diagnostics — `Violation` message being modified
+- [ADR-044](ADR-044-node-identity-progression-model.md): Node Identity & Progression Model — provides `PropertyOrigin` tracking needed for scope-aware severity modifiers
 
 ## References
 
