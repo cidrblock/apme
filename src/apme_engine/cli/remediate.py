@@ -30,6 +30,8 @@ from apme_engine.cli.ansi import dim, red, yellow
 from apme_engine.cli.discovery import resolve_primary
 from apme_engine.daemon.chunked_fs import yield_scan_chunks
 
+_LEVEL_FMT = {1: dim, 3: yellow, 4: red}
+
 
 def run_remediate(args: argparse.Namespace) -> None:
     """Execute the remediate subcommand.
@@ -124,7 +126,6 @@ def run_remediate(args: argparse.Namespace) -> None:
                 if p.level < min_level:
                     continue
                 phase = f"[{p.phase}] " if p.phase else ""
-                _LEVEL_FMT = {1: dim, 3: yellow, 4: red}
                 fmt = _LEVEL_FMT.get(p.level, str)
                 sys.stderr.write(f"  {phase}{fmt(p.message)}\n")
 

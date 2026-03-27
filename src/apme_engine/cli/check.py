@@ -33,6 +33,7 @@ from apme_engine.daemon.chunked_fs import yield_scan_chunks
 from apme_engine.remediation.partition import count_by_remediation_class, count_by_resolution
 
 _SAFE_SESSION_RE = __import__("re").compile(r"^[A-Za-z0-9_\-]+$")
+_LEVEL_FMT = {1: dim, 3: yellow, 4: red}
 
 
 class _ScanSummaryCompat:
@@ -154,7 +155,6 @@ def run_check(args: argparse.Namespace) -> None:
                 p = event.progress
                 if p.level >= min_level:
                     phase = f"[{p.phase}] " if p.phase else ""
-                    _LEVEL_FMT = {1: dim, 3: yellow, 4: red}
                     fmt = _LEVEL_FMT.get(p.level, str)
                     sys.stderr.write(f"  {phase}{fmt(p.message)}\n")
                 continue

@@ -173,7 +173,7 @@ def _attach_snippets(violations: list[ViolationDict], files: list[File]) -> None
         if not lines:
             continue
         raw_line = v.get("line")
-        if isinstance(raw_line, list | tuple):
+        if isinstance(raw_line, (list, tuple)):
             line_no = int(raw_line[0]) if raw_line else 0
         elif isinstance(raw_line, int):
             line_no = raw_line

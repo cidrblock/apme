@@ -68,7 +68,7 @@ export function ViolationDetailModal({ isOpen, onClose, violation, diff, getRule
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const ruleDesc = getRuleDescription?.(violation.rule_id);
   const cls = severityClass(violation.level, violation.rule_id);
-  const source = ruleSource(violation.rule_id);
+  const source = violation.validator_source || ruleSource(violation.rule_id);
   const isCombinedFixed = !!mergedViolations;
   const parsed = useMemo(
     () => (violation.snippet ? parseSnippet(violation.snippet) : null),

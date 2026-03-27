@@ -102,15 +102,19 @@ def _build_issue_body(req: FeedbackRequest) -> str:
     if req.user_comment:
         body += f"\n\n## User Comment\n\n{req.user_comment}"
 
+    is_sec = req.rule_id.upper().startswith("SEC")
     ctx = req.context
     if ctx.violation_message:
-        body += f"\n\n## Violation Message\n\n{ctx.violation_message}"
+        body += f"\n\n## Violation Message\n\n{ctx.violation_message[:500]}"
     if ctx.ai_explanation:
-        body += f"\n\n## AI Explanation\n\n{ctx.ai_explanation}"
-    if ctx.source_snippet:
-        body += f"\n\n## Source Context\n\n```yaml\n{ctx.source_snippet}\n```"
-    if ctx.ai_proposal_diff:
-        body += f"\n\n## AI Proposed Diff\n\n```diff\n{ctx.ai_proposal_diff}\n```"
+        body += f"\n\n## AI Explanation\n\n{ctx.ai_explanation[:2000]}"
+    if is_sec:
+        body += "\n\n> Source snippet and diff redacted for SEC (secrets) rule."
+    else:
+        if ctx.source_snippet:
+            body += f"\n\n## Source Context\n\n```yaml\n{ctx.source_snippet[:3000]}\n```"
+        if ctx.ai_proposal_diff:
+            body += f"\n\n## AI Proposed Diff\n\n```diff\n{ctx.ai_proposal_diff[:5000]}\n```"
 
     return body
 
@@ -184,7 +188,10 @@ async def submit_feedback(req: FeedbackRequest) -> FeedbackResponse:
         )
 
     data = resp.json()
-    return FeedbackResponse(
-        issue_url=data.get("html_url", ""),
-        issue_number=data.get("number", 0),
-    )
+    issue_url = data.get("html_url")
+    issue_number = data.get("number")
+    if not issue_url or not isinstance(issue_number, int):
+        logger.error("Unexpected GitHub response: %s", data)
+        raise HTTPException(status_code=502, detail="GitHub returned unexpected payload")
+
+    return FeedbackResponse(issue_url=issue_url, issue_number=issue_number)
