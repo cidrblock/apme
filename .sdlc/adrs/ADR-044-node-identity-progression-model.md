@@ -161,6 +161,8 @@ This preserves ARI's valuable parsing logic while decoupling APME from ARI's sta
 - Single model serves parsing, validation, remediation, and reporting
 - Formatter changes become trackable events, not invisible preprocessing
 - Inherited property violations reference their defining scope, not every inheriting child
+- Plays and playbooks become first-class violation targets — an R108 "this play enables privilege escalation" fires once on the play node instead of once per inheriting task, significantly reducing noise
+- UI can render violations hierarchically (Playbook > Play > Block > Task) with scope-appropriate snippets (play header for play-level violations, task body for task-level)
 
 ### Negative
 
@@ -206,6 +208,28 @@ node = content_graph.get(violation.node_id)
 state = node.state_at(pass_number)  # or node.state_when_detected(violation)
 snippet = state.content_lines(line - 10, line + 10)
 ```
+
+### Scope-level violations and noise reduction
+
+With node identity, rules that detect inherited properties can target the defining scope:
+
+```python
+# R108 today: fires on every task that inherits become (50 violations)
+Violation(rule_id="R108", node_id="site.yml::play[0]#task[3]", line=30)
+Violation(rule_id="R108", node_id="site.yml::play[0]#task[4]", line=37)
+# ... 48 more
+
+# R108 with ContentGraph: fires once on the play (1 violation)
+Violation(
+    rule_id="R108",
+    node_id="site.yml::play[0]",
+    line=3,
+    message="Play enables privilege escalation (become_user: deployer)",
+    affected_children=50,  # informational count
+)
+```
+
+The UI renders play-level violations with the play header as the snippet (hosts, vars, become directives), giving the user immediate context for why the violation exists and where to fix it.
 
 ### Compatibility
 
