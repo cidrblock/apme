@@ -51,6 +51,7 @@ Decisions that have been accepted but are not yet fully implemented.
 | [ADR-012](ADR-012-scale-pods-not-services.md) | Scale Pods, Not Services Within a Pod | 2026-02 |
 | [ADR-016](ADR-016-single-branch-main.md) | Single-branch `main` Strategy | 2026-03 |
 | [ADR-040](ADR-040-scan-metadata-enrichment.md) | Scan Metadata Enrichment | 2026-03-25 |
+| [ADR-043](ADR-043-default-severity-assignment.md) | Default Severity Assignment for Rule Catalog | 2026-03-26 |
 
 ## Proposed
 
@@ -77,7 +78,7 @@ Decisions replaced by newer ADRs.
 ## Creating New ADRs
 
 1. Copy the template from `../templates/adr.md`
-2. Use the next available number (currently ADR-043)
+2. Use the next available number (currently ADR-044)
 3. Include:
    - Status (Proposed → Accepted → Implemented)
    - Date
