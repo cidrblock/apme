@@ -99,10 +99,10 @@ message ScanResponse {
 
 ```bash
 # Default: violations only
-apme scan playbook.yml
+apme check playbook.yml
 
 # -v: summaries + top 10 slowest
-apme scan -v playbook.yml
+apme check -v playbook.yml
 # Output:
 # Validators:
 #   native: 245ms, 12 violations
@@ -113,7 +113,7 @@ apme scan -v playbook.yml
 #   ...
 
 # -vv: full breakdown
-apme scan -vv playbook.yml
+apme check -vv playbook.yml
 # Output:
 # Engine phases:
 #   parse: 120ms

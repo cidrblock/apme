@@ -82,7 +82,7 @@ What's the source? (Jira key, customer name, or "internal")
    - Where does this request fit?
 
 5. **Check output formats**:
-   - CLI: `apme scan --json` capabilities
+   - CLI: `apme check --json` capabilities
    - gRPC: `ScanResponse` proto structure
    - What structured data already exists?
 

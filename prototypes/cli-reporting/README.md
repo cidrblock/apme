@@ -29,7 +29,7 @@ uv run python prototypes/cli-reporting/rich_html_export.py
 
 ### 1. Rich Terminal (default)
 ```
-apme scan .
+apme check .
 ```
 - Color-coded severity badges
 - Summary panel with pass/fail status
@@ -38,8 +38,8 @@ apme scan .
 
 ### 2. JSON (automation)
 ```
-apme scan . --json
-apme scan . --json > results.json
+apme check . --json
+apme check . --json > results.json
 ```
 - Machine-readable format
 - Includes scan metadata, summary, and violations array
@@ -47,7 +47,7 @@ apme scan . --json > results.json
 
 ### 3. JUnit XML (CI/CD)
 ```
-apme scan . --junit results.xml
+apme check . --junit results.xml
 ```
 - Compatible with Jenkins, GitHub Actions, GitLab CI
 - Errors = failures, Warnings = skipped, Hints = passing
@@ -55,7 +55,7 @@ apme scan . --junit results.xml
 
 ### 4. HTML Report (sharing)
 ```
-apme scan . --html report.html
+apme check . --html report.html
 ```
 - Standalone HTML file (no server needed)
 - Same formatting as terminal via Rich's save_html()

@@ -58,8 +58,8 @@ echo "==> Phase 3: Health check"
 sleep 3  # let services finish starting
 HEALTH_OUTPUT=$(podman run --rm --pod apme-pod \
   -e APME_PRIMARY_ADDRESS=127.0.0.1:50051 \
-  --entrypoint apme-scan apme-cli:latest \
-  health-check --primary-addr 127.0.0.1:50051 2>&1) || true
+  --entrypoint apme apme-cli:latest \
+  health-check 2>&1) || true
 echo "$HEALTH_OUTPUT"
 if echo "$HEALTH_OUTPUT" | grep -q "overall: ok"; then
   pass "Health check passed"
@@ -74,8 +74,8 @@ SCAN_OUTPUT=$(podman run --rm --pod apme-pod \
   -v "$TEST_DIR":/workspace:ro,Z \
   -w /workspace \
   -e APME_PRIMARY_ADDRESS=127.0.0.1:50051 \
-  --entrypoint apme-scan apme-cli:latest \
-  scan --json . 2>/dev/null) || true
+  --entrypoint apme apme-cli:latest \
+  check --json . 2>/dev/null) || true
 
 echo "$SCAN_OUTPUT" | python3 -m json.tool 2>/dev/null || echo "$SCAN_OUTPUT"
 

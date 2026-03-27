@@ -23,5 +23,5 @@ and secrets-detection rules simultaneously, including:
 ## Usage
 
 ```bash
-apme scan /path/to/terrible-playbook
+apme check /path/to/terrible-playbook
 ```

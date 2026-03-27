@@ -461,22 +461,22 @@ def demo_all_formats() -> None:
     output_dir = Path(__file__).parent
 
     print("=" * 80)
-    print("DEMO: apme scan . (Rich terminal output - default)")
+    print("DEMO: apme check . (Rich terminal output - default)")
     print("=" * 80)
     format_output(SAMPLE_RESULT, OutputFormat.RICH)
 
     print("\n" + "=" * 80)
-    print("DEMO: apme scan . --json")
+    print("DEMO: apme check . --json")
     print("=" * 80 + "\n")
     format_output(SAMPLE_RESULT, OutputFormat.JSON)
 
     print("\n" + "=" * 80)
-    print("DEMO: apme scan . --junit")
+    print("DEMO: apme check . --junit")
     print("=" * 80 + "\n")
     format_output(SAMPLE_RESULT, OutputFormat.JUNIT)
 
     print("\n" + "=" * 80)
-    print("DEMO: apme scan . --html report.html")
+    print("DEMO: apme check . --html report.html")
     print("=" * 80)
     html_path = output_dir / "demo_report.html"
     format_output(SAMPLE_RESULT, OutputFormat.HTML, html_path)
