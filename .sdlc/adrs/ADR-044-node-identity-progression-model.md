@@ -78,7 +78,7 @@ Each meaningful unit of Ansible content (task, play, block, role reference, vari
 
 **ContentGraph**: The top-level container — a directed acyclic graph (DAG) of identified nodes with their progressions, parent-child relationships, and include edges. Replaces the current pattern of disconnected ARI tree + StructuredFile + file bytes. The graph is a DAG, not a tree, because roles and task files can be included by multiple parents — a role used by three playbooks exists once in the graph with three incoming include edges, not three copies.
 
-**NodeScope**: Each node carries an ownership scope — `owned` (inside the scan boundary, eligible for violations and remediation) or `referenced` (resolved for context and inheritance, but violations are not reported and content is never modified). When scanning a collection, the collection's own roles and playbooks are `owned`; dependencies from Galaxy are `referenced`. The scan boundary is determined by what was submitted for analysis.
+**NodeScope**: Each node carries an ownership scope — `owned` (inside the scan boundary, eligible for violations and remediation) or `referenced` (resolved for context and inheritance, with any detected violations treated as advisory-only and excluded from automated remediation; referenced content is never modified). When scanning a collection, the collection's own roles and playbooks are `owned`; dependencies from Galaxy are `referenced`. The scan boundary is determined by what was submitted for analysis.
 
 **PropertyOrigin**: When a node carries an inherited property (e.g. `become`, variables), the graph tracks the `NodeIdentity` of the defining scope — modeled after ansible-core's `_get_parent_attribute()` chain walk. Violations on inherited properties reference both the affected task and the origin node, enabling messages like "Privilege escalation inherited from play at site.yml:3" rather than attributing to the task's own line.
 
@@ -279,7 +279,7 @@ Variable-path includes (e.g., `include_tasks: "{{ task_file }}"`) resolve all st
 **Ownership borders** determine the scan boundary:
 
 - `owned`: content submitted for analysis. Violations reported, remediation applied, progression tracked.
-- `referenced`: resolved for context (so property inheritance and variable resolution work). Violations suppressed or surfaced as advisory ("your dependency has issues"). Content never modified.
+- `referenced`: resolved for context (so property inheritance and variable resolution work). Violations are advisory-only (visible for dependency quality assessment but excluded from automated remediation). Content never modified.
 
 The border is set by what's submitted: scanning a role in isolation makes the role `owned` and its dependencies `referenced`. Scanning a collection makes all sibling roles `owned`. This is a property of the scan session, not intrinsic to the node — the same role can be `owned` in one scan and `referenced` in another.
 
@@ -303,11 +303,11 @@ community.general.ufw      → referenced (declared dependency)
 
 ### Graph implementation: networkx MultiDiGraph
 
-The `ContentGraph` is implemented as a `networkx.MultiDiGraph`. `MultiDiGraph` is required because the same node pair can have multiple edges — a role included twice from the same play with different `when` conditions creates two distinct edges, each with its own attributes. A standard `DiGraph` only permits one edge per node pair.
+The `ContentGraph` will be implemented as a `networkx.MultiDiGraph`. `MultiDiGraph` is required because the same node pair can have multiple edges — a role included twice from the same play with different `when` conditions creates two distinct edges, each with its own attributes. A standard `DiGraph` only permits one edge per node pair. Adding `networkx` as a runtime dependency is part of implementing this ADR.
 
 networkx is pure Python (~3 MB installed), has no compiled extensions, and passes the ADR-019 dependency checklist: it solves a genuinely hard problem (graph algorithms), ships `py.typed` for mypy strict, is Apache-2.0 licensed, and has no overlap with existing deps.
 
-Built-in algorithms the ContentGraph uses:
+Built-in algorithms the ContentGraph will use:
 
 - `is_directed_acyclic_graph()` — validation invariant (content cannot have circular includes)
 - `topological_sort()` — determines processing order
@@ -316,7 +316,7 @@ Built-in algorithms the ContentGraph uses:
 - `in_degree()` / `out_degree()` — fan-in/fan-out metrics
 - `node_link_data()` / `node_link_graph()` — JSON serialization for Gateway API and persistence
 
-Node and edge attributes can hold arbitrary Python objects, enabling rich metadata (violations, variable provenance, quality scores) without a separate storage layer.
+In memory, node and edge attributes may hold arbitrary Python objects for rich metadata (violations, variable provenance, quality scores). However, attributes persisted via `node_link_data()` / `node_link_graph()` must be JSON-serializable, so a normalization layer converts complex objects (dataclasses, datetimes) into JSON-friendly shapes before serialization to the Gateway.
 
 ### Node type and edge type taxonomy
 
@@ -429,10 +429,23 @@ class ScanSnapshot:
 
 The Gateway persists the full timeline: each `NodeIdentity` accumulates a history of `ScanSnapshot` entries across scans. Trend queries ("when did this role go from violated to clean?", "which nodes regressed?") are Gateway concerns, not engine concerns.
 
-**Graph topology stability is a correctness invariant.** The same content must produce an isomorphic graph across scans. If the topology changes between iterations on unchanged content, either the parser is non-deterministic or there is a bug. During remediation convergence, the graph shape should remain stable while node attributes change (violations disappear as fixes land). This invariant is assertable:
+**Graph topology stability is a correctness invariant.** The same content must produce an isomorphic graph across scans. If the topology changes between iterations on unchanged content, either the parser is non-deterministic or there is a bug. During remediation convergence, the graph shape should remain stable while node attributes change (violations disappear as fixes land). This invariant is assertable with attribute-aware matching that verifies both topology and structural node/edge types:
 
 ```python
-assert nx.is_isomorphic(graph_pass_n, graph_pass_n_plus_1)
+from networkx.algorithms.isomorphism import (
+    categorical_node_match,
+    categorical_edge_match,
+)
+
+node_match = categorical_node_match(["node_type", "key"], [None, None])
+edge_match = categorical_edge_match(["edge_type"], [None])
+
+assert nx.is_isomorphic(
+    graph_pass_n,
+    graph_pass_n_plus_1,
+    node_match=node_match,
+    edge_match=edge_match,
+)
 ```
 
 This model simplifies ADR-044's Phase B. Instead of a separate progression store or graph diffing, the graph *is* the progression store — each node carries its own timeline as a node attribute, and the Gateway is the durable backing store.
