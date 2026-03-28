@@ -1,0 +1,264 @@
+# ADR-045: Delegate Galaxy Authentication to ansible-galaxy, Galaxy Config as Scan Metadata
+
+## Status
+
+Proposed
+
+## Date
+
+2026-03-28
+
+## Context
+
+APME's Galaxy Proxy (ADR-031) converts Galaxy collection tarballs to Python
+wheels and serves them via PEP 503.  The proxy also acts as the Galaxy V3 REST
+API client — it implements `GalaxyClient` with `httpx`, manages per-server auth
+headers, paginates version listings, and downloads tarballs directly from
+upstream Galaxy / Automation Hub servers.
+
+PR #130 proposes extending the proxy with:
+
+- **SSO offline-token exchange** (`_SSOState`, Keycloak OIDC flow) for
+  `console.redhat.com` Automation Hub
+- **API root path normalization** for Automation Hub URL variations
+- **`GALAXY_SERVER_LIST` env var parsing** (ansible.cfg-style multi-server
+  config via environment variables)
+- **Auth header forwarding** on tarball downloads
+- **`auth_type` field** (token / bearer / sso) on `GalaxyServer`
+
+All of this functionality already exists in `ansible-galaxy`, which is the
+authoritative Galaxy API client maintained by the Ansible team:
+
+- `ansible.cfg` `[galaxy_server_list]` with per-server sections
+- SSO / offline-token exchange for `console.redhat.com` via `auth_url`
+- Multiple auth types (`token`, `auth_url` for SSO)
+- Multi-server fallback ordering
+- Auth on tarball downloads
+- `ansible-galaxy collection download` fetches tarballs without installing
+
+Reimplementing this in the proxy creates a maintenance burden that must track
+upstream Galaxy API and SSO endpoint changes indefinitely.  It also ignores the
+user's existing `ansible.cfg` configuration — the standard place where Galaxy
+server credentials are already configured.
+
+### Forces
+
+- CLI users already have `ansible.cfg` with Galaxy/AH server credentials
+- UI users need per-project Galaxy server configuration (stored in Gateway DB)
+- The engine is stateless (ADR-020) — it should not store credentials
+- Galaxy auth complexity (SSO, token refresh, API path normalization) belongs
+  in ansible-galaxy, not in our codebase
+- The proxy's core value is tarball-to-wheel conversion and PEP 503 serving,
+  not Galaxy API client implementation
+- `ansible-core` is already installed in every session venv — `ansible-galaxy`
+  is available there
+
+### Constraints
+
+- The Galaxy Proxy container currently does not have `ansible-core` installed
+- No gRPC proto fields exist for Galaxy server configuration today
+- Credentials must not be persisted by the engine (ADR-020, ADR-029)
+- The engine never queries out (architectural invariant 11) — but
+  `ansible-galaxy collection download` is a subprocess invocation within the
+  pod, not an outbound query from engine code
+
+## Options Considered
+
+### Option 1: Delegate to ansible-galaxy + scan-scoped config (proposed)
+
+Galaxy server configuration becomes scan-scoped metadata flowing through the
+gRPC proto.  The CLI reads the user's `ansible.cfg` Galaxy sections and sends
+them as `GalaxyServerDef` messages.  The UI/Gateway stores per-project Galaxy
+server defs and injects them into scan requests.  The engine writes a temporary
+`ansible.cfg` per session and delegates fetching to
+`ansible-galaxy collection download`.  The proxy simplifies to tarball-to-wheel
+conversion + PEP 503 serving.
+
+**Pros:**
+- Zero custom SSO/OIDC code — ansible-galaxy handles all auth
+- Tracks upstream Galaxy API changes automatically
+- CLI users get zero-config: their existing `ansible.cfg` just works
+- UI can offer per-project Automation Hub credential management
+- Single auth implementation shared with all Ansible tooling
+
+**Cons:**
+- `ansible-core` must be available where `ansible-galaxy collection download`
+  runs (session venv, proxy container, or a shared utility)
+- Proto change needed (`GalaxyServerDef` message on `ScanOptions`/`FixOptions`)
+- Subprocess invocation adds latency vs direct HTTP (mitigated by caching)
+
+### Option 2: Reimplement Galaxy auth in the proxy (PR #130's approach)
+
+The proxy implements its own Galaxy V3 REST API client with SSO token exchange,
+API root normalization, multi-server config via env vars, and auth header
+forwarding.
+
+**Pros:**
+- Self-contained — proxy has no dependency on ansible-core
+- Direct HTTP is slightly faster than subprocess
+
+**Cons:**
+- Duplicates battle-tested auth logic from ansible-galaxy
+- Must track upstream Galaxy API, SSO endpoint, and auth protocol changes
+- Ignores the user's existing `ansible.cfg` (requires separate env var config)
+- No path for UI-driven per-project credentials (env vars are process-global)
+- SSO token refresh, Keycloak quirks, and API path normalization are complex
+  and error-prone to reimplement
+
+### Option 3: Hybrid — proxy keeps simple token auth, adds ansible-galaxy for SSO
+
+The proxy retains its existing `Authorization: Token` auth for simple Galaxy
+servers.  For SSO-authenticated servers (Automation Hub), it delegates to
+`ansible-galaxy collection download`.
+
+**Pros:**
+- Minimal change for simple Galaxy (public, private with token)
+- SSO complexity delegated to ansible-galaxy
+
+**Cons:**
+- Two auth paths to maintain and reason about
+- Still ignores the user's `ansible.cfg` for the token path
+- Inconsistent behavior between auth types
+- Eventually the simple path will also want ansible.cfg-style config
+
+## Decision
+
+**Option 1: Delegate Galaxy authentication to ansible-galaxy and flow Galaxy
+server configuration as scan-scoped metadata through the gRPC proto.**
+
+The proxy's role narrows to its core value: tarball-to-wheel conversion and
+PEP 503 serving.  Galaxy API interaction — authentication, server discovery,
+tarball downloading — is delegated to `ansible-galaxy collection download`,
+which is the authoritative, maintained implementation.
+
+Galaxy server configuration flows as scan metadata:
+
+```
+CLI (reads ansible.cfg) ──► gRPC ScanOptions.galaxy_servers ──► Primary
+UI  (per-project config) ──► Gateway ──► gRPC ScanOptions     ──► Primary
+                                                                     │
+                                            Primary writes temp ansible.cfg
+                                            ansible-galaxy collection download
+                                                     │
+                                              tarballs on disk
+                                                     │
+                                              Proxy: tarball → wheel
+                                              PEP 503 serving
+                                                     │
+                                              pip/uv install wheel
+```
+
+### Why not Option 2
+
+Reimplementing `ansible-galaxy`'s auth stack creates a parallel implementation
+that must track upstream changes to the Galaxy V3 API, Red Hat SSO endpoints,
+Keycloak OIDC flows, and Automation Hub URL conventions.  The initial design of
+the proxy's `GalaxyClient` was over-engineered — it took on Galaxy API client
+responsibilities that already have a well-maintained upstream implementation.
+The proxy should focus on what only it can do: format conversion at the boundary.
+
+### Why not Option 3
+
+A hybrid approach creates two code paths for the same operation (fetching a
+collection tarball), making the system harder to reason about and test.  If we
+are going to use ansible-galaxy for the hard cases, we should use it for all
+cases and eliminate the custom client entirely.
+
+## Consequences
+
+### Positive
+
+- **No custom auth code**: SSO token exchange, API root normalization, and
+  auth header forwarding are all handled by ansible-galaxy
+- **Automatic upstream tracking**: Galaxy API changes, new auth methods, and
+  Automation Hub URL conventions are picked up via ansible-core upgrades
+- **CLI zero-config**: Users' existing `ansible.cfg` Galaxy server sections
+  work without any APME-specific configuration
+- **UI credential management**: Per-project Galaxy server defs stored in
+  Gateway DB, injected into scan requests — enables Automation Hub integration
+  from the web UI
+- **Simplified proxy**: `galaxy_client.py` reduces to tarball-to-wheel
+  conversion; no `httpx` dependency for Galaxy API calls
+- **Security**: Credentials flow as scan-scoped metadata (in-transit on
+  pod-local gRPC), never persisted by the engine, stored encrypted in
+  Gateway DB
+
+### Negative
+
+- **ansible-core dependency**: `ansible-galaxy collection download` requires
+  ansible-core.  Session venvs already have it; the proxy container may need
+  it added, or the download step moves to Primary (which has access to session
+  venvs)
+- **Proto evolution**: New `GalaxyServerDef` message and field on
+  `ScanOptions`/`FixOptions` — requires proto regeneration and client updates
+- **Subprocess latency**: `ansible-galaxy collection download` is slower than
+  direct HTTP for the first fetch (mitigated by proxy wheel cache — subsequent
+  requests are instant cache hits)
+
+### Neutral
+
+- PR #130's bug fixes (naming hyphen-to-underscore, pagination via
+  `links.next`, inline comment stripping) remain valuable and should be
+  cherry-picked independently
+- The `remediate.py` type annotation cleanup in PR #130 is unrelated and can
+  be merged separately
+- ADR-031's core decision (contain Galaxy format at the proxy boundary, serve
+  wheels via PEP 503) is unchanged — this ADR narrows the proxy's
+  responsibilities, not its purpose
+
+## Implementation Notes
+
+### Phase 1: Proto + CLI plumbing
+
+- Add `GalaxyServerDef` message to `common.proto` (`url`, `token`,
+  `auth_url`, `name`, `auth_type`)
+- Add `repeated GalaxyServerDef galaxy_servers` to `ScanOptions` and
+  `FixOptions`
+- CLI: parse `ansible.cfg` `[galaxy_server_list]` sections, populate
+  `galaxy_servers` on scan requests
+- Primary: write temp `ansible.cfg` from `galaxy_servers`, scope to session
+
+### Phase 2: Engine integration
+
+- Primary: use `ansible-galaxy collection download -p <session_dir>/tarballs/`
+  with the generated `ansible.cfg` to fetch tarballs
+- Proxy: add endpoint or filesystem watcher to convert local tarballs to
+  wheels (or Primary hands tarballs directly to the converter)
+- Remove `GalaxyClient` upstream fetching from proxy
+
+### Phase 3: Gateway + UI
+
+- Gateway: add `galaxy_servers` to project model (encrypted token storage)
+- Gateway: inject `galaxy_servers` into gRPC requests when calling engine
+- UI: per-project Galaxy server configuration form
+
+### Cherry-pick from PR #130
+
+These changes are valuable regardless of the auth delegation decision:
+
+- `naming.py`: hyphen-to-underscore fix in `python_to_fqcn`
+- `metadata.py`: inline comment stripping in requirements parsing
+- `galaxy_client.py`: pagination via `links.next` URL (if client is retained
+  for any fallback role)
+- `remediate.py`: type annotation cleanup (`list[object]` → `list[Proposal]`)
+
+## Related Decisions
+
+- [ADR-031](ADR-031-unified-collection-cache.md): Unified Collection Cache —
+  this ADR narrows the proxy's role defined there
+- [ADR-022](ADR-022-session-scoped-venvs.md): Session-Scoped Venvs — session
+  venvs already have ansible-core, providing ansible-galaxy
+- [ADR-020](ADR-020-reporting-service.md): Reporting Service — engine
+  statelessness; credentials must not be persisted by the engine
+- [ADR-029](ADR-029-web-gateway-architecture.md): Web Gateway — Gateway owns
+  persistence, including credential storage
+- [ADR-040](ADR-040-scan-metadata-enrichment.md): Scan Metadata Enrichment —
+  Galaxy server config is another form of scan metadata
+
+---
+
+## Revision History
+
+| Date | Author | Change |
+|------|--------|--------|
+| 2026-03-28 | AI-assisted | Initial proposal |
