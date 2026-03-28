@@ -270,7 +270,11 @@ deploy.yml::play[0]
 
 **Static imports** (`import_tasks`, `import_role`) are fully resolved at parse time — their content is materialized in the graph with the import directive as the include edge.
 
-**Dynamic includes** (`include_tasks`, `include_role`) remain as leaf nodes with a `dynamic` edge type. Their children are unknown until execution and may vary per host. APME treats them as opaque scan boundaries — the include directive itself is scannable (for issues such as missing files), but the included content is not part of the static graph.
+**Dynamic includes** (`include_tasks`, `include_role`) are modeled with a worst-case complexity policy: all include/import directives produce edges unconditionally. A `when` clause on an include is an edge attribute (`conditional: true`), not a gate — the edge always exists because the condition *can* be true and the included content *can* execute. For complexity measurement and violation coverage, every reachable path must be in the graph.
+
+Variable-path includes (e.g., `include_tasks: "{{ task_file }}"`) resolve all statically determinable targets and create an edge to each. If the possible values are known from a `loop` list or `vars` definition, all targets are included. Truly opaque variable paths (runtime facts, inventory-derived) are flagged as high-complexity nodes with a `dynamic: true` attribute.
+
+**`import_playbook`** creates cross-playbook edges. A playbook can be both a root (standalone entry point) and an interior node (imported by another playbook). The DAG handles this naturally — `site.yml` may have incoming edges from `master.yml` and outgoing edges to its own roles. Complexity rollup is transitive: `master.yml`'s complexity includes `site.yml`'s subgraph.
 
 **Ownership borders** determine the scan boundary:
 
@@ -297,13 +301,182 @@ community.general.ufw      → referenced (declared dependency)
 - `_attach_snippets` is replaced by node-level state queries
 - Validators are unaffected — they still receive `ValidateRequest` with files and hierarchy
 
+### Graph implementation: networkx MultiDiGraph
+
+The `ContentGraph` is implemented as a `networkx.MultiDiGraph`. `MultiDiGraph` is required because the same node pair can have multiple edges — a role included twice from the same play with different `when` conditions creates two distinct edges, each with its own attributes. A standard `DiGraph` only permits one edge per node pair.
+
+networkx is pure Python (~3 MB installed), has no compiled extensions, and passes the ADR-019 dependency checklist: it solves a genuinely hard problem (graph algorithms), ships `py.typed` for mypy strict, is Apache-2.0 licensed, and has no overlap with existing deps.
+
+Built-in algorithms the ContentGraph uses:
+
+- `is_directed_acyclic_graph()` — validation invariant (content cannot have circular includes)
+- `topological_sort()` — determines processing order
+- `weakly_connected_components()` — identifies independent content clusters (repos with multiple unrelated playbooks)
+- `ancestors()` / `descendants()` — subgraph extraction for per-play or per-role analysis
+- `in_degree()` / `out_degree()` — fan-in/fan-out metrics
+- `node_link_data()` / `node_link_graph()` — JSON serialization for Gateway API and persistence
+
+Node and edge attributes can hold arbitrary Python objects, enabling rich metadata (violations, variable provenance, quality scores) without a separate storage layer.
+
+### Node type and edge type taxonomy
+
+**Node types** define the vocabulary of the graph. Every node has a `node_type` attribute:
+
+| Node type | Description | Example path |
+|-----------|-------------|--------------|
+| `playbook` | A YAML playbook file (graph root or interior via `import_playbook`) | `site.yml` |
+| `play` | A play within a playbook | `site.yml::play[0]` |
+| `role` | A role (directory with `tasks/main.yml`) | `roles/nginx` |
+| `taskfile` | A task file (standalone or within a role) | `roles/nginx/tasks/install.yml` |
+| `task` | An individual task | `roles/nginx/tasks/main.yml::task[2]` |
+| `handler` | A handler (structurally a task, semantically a deferred branch target) | `roles/nginx/handlers/main.yml::handler[0]` |
+| `block` | A `block/rescue/always` group | `site.yml::play[0]#block[1]` |
+| `module` | A Python module (`library/` or `plugins/modules/`) | `plugins/modules/my_module.py` |
+| `action_plugin` | An action plugin (`plugins/action/`) | `plugins/action/my_action.py` |
+| `filter_plugin` | A Jinja2 filter plugin (`plugins/filter/`) | `plugins/filter/my_filter.py` |
+| `lookup_plugin` | A lookup plugin (`plugins/lookup/`) | `plugins/lookup/my_lookup.py` |
+| `module_utils` | Shared Python code (`plugins/module_utils/`) | `plugins/module_utils/helpers.py` |
+| `vars_file` | A variables file (`defaults/`, `vars/`, `group_vars/`, `host_vars/`) | `roles/nginx/defaults/main.yml` |
+
+**Edge types** define relationships between nodes. Every edge has an `edge_type` attribute:
+
+| Edge type | Meaning | Example |
+|-----------|---------|---------|
+| `import` | Static inclusion, resolved at parse time | `import_tasks`, `import_role`, `import_playbook` |
+| `include` | Dynamic inclusion, resolved at runtime | `include_tasks`, `include_role` |
+| `notify` | Deferred handler invocation, conditional on task `changed` status | `notify: restart nginx` |
+| `listen` | Topic-based handler subscription (implicit fan-out) | `listen: "restart web services"` |
+| `dependency` | Role dependency declared in `meta/main.yml` | `dependencies: [{role: common}]` |
+| `data_flow` | Variable produced by one task, consumed by another (`set_fact`/`register`) | `register: result` → `when: result.rc == 0` |
+| `rescue` | Exception path from block to rescue tasks | `block → rescue` |
+| `always` | Unconditional path from block to always tasks | `block → always` |
+| `invokes` | Task invoking a Python module or plugin | `ansible.builtin.copy` task → `copy.py` |
+| `py_imports` | Python module importing from module_utils | `my_module.py` → `module_utils/helpers.py` |
+| `vars_include` | Variable file inclusion (`vars_files`, `include_vars`) | play → `vars/secrets.yml` |
+
+**Edge attributes** carried on every edge:
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `edge_type` | str | One of the edge types above |
+| `conditional` | bool | `True` if the edge has a `when` clause (never suppresses the edge) |
+| `dynamic` | bool | `True` for `include_*` directives (runtime-resolved) |
+| `position` | int | Sibling order within the parent (task 0, task 1, ...) |
+| `when_expr` | str or None | The raw `when` expression, for display purposes |
+| `tags` | list[str] | Tags on the directive, for subgraph filtering |
+
+**Handlers as first-class graph citizens**: Handlers are nodes of type `handler`, not attributes. A task with `notify: restart nginx` creates a `notify` edge to the handler node. Multiple tasks can notify the same handler (many-to-one fan-in). Handlers can notify other handlers (chained edges). Handlers can include taskfiles (same edge types as regular tasks). The `listen` directive creates implicit fan-out — multiple handlers subscribing to a topic each receive an edge when any task notifies that topic.
+
+### Variable provenance
+
+During graph construction, every variable reference (`{{ var_name }}`) encountered in a node's YAML content is classified by walking the node's ancestry in the graph to find where the variable is defined:
+
+| Provenance | Source | How detected |
+|------------|--------|--------------|
+| `local` | `vars:` on the same task | Variable key in task node |
+| `block` | `vars:` on enclosing block | Variable key in ancestor block node |
+| `role_default` | `defaults/main.yml` in the role | Variable key in role's defaults vars_file node |
+| `role_var` | `vars/main.yml` in the role | Variable key in role's vars vars_file node |
+| `play` | `vars:` or `vars_files:` on the play | Variable key in ancestor play node |
+| `runtime` | `set_fact` or `register` in another task | `data_flow` edge from producing task |
+| `inventory_file` | `group_vars/` or `host_vars/` in the repo | Variable key in inventory vars_file node |
+| `external` | Not found anywhere in scanned content | Must be supplied by inventory, extra-vars, or platform |
+
+The `external` classification is significant: it identifies variables the content requires but does not define. These form the content's **external interface** — the contract between the content and its deployment environment.
+
+Variable provenance enables:
+
+- **Auto-generated argument specs**: The set of `role_default` + `external` variables for a role is substantially what `meta/argument_specs.yml` should declare. Type can be inferred from usage context (`when` → bool, `loop` → list, string interpolation → string). This enables a modernization rule that generates or updates argument specs from observed usage.
+- **Duplicate and collision detection**: Two roles in the same play defining the same variable name in `defaults/` is a collision — the last role included wins, which is order-dependent and fragile. Variables defined in `defaults/` but never referenced are dead defaults. Variables shadowed across precedence levels (role default overridden by play vars) without explicit intent are potential confusion sources.
+- **Data-flow edges**: `set_fact` and `register` create cross-cutting data dependencies that are invisible in the YAML structure. The graph surfaces these as `data_flow` edges, making them visible for complexity analysis and impact assessment.
+
+Variable provenance connects to the existing `PropertyOrigin` concept: `PropertyOrigin` tracks where inherited *properties* (become, ignore_errors) come from; variable provenance tracks where *data* comes from. Both walk the graph ancestry; both use `NodeIdentity` to attribute the source.
+
+### Python file analysis
+
+Modules, plugins, and module_utils are first-class graph nodes. When a task invokes a module, the graph builder creates an `invokes` edge from the task to the module's Python file. When a module imports from `module_utils`, an AST analysis of the module's `import` statements creates `py_imports` edges.
+
+The engine parses Python files using `ast` (stdlib) to extract quality attributes stored as node properties:
+
+| Attribute | Source | What it indicates |
+|-----------|--------|-------------------|
+| `has_documentation` | `DOCUMENTATION = r'''...'''` present | `ansible-doc` works for this module |
+| `has_examples` | `EXAMPLES` string present | Usability |
+| `has_return_docs` | `RETURN` string present | Return value documentation |
+| `check_mode_honest` | `supports_check_mode=True` AND `module.check_mode` in a conditional branch | Module actually respects check mode |
+| `argument_spec_complete` | Every param in `argument_spec` has `type` and `description` | Interface quality |
+| `type_hint_coverage` | Ratio of function signatures with type annotations | Code quality |
+| `docstring_coverage` | Ratio of functions with docstrings | Maintainability |
+| `external_imports` | Imports outside `ansible.*` and stdlib | Hidden Python dependencies |
+
+The analysis is identical for `owned` and `referenced` nodes — `NodeScope` determines how findings are surfaced. For `owned` content, missing documentation or dishonest check mode are violations. For `referenced` content (Galaxy dependencies), the same attributes contribute to a **dependency quality score** that correlates with ADR-040's `ProjectManifest`.
+
+This makes Python file analysis a foundation for dependency health assessment: the `ProjectManifest` (ADR-040) identifies *what* collections a project depends on; the ContentGraph's Python analysis measures *how trustworthy* those dependencies are.
+
+### Temporal progression via stateless engine
+
+The engine is stateless per scan (ADR-020, ADR-029). It builds the `ContentGraph`, attaches a `ScanSnapshot` to each node as a node attribute, and serializes the graph to the Gateway. The engine does not store history — it produces the current state.
+
+```python
+@dataclass
+class ScanSnapshot:
+    scan_id: str
+    timestamp: datetime
+    violations: list[Violation]
+    complexity: int
+    state: str  # clean, violated, remediated, regressed
+```
+
+The Gateway persists the full timeline: each `NodeIdentity` accumulates a history of `ScanSnapshot` entries across scans. Trend queries ("when did this role go from violated to clean?", "which nodes regressed?") are Gateway concerns, not engine concerns.
+
+**Graph topology stability is a correctness invariant.** The same content must produce an isomorphic graph across scans. If the topology changes between iterations on unchanged content, either the parser is non-deterministic or there is a bug. During remediation convergence, the graph shape should remain stable while node attributes change (violations disappear as fixes land). This invariant is assertable:
+
+```python
+assert nx.is_isomorphic(graph_pass_n, graph_pass_n_plus_1)
+```
+
+This model simplifies ADR-044's Phase B. Instead of a separate progression store or graph diffing, the graph *is* the progression store — each node carries its own timeline as a node attribute, and the Gateway is the durable backing store.
+
+### Multiple entry points and connected components
+
+A repository with multiple playbooks may produce one connected graph or several discrete subgraphs depending on whether playbooks share roles or taskfiles. The `ContentGraph` handles this naturally — `weakly_connected_components()` identifies independent clusters.
+
+```
+Component 1: site.yml ──→ roles/web, roles/common
+             deploy.yml ──→ roles/common, roles/monitoring
+             (connected via shared roles/common)
+
+Component 2: ci-lint.yml ──→ tasks/lint.yml
+             (no shared content — independent)
+```
+
+Each connected component can be analyzed independently. Disconnected components share no nodes, so they have no cross-component impact — fixing a violation in component 1 cannot affect component 2. This also enables parallelism: independent components can be scanned concurrently.
+
+Collections with only roles (no playbooks) use roles as graph roots. The graph builder detects the content type from the directory structure and `galaxy.yml` presence. Role-only collections have shallower graphs but the same node/edge taxonomy applies.
+
+### Enabled capabilities
+
+The ContentGraph unlocks capabilities beyond the core identity and progression model. These are organized as future work — enabled by the graph but not part of the initial implementation scope.
+
+**Complexity metrics**: Cyclomatic complexity can be measured at task, play, playbook, and project level by analyzing the subgraph rooted at each node. Complexity contributors include `when` conditionals (+1 per condition), `loop`/`with_*` (+1), `block/rescue/always` (+1 per exception path), and include/import edges (+1 per target, +N for variable-path includes with N resolvable targets). Fan-in (`in_degree`) measures how many consumers depend on a node. Fan-out (`out_degree`) measures how many dependencies a node has. Depth (longest path from root to leaf) measures nesting. All are computable from the networkx graph with standard algorithms.
+
+**AI escalation enrichment**: When a violation escalates to the AI provider (Tier 2), the graph provides context that the current snippet-only approach lacks. The AI receives the node's position in the graph, inherited variables via `PropertyOrigin`, `when` conditions on edges leading to it, and fan-in count indicating how many consumers are affected by a change. Semantic preservation can be enforced by verifying the post-remediation graph is isomorphic to the pre-remediation graph — if the AI's fix adds or removes an edge, that is a structural change that should be flagged. Remediation tiers can be defined by what graph changes are permitted: style-only (node attributes only), conservative (no edge changes), structural (edges within a role), architectural (cross-role edge changes).
+
+**Topology visualization**: The frontend can render the ContentGraph using `@patternfly/react-topology` (consistent with the existing PatternFly UI stack). Nodes are colored or sized by violation severity or complexity score (heatmap). Edge styles distinguish relationship types (solid for import, dashed for conditional, dotted for notify). Clusters correspond to connected components or plays. Click-through from a graph node navigates to the violation detail view.
+
+**Best-practices patterns**: The graph enables rules that detect structural anti-patterns. A playbook with cyclomatic complexity exceeding a threshold suggests splitting into AAP Controller workflow nodes — each workflow node maps to a simpler playbook, and branching is handled by the workflow engine rather than nested `when` conditions. Conditional branching buried deep in role includes (high depth, many conditional edges) suggests restructuring to use play-level branching (conditions at graph roots, not leaves). These patterns can be captured as modernization rules (e.g., `M-xxx: playbook complexity exceeds threshold, consider AAP workflow`).
+
+**Dependency quality scorecards**: For `referenced` collection nodes, the graph aggregates Python file analysis attributes into a composite quality score: check mode honesty ratio, documentation coverage, argument spec completeness, type hint coverage. This correlates with ADR-040's `ProjectManifest` to answer "how trustworthy are my dependencies?" at the project level.
+
 ## Related Decisions
 
 - [ADR-003](ADR-003-vendor-ari-engine.md): ARI integration model — this ADR redefines how ARI's output is consumed
 - [ADR-009](ADR-009-remediation-engine.md): Remediation engine — convergence loop gains identity-aware tracking
+- [ADR-019](ADR-019-dependency-governance.md): Dependency governance — ADR-019's philosophy (quality assessment of deps) extends to content dependencies via Python file analysis and dependency quality scorecards
 - [ADR-023](ADR-023-per-finding-classification.md): Per-finding classification — node identity strengthens per-finding resolution tracking
 - [ADR-026](ADR-026-rule-scope-metadata.md): Rule scope metadata — scope becomes a property of identified nodes
 - [ADR-036](ADR-036-two-pass-remediation-engine.md): Two-pass remediation — progression model naturally supports multi-pass
+- [ADR-040](ADR-040-scan-metadata-enrichment.md): Scan metadata enrichment — `ProjectManifest` identifies dependencies; the ContentGraph provides the quality assessment framework for those dependencies
 
 ## References
 
@@ -320,3 +493,4 @@ community.general.ufw      → referenced (declared dependency)
 | 2026-03-27 | Bradley A. Thornton | Initial proposal |
 | 2026-03-27 | Bradley A. Thornton | Added inherited property attribution, scope-level violations |
 | 2026-03-27 | Bradley A. Thornton | Added ansible-core lessons, DAG topology, ownership borders |
+| 2026-03-28 | Bradley A. Thornton | Refined graph model: networkx MultiDiGraph, node/edge taxonomy, worst-case include policy, variable provenance, Python file analysis, temporal progression, enabled capabilities (complexity, AI escalation, visualization, best-practices patterns, dependency quality) |
