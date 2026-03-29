@@ -135,7 +135,9 @@ against every invariant. Present findings:
 | 9 | OPA uses subprocess, not REST | No impact / CONFLICT: [describe] |
 | 10 | FixSession is the unified client path | No impact / CONFLICT: [describe] |
 | 11 | Engine never queries out; only emits | No impact / CONFLICT: [describe] |
-| 12 | Built-in validator bundles are closed | No impact / CONFLICT: [describe] |
+| 12 | Engine-core services are required | No impact / CONFLICT: [describe] |
+| 13 | Transforms semantically trusted; engine owns state | No impact / CONFLICT: [describe] |
+| 14 | Built-in validator bundles are closed | No impact / CONFLICT: [describe] |
 
 ### Dependency Direction
 - Does this require engine to know about the caller? [Y/N]

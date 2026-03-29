@@ -497,12 +497,16 @@ class GraphBuilder:
     def _classify_all_scopes(self, graph: ContentGraph):
         """Classify each node as owned or referenced.
 
-        owned:      inside the scan boundary, OR FQCN matches collection namespace
+        owned:      inside the scan boundary, OR a task referencing a
+                    module whose FQCN matches the collection namespace
         referenced: resolved for context, violations are advisory-only
 
         FQCN awareness: reads galaxy.yml to determine the collection's
-        namespace.name. Modules whose FQCN starts with that prefix are
-        classified as OWNED even if physically resolved from a venv path.
+        namespace.name. Tasks whose resolved module FQCN starts with
+        that prefix are classified as OWNED — this marks the *task* as
+        belonging to the collection even when the referenced module was
+        physically resolved from a venv path. Module/plugin *nodes*
+        themselves are classified by their defined_in path (Rule 1).
         """
         own_namespace = self._read_collection_namespace()
 
@@ -515,10 +519,10 @@ class GraphBuilder:
                 node.scope = NodeScope.OWNED
                 continue
 
-            # Rule 2: FQCN namespace match (collection content)
+            # Rule 2: task references a module in the owned namespace
             if own_namespace and node.node_type == "task":
                 fqcn = node.resolved_module_name or node.module
-                if fqcn.startswith(own_namespace + "."):
+                if fqcn and fqcn.startswith(own_namespace + "."):
                     node.scope = NodeScope.OWNED
                     continue
 
@@ -695,13 +699,31 @@ class VariableProvenanceResolver:
     def _get_ancestor_chain(
         self, graph: ContentGraph, node_id: str
     ) -> list[str]:
-        """Walk parent edges to build the ancestor chain.
+        """Walk parent edges to build a linear ancestor chain.
 
-        For DAG nodes with multiple parents (shared roles), we follow
-        the SHORTEST path to the graph root — the most specific context.
-        For rule evaluation, the caller context determines inheritance.
+        For DAG nodes with multiple parents (shared roles), compute the
+        shortest path from an effective root to this node — the most
+        specific context chain.  Effective roots are ancestors with no
+        predecessors within this node's ancestor set.  Ties are broken
+        by lexicographic ordering of node IDs for determinism.
         """
-        return list(nx.ancestors(graph.g, node_id))
+        ancestors = nx.ancestors(graph.g, node_id)
+        if not ancestors:
+            return []
+
+        ancestor_set = set(ancestors)
+        roots = [
+            a for a in ancestors
+            if all(p not in ancestor_set
+                   for p in graph.g.predecessors(a))
+        ]
+
+        paths = [
+            nx.shortest_path(graph.g, root, node_id)
+            for root in roots
+        ]
+        paths.sort(key=lambda p: (len(p), tuple(p)))
+        return paths[0][:-1]  # exclude node itself
 ```
 
 ---
@@ -1123,18 +1145,18 @@ class ContentGraphScanner:
         # _add_vars_include_edges, _add_invokes_edges, _add_data_flow_edges,
         # _classify_all_scopes (FQCN-aware)
 
-        # Phase 2: Resolve variables with provenance (replaces Context walk)
-        resolver = VariableProvenanceResolver()
-        resolver.resolve(graph)
-
-        # Phase 3: Annotate (reuses existing ModuleAnnotator subclasses)
-        annotator = GraphAnnotator()
-        annotator.annotate(graph)
-
-        # Phase 4: Analyze Python files (modules, plugins, module_utils)
+        # Phase 2: Analyze Python files (modules, plugins, module_utils)
         file_bytes = collect_file_bytes(graph)
         py_analyzer = PythonFileAnalyzer()
         py_analyzer.analyze(graph, file_bytes)
+
+        # Phase 3: Resolve variables with provenance (replaces Context walk)
+        resolver = VariableProvenanceResolver()
+        resolver.resolve(graph)
+
+        # Phase 4: Annotate (reuses existing ModuleAnnotator subclasses)
+        annotator = GraphAnnotator()
+        annotator.annotate(graph)
 
         # Phase 5: Build outputs for validators
         # 5a: AnsibleRunContext for native rules (backward-compatible)
@@ -1383,7 +1405,11 @@ class PythonFileAnalyzer:
         functions = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
         if not functions:
             return
-        typed = sum(1 for f in functions if f.returns or f.args.args)
+        typed = sum(
+            1 for f in functions
+            if f.returns is not None
+            or any(a.annotation is not None for a in f.args.args)
+        )
         node.type_hint_coverage = typed / len(functions)
         documented = sum(1 for f in functions if ast.get_docstring(f))
         node.docstring_coverage = documented / len(functions)
