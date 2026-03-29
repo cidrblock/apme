@@ -493,6 +493,7 @@ The ContentGraph unlocks capabilities beyond the core identity and progression m
 
 ## References
 
+- [ARI-to-ContentGraph Migration Research](/.sdlc/research/ari-to-contentgraph-migration.md) — layer-by-layer assessment of ARI engine components, code pointers, pseudocode for ContentGraph engine, and phased migration path
 - Conversation analysis of snippet accuracy issues (2026-03-27)
 - Puzzle piece analogy for entity-with-history design
 - ansible-core source analysis: `lib/ansible/playbook/base.py` (FieldAttribute descriptors, `_get_parent_attribute`, `squash`), `block.py` (parent chain walk), `task.py` (task inheritance), `attribute.py` (FieldAttribute vs NonInheritableFieldAttribute), `helpers.py` (static import vs dynamic include resolution), `play_iterator.py` (HostState, dynamic task splicing)

@@ -81,7 +81,26 @@ one needs to change, write an ADR first.
     binary. Gateway, UI, and Abbenay are pod-level / enterprise services
     that the CLI daemon does not start.
 
-13. **Built-in validator bundles are closed** (ADR-042). No volume-mounted rules,
+13. **Transforms are semantically trusted; the engine owns state and syntax**
+    (ADR-044). Transforms operate on an **ephemeral copy** of the graph and
+    files through a constrained public API (`TransformSession`). They read
+    nodes, modify YAML via tracked methods (`modify_node`), and `submit()`
+    a changeset. Changes take effect only on submit — a transform that
+    fails mid-execution has no effect on the working state (transaction
+    safety). The engine merges submitted changesets, validates syntax
+    (well-formed YAML), tracks state (NodeState, progression, content
+    hashes), detects inheritance propagation (`PropertyOrigin`), and
+    enforces structural invariants (topology stability, DAG). The engine
+    does **not** validate the semantic correctness of transform changes —
+    whether a fix is appropriate for a given module, which children need
+    compensation for inherited property changes, or whether a heuristic
+    covered all cases. That domain knowledge lives in the transform, not
+    the engine. This complements invariant 1 (validators are read-only):
+    validators own "what's wrong," transforms own "how to fix it," the
+    engine owns "orchestrate and verify structure." New rules and
+    transforms are added without engine changes.
+
+14. **Built-in validator bundles are closed** (ADR-042). No volume-mounted rules,
     no configurable rule directories, no external Rego files injected into the
     OPA bundle, no custom Python rule classes loaded into Native. The built-in
     rule set ships with the image and is the only rule set the built-in
