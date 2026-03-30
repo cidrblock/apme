@@ -227,8 +227,9 @@ class TestL047GraphRule:
         )
         g = _add_playbook_play_task_chain(play, task)
         report = scan(g, [rule])
-        flagged = {nr.node_id for nr in report.node_results if nr.rule_results}
-        assert task.node_id in flagged
+        task_results = [nr for nr in report.node_results if nr.node_id == task.node_id]
+        assert task_results
+        assert any(rr.verdict is True for nr in task_results for rr in nr.rule_results)
 
 
 class TestL045GraphRule:

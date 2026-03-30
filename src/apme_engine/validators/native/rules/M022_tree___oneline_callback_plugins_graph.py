@@ -111,6 +111,12 @@ class TreeOnelineCallbackPluginsGraphRule(GraphRule):
             if cb in _REMOVED_CALLBACKS:
                 found.add(cb)
 
+        _CALLBACK_KEYS = {"stdout_callback", "callback_whitelist", "callbacks_enabled"}
+        for mapping in (node.options, node.module_options):
+            for key, val in mapping.items():
+                if key in _CALLBACK_KEYS and isinstance(val, str) and val in _REMOVED_CALLBACKS:
+                    found.add(val)
+
         for scope in _scope_chain(graph, node_id):
             env_raw = scope.environment
             if not isinstance(env_raw, dict):

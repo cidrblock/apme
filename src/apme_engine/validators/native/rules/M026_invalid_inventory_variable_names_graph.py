@@ -85,6 +85,10 @@ class InvalidInventoryVariableNamesGraphRule(GraphRule):
             record(key, None)
         for key in node.variables:
             record(key, None)
+        vars_option = node.options.get("vars")
+        if isinstance(vars_option, dict):
+            for key in vars_option:
+                record(key, None)
 
         if not by_name:
             return GraphRuleResult(
