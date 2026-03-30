@@ -48,7 +48,7 @@ message CollectionRef {
   string version = 2;        // e.g. "8.0.0"
   string source = 3;         // "specified", "learned", or "dependency"
   string license = 4;        // SPDX identifier or free-text (from MANIFEST.json / galaxy.yml)
-  string supplier = 5;       // author or namespace (from galaxy.yml authors / namespace)
+  string supplier = 5;       // namespace (e.g. "community", "ansible"); from galaxy.yml namespace field
 }
 
 message PythonPackageRef {
@@ -198,9 +198,11 @@ Remaining work:
 1. Extend `list_installed_packages` — replace the `pip list` subprocess with
    `importlib.metadata` run in the venv's Python. One subprocess, returns
    name, version, license, and author in a single pass.
-2. Extend `list_installed_collections` — read `license` and `supplier` from
-   each collection's `MANIFEST.json` / `galaxy.yml` (already walking the
-   collection dirs).
+2. Extend `list_installed_collections` — after `ansible-galaxy collection list`
+   returns `(fqcn, version)` pairs, walk the collection install paths to read
+   `license` and `supplier` from each collection's `MANIFEST.json` /
+   `galaxy.yml`. This is new filesystem access — the current function only
+   parses the JSON output from `ansible-galaxy`.
 3. Update `_build_manifest` to populate the new `license`/`supplier` proto fields.
 
 ### Gateway changes

@@ -320,7 +320,7 @@ Primary:
 |-----------|-------------|-------------|
 | `sbom` | (not implemented) | CLI → Gateway REST (`GET /api/v1/projects/{id}/sbom?format=cyclonedx`) |
 | `health-check` | CLI → gRPC Health probes | CLI → Gateway REST (aggregated health) |
-| `session list/info` | CLI → gRPC Primary | CLI → Gateway REST (persisted session data) |
+| `session list/info` | (not implemented) | CLI → Gateway REST (persisted session data) |
 
 Streaming operations (`check`, `remediate`) that require real-time progress
 and bidirectional interaction stay on gRPC to Primary (via `FixSession`).
