@@ -9,11 +9,11 @@
 | Metric | Count |
 |--------|-------|
 | Total native rules | 96 |
-| Ported to GraphRule | 43 |
-| Remaining | 53 |
-| Migration % | 44.8% |
+| Ported to GraphRule | 47 |
+| Remaining | 49 |
+| Migration % | 49.0% |
 
-## Ported Rules (43)
+## Ported Rules (47)
 
 ### Phase 2A — Scanner bootstrap + R108 (PR #138)
 
@@ -88,22 +88,18 @@
 | L077 | RoleArgSpecs | ROLE_METADATA |
 | L079 | RoleVarPrefix | ROLE_METADATA |
 
+### Phase 2G — module_options-based batch (PR #TBD)
+
+| Rule | Name | Category |
+|------|------|----------|
+| L035 | UnnecessarySetFact | TASK_LOCAL |
+| L046 | NoFreeForm | TASK_LOCAL |
+| R111 | ParameterizedImportRole | TASK_LOCAL |
+| R112 | ParameterizedImportTaskfile | TASK_LOCAL |
+
 ---
 
-## Remaining Rules (53)
-
-### Needs `args.raw` / structured args
-
-These need raw argument data or `TaskCall.args[...].is_mutable`
-beyond what `module_options` provides.
-
-| Rule | Name | Severity | What it checks |
-|------|------|----------|----------------|
-| L035 | UnnecessarySetFact | VERY_LOW | `set_fact` with `random` in raw args (impure) |
-| L046 | NoFreeForm | LOW | Free-form module invocation via `_raw_params` |
-| R111 | ParameterizedImportRole | HIGH | Jinja-templated role name (needs `is_mutable`) |
-| R112 | ParameterizedImportTaskfile | MEDIUM | Jinja-templated taskfile path (needs `is_mutable`) |
-| R501 | DependencySuggestion | NONE | Suggests collection (needs `possible_candidates`) |
+## Remaining Rules (49)
 
 ### Needs `yaml_lines` / raw YAML content
 
@@ -138,7 +134,6 @@ Requires exposing the annotation pipeline to `GraphRule`.
 
 | Rule | Name | Severity | What it checks |
 |------|------|----------|----------------|
-| L031 | FilePermissionRule | MEDIUM | Insecure file permissions (disabled) |
 | P001 | ModuleNameValidation | NONE | Module name validation + annotation emit |
 | P002 | ModuleArgumentKeyValidation | NONE | Arg key validation + annotations |
 | P003 | ModuleArgumentValueValidation | NONE | Arg value validation + annotations |
@@ -174,10 +169,12 @@ Requires exposing the annotation pipeline to `GraphRule`.
 These rules target collection-level or plugin-level files.
 Currently `match()` returns `False` because the graph has no
 collection/plugin nodes. Deferred until `ContentGraph` adds
-those node types.
+those node types. R501 is included here because `possible_candidates`
+comes from the collection resolver (same infrastructure).
 
 | Rule | Name | Severity | What it checks |
 |------|------|----------|----------------|
+| R501 | DependencySuggestion | NONE | Suggests collection (needs `possible_candidates` from resolver) |
 | L056 | Sanity | VERY_LOW | `defined_in` path matches ignore patterns |
 | L087 | CollectionLicense | LOW | Collection missing LICENSE/COPYING |
 | L088 | CollectionReadme | VERY_LOW | Collection README missing |
@@ -193,6 +190,7 @@ those node types.
 
 | Rule | Name | Severity | What it checks |
 |------|------|----------|----------------|
+| L031 | FilePermissionRule | MEDIUM | Insecure file permissions (disabled, `enabled=False`) |
 | M029 | InventoryScriptMissingMeta | MEDIUM | Inventory script `_meta` (disabled, no implementation) |
 
 ---
@@ -201,22 +199,30 @@ those node types.
 
 1. ~~**Phase 2E**: Simple task-local batch 2 (9 rules)~~ **DONE**
 2. ~~**Phase 2F**: Role-metadata rules (7 rules)~~ **DONE**
-3. **Phase 2G**: `args.raw` / structured args extension (5 rules: L035, L046, R111, R112, R501)
+3. ~~**Phase 2G**: `module_options`-based rules (4 rules: L035, L046, R111, R112)~~ **DONE**
 4. **Phase 2H**: `yaml_lines` extension + content rules (17 rules)
-5. **Phase 2I**: Annotation infrastructure + risk/policy rules (15 rules)
+5. **Phase 2I**: Annotation infrastructure + risk/policy rules (14 rules)
 6. **Phase 2J**: Variable tracking rules (4 rules)
-7. **Phase 2K**: Collection/plugin targets + aggregation (11 rules)
-8. **Skip**: M029 (disabled stub, no real implementation)
+7. **Phase 2K**: Collection/plugin targets + aggregation + R501 (12 rules)
+   — R501 moved here (needs `possible_candidates` from collection resolver,
+   same infrastructure as collection node types)
+8. **Skip**: M029, L031 (disabled stubs, no real implementation)
 
 ## ContentNode Extension Checklist
 
 Fields still needed for full migration:
 
 - [ ] `yaml_lines: list[str]` — raw YAML source lines for the node's span
-- [ ] `raw_args: str | dict` — free-form / raw args (for L035, L046)
-- [ ] `is_mutable: bool` — template/variable detection on args (for R111, R112)
-- [ ] `possible_candidates: list[tuple[str,str]]` — resolution candidates (for R501)
-- [ ] `annotations: dict[str, object]` — module annotator output
+  (Phase 2H: 17 rules need raw text for whitespace/indentation/quoting checks)
+- [x] ~~`raw_args: str | dict`~~ — **NOT NEEDED**: `module_options._raw_params`
+  already available (M027, L085 use it); L035, L046 port via `module_options`
+- [x] ~~`is_mutable: bool`~~ — **NOT NEEDED as a field**: simple Jinja detection
+  (`"{{" in value or "{%" in value`) replaces `TaskCallArg.is_mutable`;
+  R111, R112 port with a `_is_templated()` helper
+- [ ] `possible_candidates: list[tuple[str,str]]` — resolution candidates (R501)
+  (requires collection resolver integration in `GraphBuilder`)
+- [x] `annotations: dict[str, object]` — already on `ContentNode`;
+  needs annotator pipeline adapted to populate it (Phase 2I)
 - [ ] `variable_use: list[VariableRef]` — variables referenced by this node
 - [ ] `variable_set: list[VariableRef]` — variables defined by this node
 - [ ] `COLLECTION` / `PLUGIN` node types in `NodeType` enum
@@ -226,6 +232,43 @@ Fields still needed for full migration:
     standalone `meta/argument_specs.yml` file. Full parity requires either a
     `role_files` field on `ContentNode` or having `GraphBuilder` resolve the
     file during role construction and merge into `role_metadata`.
+
+---
+
+## ADR-044 Phase Alignment
+
+Cross-reference against the three phases defined in ADR-044:
+
+### Phase 1 — ContentGraph core + validation: COMPLETE
+
+Deliverables: `ContentGraph`, `GraphBuilder`, `GraphRule`, `NodeIdentity`,
+`ContentNode`, `NodeType`/`EdgeType` enums, `VariableProvenanceResolver`,
+`build_hierarchy_from_graph()`, `tests/fixtures/graph-patterns/` covering
+every edge type, `APME_USE_CONTENT_GRAPH` feature flag,
+`test_content_graph_shadow.py` structural equivalence.
+
+### Phase 2 — Rules + switchover: IN PROGRESS (47/96 = 49.0%)
+
+Rule porting follows the priority taxonomy from ADR-044:
+
+| Category | ADR-044 count | Ported | Remaining | Status |
+|----------|---------------|--------|-----------|--------|
+| INHERITED_PROPERTY | ~10 | 9 | — | Done (Phases 2A-2B) |
+| SCOPE_AWARE | ~8 | 8 | — | Done (Phase 2C) |
+| TASK_LOCAL | ~78 | 23 | 49 | In progress (Phases 2D-2K) |
+| ROLE_METADATA | (subset of task-local) | 7 | — | Done (Phase 2F) |
+
+End-of-Phase-2 gates (from ADR-044):
+- [ ] All 96 rules ported to `GraphRule`
+- [ ] Remove `TreeLoader`, `AnsibleRunContext`, `RunTarget`, `ObjectList`,
+      `Context.add()`, old `build_hierarchy_payload()`
+- [ ] Remove `APME_USE_CONTENT_GRAPH` feature flag
+- [ ] Rewrite `rule_doc_integration_test.py` to use `ContentGraphScanner`
+- [ ] Single rule interface (`GraphRule`), zero adapter
+
+### Phase 3 — Progression + provenance: NOT STARTED
+
+Depends on Phase 2 completion. See "Outstanding Work" section below.
 
 ---
 
