@@ -67,6 +67,10 @@ def _build_playbook_play_task(
         variables=play_vars or {},
         scope=NodeScope.OWNED,
     )
+    effective_set_facts = task_set_facts or {}
+    effective_module_opts = task_module_options or {}
+    if effective_set_facts and not effective_module_opts:
+        effective_module_opts = effective_set_facts
     task = ContentNode(
         identity=NodeIdentity(path="site.yml/plays[0]/tasks[0]", node_type=NodeType.TASK),
         file_path="site.yml",
@@ -74,10 +78,10 @@ def _build_playbook_play_task(
         name=task_name,
         module=task_module,
         resolved_module_name=task_resolved_module,
-        module_options=task_module_options or {},
+        module_options=effective_module_opts,
         options=task_options or {},
         register=task_register,
-        set_facts=task_set_facts or {},
+        set_facts=effective_set_facts,
         scope=NodeScope.OWNED,
     )
     g.add_node(pb)
@@ -244,6 +248,77 @@ class TestL034GraphRule:
         assert result is not None
         assert result.verdict is False
 
+    def test_match_task_with_vars(self, rule: UnusedOverrideGraphRule) -> None:
+        """Task with ``vars:`` section also matches.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, _, task_id = _build_playbook_play_task(
+            task_options={"vars": {"foo": "bar"}},
+        )
+        task = g.get_node(task_id)
+        assert task is not None
+        task.variables = {"foo": "bar"}
+        assert rule.match(g, task_id)
+
+    def test_local_vars_shadowed_by_runtime_violation(self, rule: UnusedOverrideGraphRule) -> None:
+        """Task-level ``vars:`` shadowed by upstream ``register`` triggers violation.
+
+        An upstream task registers ``result``, which flows to this task
+        via ``DATA_FLOW``.  The consumer task also defines ``result``
+        in its ``vars:`` (LOCAL, precedence 8).  Since RUNTIME (9) >
+        LOCAL (8), the task's definition is ineffective.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g = ContentGraph()
+        pb = ContentNode(
+            identity=NodeIdentity(path="site.yml", node_type=NodeType.PLAYBOOK),
+            file_path="site.yml",
+            scope=NodeScope.OWNED,
+        )
+        play = ContentNode(
+            identity=NodeIdentity(path="site.yml/plays[0]", node_type=NodeType.PLAY),
+            file_path="site.yml",
+            scope=NodeScope.OWNED,
+        )
+        producer = ContentNode(
+            identity=NodeIdentity(path="site.yml/plays[0]/tasks[0]", node_type=NodeType.TASK),
+            file_path="site.yml",
+            line_start=5,
+            module="command",
+            register="result",
+            scope=NodeScope.OWNED,
+        )
+        consumer = ContentNode(
+            identity=NodeIdentity(path="site.yml/plays[0]/tasks[1]", node_type=NodeType.TASK),
+            file_path="site.yml",
+            line_start=10,
+            module="debug",
+            variables={"result": "fallback"},
+            scope=NodeScope.OWNED,
+        )
+        g.add_node(pb)
+        g.add_node(play)
+        g.add_node(producer)
+        g.add_node(consumer)
+        g.add_edge(pb.node_id, play.node_id, EdgeType.CONTAINS)
+        g.add_edge(play.node_id, producer.node_id, EdgeType.CONTAINS)
+        g.add_edge(play.node_id, consumer.node_id, EdgeType.CONTAINS)
+        g.add_edge(producer.node_id, consumer.node_id, EdgeType.DATA_FLOW)
+
+        result = rule.process(g, consumer.node_id)
+        assert result is not None
+        assert result.verdict is True
+        assert result.detail is not None
+        variables = cast(list[YAMLDict], result.detail["variables"])
+        assert any(v["name"] == "result" for v in variables)
+        shadowed = next(v for v in variables if v["name"] == "result")
+        assert shadowed["local_precedence"] == "local"
+        assert shadowed["shadowed_by"] == "runtime"
+
 
 # ---------------------------------------------------------------------------
 # L093 — Set Fact Override
@@ -271,10 +346,13 @@ class TestL093GraphRule:
     ) -> tuple[ContentGraph, str]:
         """Build playbook -> play -> role -> taskfile -> set_fact task.
 
+        ``GraphBuilder`` populates ``ContentNode.set_facts`` (not just
+        ``module_options``) for ``set_fact`` tasks, so we set both.
+
         Args:
             role_defaults: Role default_variables.
             role_vars: Role role_variables.
-            fact_keys: module_options for the set_fact task.
+            fact_keys: Facts set by the set_fact task.
 
         Returns:
             Tuple of (graph, task_node_id).
@@ -305,6 +383,7 @@ class TestL093GraphRule:
             file_path="roles/myrole/tasks/main.yml",
             scope=NodeScope.OWNED,
         )
+        facts = fact_keys or {}
         task = ContentNode(
             identity=NodeIdentity(
                 path="site.yml/plays[0]/roles[0]/tasks/main.yml/tasks[0]",
@@ -314,7 +393,8 @@ class TestL093GraphRule:
             line_start=5,
             module="set_fact",
             resolved_module_name="ansible.builtin.set_fact",
-            module_options=fact_keys or {},
+            module_options=facts,
+            set_facts=facts,
             scope=NodeScope.OWNED,
         )
         g.add_node(pb)
@@ -626,6 +706,7 @@ class TestScopeAwareGraphScanIntegrationB:
             module="set_fact",
             resolved_module_name="ansible.builtin.set_fact",
             module_options={"port": 8080},
+            set_facts={"port": 8080},
             scope=NodeScope.OWNED,
         )
         g.add_node(pb)

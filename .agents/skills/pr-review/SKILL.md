@@ -83,12 +83,21 @@ import is intentionally side-effect only.
 
 ## Workflow
 
-1. After pushing a PR, wait for both CI and Copilot review.
-2. Check CI status and read all review comments.
-3. Fix all issues in a single commit (or minimal commits).
-4. Reply to each comment with a brief explanation of how it was resolved and
+1. **Ensure the PR branch is up to date with upstream main.** Before
+   reviewing or pushing fixes, rebase or merge `upstream/main` into the PR
+   branch. A stale base causes misleading CI results, merge conflicts, and
+   wasted review cycles. If the branch is behind, update it first:
+   ```bash
+   git fetch upstream
+   git rebase upstream/main   # or: git merge upstream/main
+   git push --force-with-lease
+   ```
+2. After pushing a PR, wait for both CI and Copilot review.
+3. Check CI status and read all review comments.
+4. Fix all issues in a single commit (or minimal commits).
+5. Reply to each comment with a brief explanation of how it was resolved and
    the commit hash (e.g., "Removed unused imports. Fixed in abc1234.").
-5. **Resolve each review thread** after replying. Every thread must have both
+6. **Resolve each review thread** after replying. Every thread must have both
    a closing reply and an explicit resolution — replying alone is not enough.
 
 ### Checking CI status
@@ -161,8 +170,8 @@ gh api graphql -f query='mutation {
 }'
 ```
 
-6. Update the PR description to include the new commit(s).
-7. If CI failure is unrelated to your changes (e.g., flaky test, transient
+7. Update the PR description to include the new commit(s).
+8. If CI failure is unrelated to your changes (e.g., flaky test, transient
    network issue), fix it anyway — the PR owns the green build.
 
 ### After pushing fixes: check for a new Copilot review

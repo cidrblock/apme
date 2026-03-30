@@ -142,7 +142,7 @@ class SetFactOverrideGraphRule(GraphRule):
                 file=(node.file_path, node.line_start),
             )
 
-        fact_keys = set(node.module_options) - {"cacheable"}
+        fact_keys = (set(node.set_facts) | set(node.module_options)) - {"cacheable"}
         overridden: list[YAMLValue] = list(sorted(fact_keys & known_vars))
         verdict = len(overridden) > 0
 

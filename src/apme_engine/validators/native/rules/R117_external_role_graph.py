@@ -1,17 +1,18 @@
 """GraphRule R117: detect external role usage.
 
 Graph-aware port of ``R117_external_role.py``.  Matches ``ROLE`` nodes
-and checks for ``galaxy_info`` in the node's options (metadata).
+and checks for ``galaxy_info`` in ``node.role_metadata``.
 The old ``ctx.is_begin(role)`` guard is replaced by checking whether the
-role node has a parent play — a root-level role being scanned directly
-(rather than included from a playbook) is not flagged.
+role node has an incoming ``DEPENDENCY`` edge from a play — a root-level
+role being scanned directly (rather than referenced from a playbook)
+is not flagged.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from apme_engine.engine.content_graph import ContentGraph, NodeType
+from apme_engine.engine.content_graph import ContentGraph, EdgeType, NodeType
 from apme_engine.engine.models import RuleScope, Severity, YAMLDict
 from apme_engine.engine.models import RuleTag as Tag
 from apme_engine.validators.native.rules.graph_rule_base import GraphRule, GraphRuleResult
@@ -21,47 +22,49 @@ def _has_galaxy_info(graph: ContentGraph, node_id: str) -> bool:
     """Check whether a role node carries ``galaxy_info`` metadata.
 
     Galaxy-style roles have a ``meta/main.yml`` with ``galaxy_info``.
-    The graph builder stores this under ``node.options`` or as an attribute.
+    The graph builder stores this in ``node.role_metadata``.
 
     Args:
         graph: ContentGraph to query.
         node_id: Role node to inspect.
 
     Returns:
-        True if ``galaxy_info`` is present.
+        True if ``galaxy_info`` is present in role_metadata.
     """
     node = graph.get_node(node_id)
     if node is None:
         return False
-    opts = node.options
-    if isinstance(opts, dict) and opts.get("galaxy_info"):
-        return True
-    return bool(isinstance(node.module_options, dict) and node.module_options.get("galaxy_info"))
+    return bool(node.role_metadata.get("galaxy_info"))
 
 
-def _has_parent_play(graph: ContentGraph, node_id: str) -> bool:
-    """Return True if the role has a play ancestor.
+def _has_play_dependency(graph: ContentGraph, node_id: str) -> bool:
+    """Return True if a play references this role via a DEPENDENCY edge.
 
-    A role being scanned as the root of a standalone role project
-    has no play parent and should not be flagged.
+    Play→role edges use ``EdgeType.DEPENDENCY`` (not CONTAINS), so
+    ``graph.ancestors()`` won't find the play.  Instead we check
+    incoming DEPENDENCY edges for a source node of type PLAY.
 
     Args:
         graph: ContentGraph to query.
-        node_id: Node to inspect.
+        node_id: Role node to inspect.
 
     Returns:
-        True if an ancestor play exists.
+        True if any incoming DEPENDENCY edge originates from a PLAY node.
     """
-    return any(anc.node_type == NodeType.PLAY for anc in graph.ancestors(node_id))
+    for source_id, _attrs in graph.edges_to(node_id, EdgeType.DEPENDENCY):
+        source = graph.get_node(source_id)
+        if source is not None and source.node_type == NodeType.PLAY:
+            return True
+    return False
 
 
 @dataclass
 class ExternalRoleGraphRule(GraphRule):
     """Detect external role usage via graph metadata.
 
-    Matches ``ROLE`` nodes with ``galaxy_info`` in their metadata.
+    Matches ``ROLE`` nodes with ``galaxy_info`` in ``role_metadata``.
     Replaces the ``ctx.is_begin`` + ``RoleCall`` + ``spec.metadata``
-    pattern with a graph-native check.
+    pattern with a graph-native check using DEPENDENCY edges.
 
     Attributes:
         rule_id: Rule identifier.
@@ -84,21 +87,21 @@ class ExternalRoleGraphRule(GraphRule):
     scope: str = RuleScope.ROLE
 
     def match(self, graph: ContentGraph, node_id: str) -> bool:
-        """Match role nodes with galaxy_info that have a play parent.
+        """Match role nodes with galaxy_info that have a play dependency.
 
         Args:
             graph: The full ContentGraph.
             node_id: ID of the node to check.
 
         Returns:
-            True if the node is a role with galaxy metadata under a play.
+            True if the node is a role with galaxy metadata referenced by a play.
         """
         node = graph.get_node(node_id)
         if node is None:
             return False
         if node.node_type != NodeType.ROLE:
             return False
-        if not _has_parent_play(graph, node_id):
+        if not _has_play_dependency(graph, node_id):
             return False
         return _has_galaxy_info(graph, node_id)
 

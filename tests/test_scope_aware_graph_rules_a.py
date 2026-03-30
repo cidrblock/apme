@@ -347,10 +347,13 @@ class TestR117GraphRule:
         galaxy_info: bool = False,
         role_fqcn: str = "",
     ) -> tuple[ContentGraph, str]:
-        """Build playbook -> play -> role graph.
+        """Build playbook -> play --(DEPENDENCY)--> role graph.
+
+        Uses ``role_metadata`` and ``EdgeType.DEPENDENCY`` to match
+        how ``GraphBuilder._build_role()`` constructs play→role edges.
 
         Args:
-            galaxy_info: Whether to add galaxy_info to role options.
+            galaxy_info: Whether to add galaxy_info to role_metadata.
             role_fqcn: FQCN string for the role node.
 
         Returns:
@@ -367,22 +370,22 @@ class TestR117GraphRule:
             file_path="site.yml",
             scope=NodeScope.OWNED,
         )
-        opts: YAMLDict = {}
+        metadata: YAMLDict = {}
         if galaxy_info:
-            opts["galaxy_info"] = {"author": "upstream", "role_name": "nginx"}
+            metadata["galaxy_info"] = {"author": "upstream", "role_name": "nginx"}
         role = ContentNode(
             identity=NodeIdentity(path="site.yml/plays[0]/roles[0]", node_type=NodeType.ROLE),
             file_path="roles/nginx/meta/main.yml",
             name="nginx",
             role_fqcn=role_fqcn,
-            options=opts,
+            role_metadata=metadata,
             scope=NodeScope.OWNED,
         )
         g.add_node(pb)
         g.add_node(play)
         g.add_node(role)
         g.add_edge(pb.node_id, play.node_id, EdgeType.CONTAINS)
-        g.add_edge(play.node_id, role.node_id, EdgeType.CONTAINS)
+        g.add_edge(play.node_id, role.node_id, EdgeType.DEPENDENCY)
         return g, role.node_id
 
     def test_match_external_role(self, rule: ExternalRoleGraphRule) -> None:
@@ -404,7 +407,7 @@ class TestR117GraphRule:
         assert not rule.match(g, role_id)
 
     def test_no_match_standalone_role(self, rule: ExternalRoleGraphRule) -> None:
-        """Role without play parent does not match (standalone scan).
+        """Role without play dependency does not match (standalone scan).
 
         Args:
             rule: Rule instance under test.
@@ -413,7 +416,7 @@ class TestR117GraphRule:
         role = ContentNode(
             identity=NodeIdentity(path="roles/nginx", node_type=NodeType.ROLE),
             file_path="roles/nginx/meta/main.yml",
-            options={"galaxy_info": {"author": "someone"}},
+            role_metadata={"galaxy_info": {"author": "someone"}},
             scope=NodeScope.OWNED,
         )
         g.add_node(role)

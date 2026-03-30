@@ -1,9 +1,9 @@
 """GraphRule L034: variable override ineffective due to low precedence.
 
 Graph-aware port of ``L034_unused_override.py``.  Uses
-``VariableProvenanceResolver`` to compare variable precedence across
-scopes, replacing the flat ``variable_set`` precedence check with
-provenance-aware ordering.
+``VariableProvenanceResolver.resolve_all_definitions()`` to collect every
+variable definition across all scopes, then compares the local
+definition's precedence against all others to find ineffective overrides.
 """
 
 from __future__ import annotations
@@ -43,39 +43,50 @@ _SET_FACT_FQCNS = frozenset(
 )
 
 
-def _locally_defined_var_names(graph: ContentGraph, node_id: str) -> list[str]:
-    """Collect variable names this node defines.
+def _locally_defined_vars(graph: ContentGraph, node_id: str) -> list[tuple[str, ProvenanceSource]]:
+    """Collect variable names this node defines, with their provenance source.
+
+    ``register`` and ``set_fact`` produce ``RUNTIME`` bindings;
+    ``node.variables`` (task-level ``vars:``) produce ``LOCAL`` bindings.
 
     Args:
         graph: ContentGraph to query.
         node_id: Node to inspect.
 
     Returns:
-        List of variable names defined by this node.
+        List of ``(variable_name, source)`` pairs.
     """
     node = graph.get_node(node_id)
     if node is None:
         return []
-    names: list[str] = []
+    result: list[tuple[str, ProvenanceSource]] = []
+    for name in node.variables:
+        result.append((name, ProvenanceSource.LOCAL))
     if node.register:
-        names.append(node.register)
-    names.extend(k for k in node.set_facts if k != "cacheable")
-    return names
+        result.append((node.register, ProvenanceSource.RUNTIME))
+    for k in node.set_facts:
+        if k != "cacheable":
+            result.append((k, ProvenanceSource.RUNTIME))
+    return result
 
 
 def _defines_variables(graph: ContentGraph, node_id: str) -> bool:
-    """Return True if the node defines variables via set_fact or register.
+    """Return True if the node defines variables.
+
+    Checks ``node.variables``, ``register``, and ``set_fact``.
 
     Args:
         graph: ContentGraph to query.
         node_id: Node to inspect.
 
     Returns:
-        True if the node registers output or uses set_fact.
+        True if the node defines any variables.
     """
     node = graph.get_node(node_id)
     if node is None:
         return False
+    if node.variables:
+        return True
     if node.register:
         return True
     if node.resolved_module_name in _SET_FACT_FQCNS or node.module in _SET_FACT_FQCNS:
@@ -87,9 +98,10 @@ def _defines_variables(graph: ContentGraph, node_id: str) -> bool:
 class UnusedOverrideGraphRule(GraphRule):
     """Detect variable overrides that are ineffective due to precedence.
 
-    Uses ``VariableProvenanceResolver`` to find the existing definition
-    of a variable and compare its precedence against the local task scope.
-    If the task's scope has lower precedence, the override is flagged.
+    Uses ``VariableProvenanceResolver.resolve_all_definitions()`` to get
+    every definition of each variable, then compares the local definition's
+    precedence against all others.  If any other definition has higher
+    precedence, the local override is flagged as ineffective.
 
     Attributes:
         rule_id: Rule identifier.
@@ -129,8 +141,9 @@ class UnusedOverrideGraphRule(GraphRule):
     def process(self, graph: ContentGraph, node_id: str) -> GraphRuleResult | None:
         """Check for ineffective overrides via precedence comparison.
 
-        Resolves all variables in scope and compares the existing
-        definition's precedence against the local task's precedence.
+        Uses ``resolve_all_definitions()`` to collect every definition of
+        each locally defined variable, then checks whether any definition
+        from a *different* node has higher precedence than the local one.
 
         Args:
             graph: The full ContentGraph.
@@ -143,8 +156,8 @@ class UnusedOverrideGraphRule(GraphRule):
         if node is None:
             return None
 
-        local_names = _locally_defined_var_names(graph, node_id)
-        if not local_names:
+        local_vars = _locally_defined_vars(graph, node_id)
+        if not local_vars:
             return GraphRuleResult(
                 verdict=False,
                 node_id=node_id,
@@ -152,24 +165,26 @@ class UnusedOverrideGraphRule(GraphRule):
             )
 
         resolver = VariableProvenanceResolver(graph)
-        all_vars = resolver.resolve_variables(node_id)
+        all_defs = resolver.resolve_all_definitions(node_id)
 
-        local_prec = _PRECEDENCE_ORDER.get(ProvenanceSource.RUNTIME, 9)
         ineffective: list[YAMLValue] = []
 
-        for var_name in local_names:
-            prov = all_vars.get(var_name)
-            if prov is None or prov.defining_node_id == node_id:
-                continue
-            existing_prec = _PRECEDENCE_ORDER.get(prov.source, 0)
-            if local_prec < existing_prec:
-                entry: YAMLDict = {
-                    "name": var_name,
-                    "prev_precedence": prov.source.value,
-                    "new_precedence": "runtime",
-                    "prev_defined_at": prov.defining_node_id,
-                }
-                ineffective.append(entry)
+        for var_name, local_source in local_vars:
+            local_prec = _PRECEDENCE_ORDER.get(local_source, 0)
+            defs = all_defs.get(var_name, [])
+            for prov in defs:
+                if prov.defining_node_id == node_id:
+                    continue
+                existing_prec = _PRECEDENCE_ORDER.get(prov.source, 0)
+                if existing_prec > local_prec:
+                    entry: YAMLDict = {
+                        "name": var_name,
+                        "local_precedence": local_source.value,
+                        "shadowed_by": prov.source.value,
+                        "shadowed_by_node": prov.defining_node_id,
+                    }
+                    ineffective.append(entry)
+                    break
 
         verdict = len(ineffective) > 0
         detail: YAMLDict = {"variables": ineffective}
