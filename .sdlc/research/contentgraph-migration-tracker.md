@@ -221,6 +221,11 @@ Fields still needed for full migration:
 - [ ] `variable_set: list[VariableRef]` — variables defined by this node
 - [ ] `COLLECTION` / `PLUGIN` node types in `NodeType` enum
 - [ ] `role_files: dict[str, str]` — role file existence checks (argument_specs, etc.)
+  - **L077 partial port**: currently checks only `role_metadata.get("argument_specs")`
+    (embedded in meta/main.yml). The old rule also scans `spec.files` for a
+    standalone `meta/argument_specs.yml` file. Full parity requires either a
+    `role_files` field on `ContentNode` or having `GraphBuilder` resolve the
+    file during role construction and merge into `role_metadata`.
 
 ---
 
