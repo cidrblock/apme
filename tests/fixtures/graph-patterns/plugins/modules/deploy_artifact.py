@@ -8,8 +8,7 @@ GraphBuilder should detect:
 from __future__ import annotations
 
 from ansible.module_utils.basic import AnsibleModule
-
-from ansible_collections.testorg.graph_patterns.plugins.module_utils.deploy_helpers import (
+from ansible_collections.testorg.graph_patterns.plugins.module_utils.deploy_helpers import (  # type: ignore[import-not-found]
     validate_artifact,
 )
 
@@ -31,6 +30,7 @@ options:
 
 
 def main() -> None:
+    """Run the deploy_artifact module."""
     module = AnsibleModule(
         argument_spec={
             "name": {"required": True, "type": "str"},
