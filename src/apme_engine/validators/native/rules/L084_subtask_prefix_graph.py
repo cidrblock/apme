@@ -10,8 +10,8 @@ import os
 from dataclasses import dataclass
 
 from apme_engine.engine.content_graph import ContentGraph, NodeType
-from apme_engine.engine.models import Severity, YAMLDict
 from apme_engine.engine.models import RuleTag as Tag
+from apme_engine.engine.models import Severity, YAMLDict
 from apme_engine.validators.native.rules.graph_rule_base import GraphRule, GraphRuleResult
 
 _TASK_TYPES = frozenset({NodeType.TASK, NodeType.HANDLER})
@@ -60,9 +60,7 @@ class SubtaskPrefixGraphRule(GraphRule):
         if "/roles/" not in fp:
             return False
         basename = os.path.basename(fp)
-        if basename in ("main.yml", "main.yaml"):
-            return False
-        return True
+        return basename not in ("main.yml", "main.yaml")
 
     def process(self, graph: ContentGraph, node_id: str) -> GraphRuleResult | None:
         """Flag task names that omit the ``sub |``-style prefix separator.

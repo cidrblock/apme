@@ -301,7 +301,7 @@ class TestL044AvoidImplicitGraphRule:
         return AvoidImplicitGraphRule()
 
     def test_violation_file_without_state(self, rule: AvoidImplicitGraphRule) -> None:
-        """file module without state violates.
+        """File module without state violates.
 
         Args:
             rule: Rule instance under test.
@@ -353,7 +353,7 @@ class TestL048NoSameOwnerGraphRule:
         return NoSameOwnerGraphRule()
 
     def test_match_copy_remote_src(self, rule: NoSameOwnerGraphRule) -> None:
-        """copy with truthy remote_src matches.
+        """Copy with truthy remote_src matches.
 
         Args:
             rule: Rule instance under test.
@@ -365,7 +365,7 @@ class TestL048NoSameOwnerGraphRule:
         assert rule.match(g, tid)
 
     def test_no_match_copy_without_remote_src(self, rule: NoSameOwnerGraphRule) -> None:
-        """copy without remote_src does not match.
+        """Copy without remote_src does not match.
 
         Args:
             rule: Rule instance under test.
@@ -522,7 +522,7 @@ class TestL082TemplateJ2ExtGraphRule:
         assert result.verdict is True
 
     def test_no_violation_src_j2(self, rule: TemplateJ2ExtGraphRule) -> None:
-        """src ending in .j2 passes.
+        """Src ending in .j2 passes.
 
         Args:
             rule: Rule instance under test.

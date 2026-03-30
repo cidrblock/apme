@@ -10,8 +10,8 @@ import re
 from dataclasses import dataclass
 
 from apme_engine.engine.content_graph import ContentGraph, NodeType
-from apme_engine.engine.models import Severity, YAMLDict
 from apme_engine.engine.models import RuleTag as Tag
+from apme_engine.engine.models import Severity, YAMLDict
 from apme_engine.validators.native.rules.graph_rule_base import GraphRule, GraphRuleResult
 
 _LOOP_VAR_IN_NAME = re.compile(r"\{\{\s*item\b")

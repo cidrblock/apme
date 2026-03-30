@@ -57,9 +57,7 @@ class NonFQCNUseGraphRule(GraphRule):
             return False
         if spec == resolved:
             return False
-        if resolved.startswith("ansible.builtin."):
-            return False
-        return True
+        return not resolved.startswith("ansible.builtin.")
 
     def process(self, graph: ContentGraph, node_id: str) -> GraphRuleResult | None:
         """Report the short module name and resolved FQCN when the rule fires.
@@ -76,12 +74,7 @@ class NonFQCNUseGraphRule(GraphRule):
             return None
         spec = node.module
         resolved = node.resolved_module_name
-        verdict = bool(
-            spec
-            and resolved
-            and spec != resolved
-            and not resolved.startswith("ansible.builtin.")
-        )
+        verdict = bool(spec and resolved and spec != resolved and not resolved.startswith("ansible.builtin."))
         detail: YAMLDict = {
             "module": spec,
             "fqcn": resolved,
