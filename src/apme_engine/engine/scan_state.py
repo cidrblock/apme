@@ -614,6 +614,7 @@ class SingleScan:
 
             graph_rules = load_graph_rules(
                 rules_dir=self.rules_dir,
+                rule_id_list=self.rules or None,
                 exclude_rule_ids=[],
             )
             if not graph_rules:

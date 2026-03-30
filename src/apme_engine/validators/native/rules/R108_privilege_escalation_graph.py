@@ -73,7 +73,12 @@ class PrivilegeEscalationGraphRule(GraphRule):
         resolver = VariableProvenanceResolver(graph)
         origins = resolver.resolve_property_origins(node_id)
         become_origin = origins.get("become")
-        return become_origin is not None and bool(become_origin.value)
+        if become_origin is None:
+            return False
+        val = become_origin.value
+        if isinstance(val, dict):
+            return bool(val.get("become"))
+        return bool(val)
 
     def process(self, graph: ContentGraph, node_id: str) -> GraphRuleResult | None:
         """Check for privilege escalation and attribute to defining scope.
@@ -101,7 +106,10 @@ class PrivilegeEscalationGraphRule(GraphRule):
         if node.become:
             detail.update(node.become)
         elif become_origin is not None:
-            detail["become"] = become_origin.value
+            if isinstance(become_origin.value, dict):
+                detail.update(become_origin.value)
+            else:
+                detail["become"] = become_origin.value
 
         if become_origin is not None and become_origin.defining_node_id != node_id:
             detail["inherited_from"] = become_origin.defining_node_id

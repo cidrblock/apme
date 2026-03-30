@@ -16,13 +16,13 @@ import time
 import traceback
 from dataclasses import dataclass, field
 
-from .content_graph import ContentGraph, ContentNode, NodeScope, NodeType
-from .utils import load_classes_in_dir
-
 from apme_engine.validators.native.rules.graph_rule_base import (
     GraphRule,
     GraphRuleResult,
 )
+
+from .content_graph import ContentGraph, ContentNode, NodeScope, NodeType
+from .utils import load_classes_in_dir
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +110,8 @@ def load_graph_rules(
                     continue
                 if rule.rule_id in exclude_rule_ids:
                     continue
+                if not rule.enabled:
+                    continue
                 rules.append(rule)
             except Exception:
                 logger.warning("Failed to instantiate graph rule %s: %s", cls, traceback.format_exc())
@@ -156,7 +158,8 @@ def scan(
         GraphScanReport with per-node results and timing.
     """
     start = time.monotonic()
-    report = GraphScanReport(rules_evaluated=len(rules))
+    enabled_rules = [r for r in rules if r.enabled]
+    report = GraphScanReport(rules_evaluated=len(enabled_rules))
 
     all_nodes = sorted(graph.nodes(), key=lambda n: n.node_id)
 
@@ -169,10 +172,7 @@ def scan(
         report.nodes_scanned += 1
         node_result = GraphNodeResult(node_id=node.node_id, node=node)
 
-        for rule in rules:
-            if not rule.enabled:
-                continue
-            rule_start = time.monotonic()
+        for rule in enabled_rules:
             try:
                 matched = rule.match(graph, node.node_id)
                 if not matched:
@@ -180,20 +180,21 @@ def scan(
                 result = rule.process(graph, node.node_id)
                 if result is not None:
                     result.rule = rule.get_metadata()
-                    elapsed_rule = (time.monotonic() - rule_start) * 1000
-                    if result.detail is None:
-                        result.detail = {}
-                    result.detail["duration_ms"] = round(elapsed_rule, 3)
                     node_result.rule_results.append(result)
-            except Exception:
-                exc = traceback.format_exc()
-                logger.warning("Rule %s failed on %s: %s", rule.rule_id, node.node_id, exc)
+            except Exception as err:
+                logger.warning(
+                    "Rule %s failed on %s: %s",
+                    rule.rule_id,
+                    node.node_id,
+                    err,
+                    exc_info=True,
+                )
                 node_result.rule_results.append(
                     GraphRuleResult(
                         rule=rule.get_metadata(),
                         verdict=False,
                         node_id=node.node_id,
-                        error=f"Rule execution failed: {exc}",
+                        error=f"Rule execution failed: {type(err).__name__}: {err}",
                     )
                 )
 
