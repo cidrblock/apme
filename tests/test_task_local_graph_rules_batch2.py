@@ -173,7 +173,9 @@ class TestL038UnresolvedRoleGraphRule:
             rule: Rule instance under test.
         """
         mo: YAMLDict = {"name": "missing_role"}
-        g, tid = _make_task(module="ansible.builtin.include_role", resolved_module="ansible.builtin.include_role", module_options=mo)
+        g, tid = _make_task(
+            module="ansible.builtin.include_role", resolved_module="ansible.builtin.include_role", module_options=mo
+        )
         assert rule.match(g, tid)
         result = rule.process(g, tid)
         assert result is not None
@@ -188,7 +190,9 @@ class TestL038UnresolvedRoleGraphRule:
             rule: Rule instance under test.
         """
         mo: YAMLDict = {"name": "webserver"}
-        g, tid = _make_task(module="ansible.builtin.include_role", resolved_module="ansible.builtin.include_role", module_options=mo)
+        g, tid = _make_task(
+            module="ansible.builtin.include_role", resolved_module="ansible.builtin.include_role", module_options=mo
+        )
         role_node = ContentNode(
             identity=NodeIdentity(path="roles/webserver", node_type=NodeType.ROLE),
             file_path="roles/webserver/tasks/main.yml",
@@ -667,9 +671,7 @@ class TestBatch2ScannerIntegration:
         g, _tid = _make_task(module="unknown_module", resolved_module="")
         rules: list[GraphRule] = [UnresolvedModuleGraphRule()]
         report = scan(g, rules)
-        violations = [
-            rr for nr in report.node_results for rr in nr.rule_results if rr.verdict
-        ]
+        violations = [rr for nr in report.node_results for rr in nr.rule_results if rr.verdict]
         assert len(violations) == 1
         assert violations[0].rule is not None
         assert violations[0].rule.rule_id == "L037"
@@ -680,8 +682,6 @@ class TestBatch2ScannerIntegration:
         g, _tid = _make_task(module="set_fact", resolved_module="ansible.builtin.set_fact", module_options=mo)
         rules: list[GraphRule] = [VarNamingKeywordGraphRule()]
         report = scan(g, rules)
-        violations = [
-            rr for nr in report.node_results for rr in nr.rule_results if rr.verdict
-        ]
+        violations = [rr for nr in report.node_results for rr in nr.rule_results if rr.verdict]
         assert len(violations) >= 1
         assert any(v.rule is not None and v.rule.rule_id == "L100" for v in violations)

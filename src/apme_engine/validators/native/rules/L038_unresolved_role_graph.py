@@ -80,9 +80,7 @@ class UnresolvedRoleGraphRule(GraphRule):
             mo = {}
         role_name = mo.get("name", "")
         role_str = role_name if isinstance(role_name, str) else str(role_name)
-        has_edge = bool(graph.edges_from(node_id, EdgeType.INCLUDE)) or bool(
-            graph.edges_from(node_id, EdgeType.IMPORT)
-        )
+        has_edge = bool(graph.edges_from(node_id, EdgeType.INCLUDE)) or bool(graph.edges_from(node_id, EdgeType.IMPORT))
         if has_edge:
             return GraphRuleResult(
                 verdict=False,
