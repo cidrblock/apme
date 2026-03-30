@@ -1083,6 +1083,7 @@ class GraphBuilder:
                     child_nid = self._build_task(
                         child_task, block_nid, file_path, play_index, i, scope, path_prefix=child_path
                     )
+                    self._graph.add_edge(block_nid, child_nid, EdgeType.CONTAINS, position=i)
                     self._graph.add_edge(block_nid, child_nid, edge_type, position=i)
 
         block_tasks = options.get("block")

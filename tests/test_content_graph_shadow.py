@@ -354,7 +354,9 @@ class TestVariableProvenanceSmokeTest:
             if origins:
                 tasks_with_origins += 1
 
-        assert tasks_with_origins >= 0  # may be 0 if no become/environment used
+        # Smoke test: resolver completes without error on all tasks.
+        # The fixture may or may not use become/environment, so we don't
+        # assert a minimum — the value of this test is crash-freedom.
 
 
 # ---------------------------------------------------------------------------

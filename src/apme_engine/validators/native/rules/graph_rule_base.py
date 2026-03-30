@@ -73,21 +73,12 @@ class GraphRule(RuleMetadata):
     enabled: bool = False
     precedence: int = 10
 
-    def __post_init__(self, rule_id: str = "", description: str = "") -> None:
-        """Initialize and validate rule_id and description.
-
-        Args:
-            rule_id: Optional rule ID to set.
-            description: Optional description to set.
+    def __post_init__(self) -> None:
+        """Validate that rule_id and description are non-empty.
 
         Raises:
             ValueError: If rule_id or description is empty after init.
         """
-        if rule_id:
-            self.rule_id = rule_id
-        if description:
-            self.description = description
-
         if not self.rule_id:
             raise ValueError("A rule must have a unique rule_id")
         if not self.description:
