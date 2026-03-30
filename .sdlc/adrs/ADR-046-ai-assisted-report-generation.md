@@ -65,16 +65,16 @@ The LLM receives a user's natural language query and returns a **report spec** â
     },
     {
       "type": "donut-chart",
-      "title": "Severity Distribution",
+      "title": "Violations Overview",
       "endpoint": "/api/v1/dashboard/summary",
-      "fields": {"error": "current_error", "warning": "current_warning", "info": "current_info"}
+      "fields": {"violations": "current_violations", "fixable": "current_fixable", "ai_candidates": "current_ai_candidates"}
     },
     {
       "type": "table",
       "title": "Projects Needing Attention",
       "endpoint": "/api/v1/dashboard/rankings",
-      "params": {"sort": "violation_count", "order": "desc", "limit": 5},
-      "columns": ["name", "health_score", "violation_count", "last_scanned_at"]
+      "params": {"sort_by": "total_violations", "order": "desc", "limit": 5},
+      "columns": ["id", "name", "health_score", "total_violations", "days_since_last_scan", "last_scanned_at"]
     }
   ]
 }
@@ -136,17 +136,17 @@ Available data endpoints (all GET, prefix /api/v1):
   current_violations, current_fixable, current_ai_candidates,
   total_fixed, avg_health_score
 
-/dashboard/rankings
-  Per-project: name, health_score, violation_count, scan_count, last_scanned_at
+/dashboard/rankings?sort_by=S&order=O&limit=N
+  Per-project: id, name, health_score, total_violations, scan_count, last_scanned_at, days_since_last_scan
 
 /violations/top?limit=N
   Global rule frequency: rule_id, count
 
-/projects/{id}/trend
-  Time series per scan: scan_date, total_violations, fixable, scan_type
+/projects/{id}/trend?limit=N
+  Time series per scan: scan_id, created_at, total_violations, fixable, scan_type
 
-/stats/remediation-rates
-  Rule fix frequency (remediate scans): rule_id, count
+/stats/remediation-rates?limit=N
+  Rule fix frequency (remediate scans): rule_id, fix_count
 
 /stats/ai-acceptance
   AI proposal outcomes: rule_id, approved, rejected, pending, avg_confidence
