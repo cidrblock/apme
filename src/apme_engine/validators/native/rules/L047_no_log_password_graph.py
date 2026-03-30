@@ -8,15 +8,13 @@ not only as a literal on the task block.
 from dataclasses import dataclass
 
 from apme_engine.engine.content_graph import ContentGraph, ContentNode, NodeType
-from apme_engine.engine.models import Severity, YAMLDict
 from apme_engine.engine.models import RuleTag as Tag
+from apme_engine.engine.models import Severity, YAMLDict
 from apme_engine.validators.native.rules.graph_rule_base import GraphRule, GraphRuleResult
 
 _TASK_TYPES = frozenset({NodeType.TASK, NodeType.HANDLER})
 
-PASSWORD_LIKE_KEYS = frozenset(
-    {"password", "passwd", "pwd", "secret", "token", "api_key", "apikey", "private_key"}
-)
+PASSWORD_LIKE_KEYS = frozenset({"password", "passwd", "pwd", "secret", "token", "api_key", "apikey", "private_key"})
 
 
 def _option_keys_look_like_password(module_options: object) -> bool:
@@ -47,10 +45,7 @@ def _no_log_true_in_scope(graph: ContentGraph, node_id: str) -> bool:
     if node is None:
         return False
     chain: list[ContentNode] = [node] + graph.ancestors(node_id)
-    for scope in chain:
-        if scope.no_log is True:
-            return True
-    return False
+    return any(scope.no_log is True for scope in chain)
 
 
 @dataclass
@@ -91,9 +86,7 @@ class NoLogPasswordGraphRule(GraphRule):
             return False
         if node.node_type not in _TASK_TYPES:
             return False
-        return _option_keys_look_like_password(node.module_options) or _option_keys_look_like_password(
-            node.options
-        )
+        return _option_keys_look_like_password(node.module_options) or _option_keys_look_like_password(node.options)
 
     def process(self, graph: ContentGraph, node_id: str) -> GraphRuleResult | None:
         """Require ``no_log`` when password-like keys are present.

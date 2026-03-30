@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from typing import cast
 
 from apme_engine.engine.content_graph import ContentGraph, NodeType
-from apme_engine.engine.models import Severity, YAMLValue, YAMLDict
 from apme_engine.engine.models import RuleTag as Tag
+from apme_engine.engine.models import Severity, YAMLDict, YAMLValue
 from apme_engine.engine.variable_provenance import VariableProvenance, VariableProvenanceResolver
 from apme_engine.validators.native.rules.graph_rule_base import GraphRule, GraphRuleResult
 
@@ -76,9 +76,7 @@ class InvalidInventoryVariableNamesGraphRule(GraphRule):
         def record(name: object, prov: VariableProvenance | None) -> None:
             if not isinstance(name, str) or name.isidentifier():
                 return
-            if name not in by_name:
-                by_name[name] = prov
-            elif by_name[name] is None and prov is not None:
+            if name not in by_name or by_name[name] is None and prov is not None:
                 by_name[name] = prov
 
         for vname, vprov in resolved.items():

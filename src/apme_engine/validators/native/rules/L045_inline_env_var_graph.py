@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from typing import TypeGuard
 
 from apme_engine.engine.content_graph import ContentGraph, NodeType
-from apme_engine.engine.models import Severity, YAMLDict
 from apme_engine.engine.models import RuleTag as Tag
+from apme_engine.engine.models import Severity, YAMLDict
 from apme_engine.engine.variable_provenance import VariableProvenanceResolver
 from apme_engine.validators.native.rules.graph_rule_base import GraphRule, GraphRuleResult
 

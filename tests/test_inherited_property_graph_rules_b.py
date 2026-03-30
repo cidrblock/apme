@@ -325,9 +325,7 @@ class TestM030GraphRule:
         assert r.detail is not None
         broken = r.detail.get("broken_conditions")
         assert isinstance(broken, list)
-        conditions = [
-            str(e.get("condition", "")) for e in broken if isinstance(e, dict)
-        ]
+        conditions = [str(e.get("condition", "")) for e in broken if isinstance(e, dict)]
         assert any("invalid" in c for c in conditions)
 
     def test_violation_broken_when_in_list(self, rule: BrokenConditionalExpressionsGraphRule) -> None:
@@ -350,9 +348,7 @@ class TestM030GraphRule:
         assert r.verdict is True
         broken = r.detail.get("broken_conditions") if r.detail else None
         assert isinstance(broken, list)
-        conditions = [
-            str(e.get("condition", "")) for e in broken if isinstance(e, dict)
-        ]
+        conditions = [str(e.get("condition", "")) for e in broken if isinstance(e, dict)]
         assert any("oops" in c for c in conditions)
 
     def test_no_when_no_violation(self, rule: BrokenConditionalExpressionsGraphRule) -> None:
@@ -391,7 +387,7 @@ class TestM030GraphRule:
             file_path="p.yml",
             line_start=5,
             scope=NodeScope.OWNED,
-            when_expr='broken {{ unclosed',
+            when_expr="broken {{ unclosed",
         )
         t = ContentNode(
             identity=NodeIdentity(path="p.yml/plays[0]/block[0]/tasks[0]", node_type=NodeType.TASK),
