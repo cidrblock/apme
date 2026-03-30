@@ -9,9 +9,9 @@
 | Metric | Count |
 |--------|-------|
 | Total native rules | 96 |
-| Ported to GraphRule | 36 |
-| Remaining | 60 |
-| Migration % | 37.5% |
+| Ported to GraphRule | 43 |
+| Remaining | 53 |
+| Migration % | 44.8% |
 
 ## Ported Rules (27)
 
@@ -76,9 +76,21 @@
 | L102 | VarNamingReadOnly | TASK_LOCAL |
 | M027 | LegacyKvMergedWithArgs | TASK_LOCAL |
 
+### Phase 2F — Role-metadata batch (PR #145)
+
+| Rule | Name | Category |
+|------|------|----------|
+| L027 | RoleWithoutMetadata | ROLE_METADATA |
+| L052 | GalaxyVersionIncorrect | ROLE_METADATA |
+| L053 | MetaIncorrect | ROLE_METADATA |
+| L054 | MetaNoTags | ROLE_METADATA |
+| L055 | MetaVideoLinks | ROLE_METADATA |
+| L077 | RoleArgSpecs | ROLE_METADATA |
+| L079 | RoleVarPrefix | ROLE_METADATA |
+
 ---
 
-## Remaining Rules (60)
+## Remaining Rules (53)
 
 ### Needs `args.raw` / structured args
 
@@ -92,21 +104,6 @@ beyond what `module_options` provides.
 | R111 | ParameterizedImportRole | HIGH | Jinja-templated role name (needs `is_mutable`) |
 | R112 | ParameterizedImportTaskfile | MEDIUM | Jinja-templated taskfile path (needs `is_mutable`) |
 | R501 | DependencySuggestion | NONE | Suggests collection (needs `possible_candidates`) |
-
-### Role-metadata rules (need ROLE node + `role_metadata`)
-
-These target `ROLE` nodes and inspect `meta/main.yml` contents.
-`ContentNode.role_metadata` was added in Phase 2C.
-
-| Rule | Name | Severity | What it checks |
-|------|------|----------|----------------|
-| L027 | RoleWithoutMetadata | LOW | Role missing `meta/main.yml` entirely |
-| L052 | GalaxyVersionIncorrect | LOW | `galaxy_info.version` not valid semver |
-| L053 | MetaIncorrect | LOW | Role meta structure/type errors |
-| L054 | MetaNoTags | VERY_LOW | `galaxy_tags` / `categories` missing in role meta |
-| L055 | MetaVideoLinks | VERY_LOW | `video_links` URLs invalid in role meta |
-| L077 | RoleArgSpecs | LOW | Role missing `meta/argument_specs.yml` |
-| L079 | RoleVarPrefix | LOW | Role defaults/vars not prefixed with role name |
 
 ### Needs `yaml_lines` / raw YAML content
 
@@ -203,7 +200,7 @@ those node types.
 ## Recommended Porting Order
 
 1. ~~**Phase 2E**: Simple task-local batch 2 (9 rules)~~ **DONE**
-2. **Phase 2F**: Role-metadata rules (7 rules)
+2. ~~**Phase 2F**: Role-metadata rules (7 rules)~~ **DONE**
 3. **Phase 2G**: `args.raw` / structured args extension (5 rules: L035, L046, R111, R112, R501)
 4. **Phase 2H**: `yaml_lines` extension + content rules (17 rules)
 5. **Phase 2I**: Annotation infrastructure + risk/policy rules (15 rules)
