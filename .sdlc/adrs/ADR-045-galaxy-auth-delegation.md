@@ -86,15 +86,18 @@ Galaxy server configuration flows as scan metadata:
 CLI (reads ansible.cfg)  ──► gRPC ScanOptions.galaxy_servers ──► Primary
 UI  (global server defs) ──► Gateway ──► gRPC ScanOptions     ──► Primary
                                                                      │
-                                            Primary writes temp ansible.cfg
-                                            ansible-galaxy collection download
-                                                     │
-                                              tarballs on disk
-                                                     │
-                                              Proxy: tarball → wheel
-                                              PEP 503 serving
-                                                     │
-                                              pip/uv install wheel
+                                                          galaxy_servers + collection specs
+                                                                     │
+                                                                     ▼
+                                                               Galaxy Proxy
+                                                          writes temp ansible.cfg
+                                                     ansible-galaxy collection download
+                                                                     │
+                                                              tarballs on disk
+                                                              tarball → wheel
+                                                              PEP 503 serving
+                                                                     │
+                                                              pip/uv install wheel
 ```
 
 ## Alternatives Considered
