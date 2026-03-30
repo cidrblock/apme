@@ -17,7 +17,7 @@ that were impossible with the flat ``AnsibleRunContext`` sequence.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from apme_engine.engine.models import RuleMetadata, YAMLDict
@@ -48,10 +48,12 @@ class GraphRuleResult:
 
     @property
     def passed(self) -> bool:
+        """Return True when the rule check passed."""
         return self.verdict
 
     @property
     def failed(self) -> bool:
+        """Return True when the rule check failed."""
         return not self.verdict
 
 

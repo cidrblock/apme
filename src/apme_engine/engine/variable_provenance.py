@@ -13,11 +13,11 @@ Public API
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
+
 from .content_graph import ContentGraph, ContentNode, EdgeType, NodeType
 from .models import YAMLValue
-
 
 # ---------------------------------------------------------------------------
 # Provenance classification
@@ -100,13 +100,15 @@ class PropertyOrigin:
 # Resolver
 # ---------------------------------------------------------------------------
 
-_INHERITED_PROPERTIES = frozenset({
-    "become",
-    "environment",
-    "no_log",
-    "ignore_errors",
-    "tags",
-})
+_INHERITED_PROPERTIES = frozenset(
+    {
+        "become",
+        "environment",
+        "no_log",
+        "ignore_errors",
+        "tags",
+    }
+)
 
 _PROVENANCE_BY_NODE_TYPE: dict[NodeType, ProvenanceSource] = {
     NodeType.TASK: ProvenanceSource.LOCAL,
@@ -257,7 +259,7 @@ class VariableProvenanceResolver:
             scope_node: Play, role, or other node with ``VARS_INCLUDE`` outgoing edges.
             result: Mutable provenance map updated in place.
         """
-        for target_id, attrs in self._graph.edges_from(scope_node.node_id, EdgeType.VARS_INCLUDE):
+        for target_id, _attrs in self._graph.edges_from(scope_node.node_id, EdgeType.VARS_INCLUDE):
             vf_node = self._graph.get_node(target_id)
             if vf_node is None:
                 continue
@@ -283,7 +285,7 @@ class VariableProvenanceResolver:
             node_id: Consumer task node id.
             result: Mutable provenance map updated in place.
         """
-        for source_id, attrs in self._graph.edges_to(node_id, EdgeType.DATA_FLOW):
+        for source_id, _attrs in self._graph.edges_to(node_id, EdgeType.DATA_FLOW):
             source_node = self._graph.get_node(source_id)
             if source_node is None:
                 continue

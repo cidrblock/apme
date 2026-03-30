@@ -9,7 +9,6 @@ import pytest
 from apme_engine.engine.content_graph import (
     ContentGraph,
     ContentNode,
-    EdgeType,
     NodeIdentity,
     NodeType,
 )
@@ -31,10 +30,28 @@ class SampleGraphRule(GraphRule):
     enabled: bool = True
 
     def match(self, graph: ContentGraph, node_id: str) -> bool:
+        """Return True when the node exists and is a task.
+
+        Args:
+            graph: Content graph under scan.
+            node_id: Node identifier to inspect.
+
+        Returns:
+            True if the node is a task, else False.
+        """
         node = graph.get_node(node_id)
         return node is not None and node.node_type == NodeType.TASK
 
     def process(self, graph: ContentGraph, node_id: str) -> GraphRuleResult | None:
+        """Evaluate whether the task has a name.
+
+        Args:
+            graph: Content graph under scan.
+            node_id: Task node identifier.
+
+        Returns:
+            Rule result with pass/fail, or None if the node is missing.
+        """
         node = graph.get_node(node_id)
         if node is None:
             return None
@@ -49,6 +66,11 @@ class SampleGraphRule(GraphRule):
 
 
 def _make_test_graph() -> ContentGraph:
+    """Build a graph with named/unnamed tasks and a play for rule tests.
+
+    Returns:
+        Content graph suitable for ``SampleGraphRule`` tests.
+    """
     g = ContentGraph()
 
     named_task = ContentNode(
@@ -77,11 +99,15 @@ def _make_test_graph() -> ContentGraph:
 
 
 class TestGraphRule:
+    """Tests for ``GraphRule`` construction and ``SampleGraphRule`` behavior."""
+
     def test_base_class_raises(self) -> None:
+        """Verify base ``GraphRule`` rejects empty rule_id."""
         with pytest.raises(ValueError):
             GraphRule(rule_id="", description="test")
 
     def test_match_filters_by_type(self) -> None:
+        """Verify match is true for tasks and false for plays."""
         rule = SampleGraphRule()
         g = _make_test_graph()
 
@@ -89,6 +115,7 @@ class TestGraphRule:
         assert rule.match(g, "site.yml/plays[0]") is False
 
     def test_process_pass(self) -> None:
+        """Verify process passes for a named task."""
         rule = SampleGraphRule()
         g = _make_test_graph()
 
@@ -98,6 +125,7 @@ class TestGraphRule:
         assert result.failed is False
 
     def test_process_fail(self) -> None:
+        """Verify process fails for an unnamed task with expected metadata."""
         rule = SampleGraphRule()
         g = _make_test_graph()
 
@@ -108,6 +136,7 @@ class TestGraphRule:
         assert result.node_id == "site.yml/tasks[1]"
 
     def test_not_implemented_on_base(self) -> None:
+        """Verify abstract base raises NotImplementedError for match and process."""
         rule = GraphRule.__new__(GraphRule)
         rule.rule_id = "X"
         rule.description = "X"

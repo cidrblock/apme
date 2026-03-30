@@ -8,7 +8,10 @@ from apme_engine.engine.python_analyzer import PythonFileAnalyzer
 
 
 class TestPythonFileAnalyzer:
+    """Tests for ``PythonFileAnalyzer``."""
+
     def test_basic_module(self) -> None:
+        """Verify DOCUMENTATION, EXAMPLES, RETURN, and main are detected."""
         source = textwrap.dedent("""\
             from ansible.module_utils.basic import AnsibleModule
 
@@ -43,6 +46,7 @@ class TestPythonFileAnalyzer:
         assert result.function_count >= 1
 
     def test_module_utils_import(self) -> None:
+        """Verify module_utils import paths are collected."""
         source = textwrap.dedent("""\
             from ansible_collections.testorg.myplugin.plugins.module_utils.helpers import validate
             from ansible.module_utils.basic import AnsibleModule
@@ -58,6 +62,7 @@ class TestPythonFileAnalyzer:
         assert any("module_utils.basic" in imp for imp in result.module_utils_imports)
 
     def test_filter_plugin(self) -> None:
+        """Verify FilterModule-style sources count as one class, no top-level functions."""
         source = textwrap.dedent("""\
             class FilterModule:
                 def filters(self):
@@ -75,6 +80,7 @@ class TestPythonFileAnalyzer:
         assert result.function_count == 0
 
     def test_syntax_error_graceful(self) -> None:
+        """Verify invalid Python yields zero functions without raising."""
         source = "def broken(:\n    pass"
         analyzer = PythonFileAnalyzer()
         result = analyzer.analyze_source(source, "broken.py")
@@ -83,6 +89,7 @@ class TestPythonFileAnalyzer:
         assert result.function_count == 0
 
     def test_resolve_module_utils_path(self) -> None:
+        """Verify FQCN module_utils paths resolve to a ``.py`` suffix."""
         analyzer = PythonFileAnalyzer()
         path = analyzer.resolve_module_utils_path(
             "ansible_collections.testorg.graph_patterns.plugins.module_utils.deploy_helpers"
@@ -92,6 +99,7 @@ class TestPythonFileAnalyzer:
         assert "module_utils" in path
 
     def test_argument_spec_extraction(self) -> None:
+        """Verify ``argument_spec`` dict keys are extracted."""
         source = textwrap.dedent("""\
             argument_spec = {
                 "name": {"type": "str", "required": True},
@@ -104,7 +112,7 @@ class TestPythonFileAnalyzer:
         assert "version" in result.argument_spec_keys
 
     def test_real_fixture_file(self) -> None:
-        """Test analyzing the deploy_artifact.py fixture."""
+        """Verify fixture module analysis when the file is present."""
         from pathlib import Path
 
         fixture = Path("tests/fixtures/graph-patterns/plugins/modules/deploy_artifact.py")

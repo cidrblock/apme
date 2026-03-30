@@ -19,8 +19,7 @@ from typing import cast
 
 from .content_graph import ContentGraph, ContentNode, EdgeType, NodeType
 from .models import Annotation, YAMLDict, YAMLValue
-from .opa_payload import annotation_to_dict, json_safe, opts_for_opa
-
+from .opa_payload import annotation_to_dict, json_safe
 
 # ---------------------------------------------------------------------------
 # Per-node serialization

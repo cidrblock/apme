@@ -16,9 +16,10 @@ from __future__ import annotations
 
 import os
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Iterator, cast
+from typing import TYPE_CHECKING, cast
 
 import networkx as nx  # type: ignore[import-untyped]
 
@@ -26,8 +27,6 @@ from .models import YAMLDict, YAMLValue
 
 if TYPE_CHECKING:
     from .models import (
-        CallObject,
-        Object,
         ObjectList,
         Play,
         Playbook,
@@ -154,6 +153,11 @@ class NodeIdentity:
     node_type: NodeType
 
     def __str__(self) -> str:
+        """Return the YAML-path string.
+
+        Returns:
+            This identity's ``path`` value.
+        """
         return self.path
 
     @property
@@ -266,10 +270,12 @@ class ContentNode:
 
     @property
     def node_type(self) -> NodeType:
+        """Return the node's type from its identity."""
         return self.identity.node_type
 
     @property
     def node_id(self) -> str:
+        """Return the node's stable string identifier."""
         return str(self.identity)
 
 
@@ -287,6 +293,7 @@ class ContentGraph:
     """
 
     def __init__(self) -> None:
+        """Initialize an empty content graph."""
         self.g: nx.MultiDiGraph = nx.MultiDiGraph()
         self._nodes_by_ari_key: dict[str, str] = {}
 
@@ -481,7 +488,7 @@ class ContentGraph:
             Child nodes sorted by ``line_start``.
         """
         result: list[ContentNode] = []
-        for target, attrs in self.edges_from(node_id, EdgeType.CONTAINS):
+        for target, _attrs in self.edges_from(node_id, EdgeType.CONTAINS):
             child = self.get_node(target)
             if child is not None:
                 result.append(child)
@@ -598,7 +605,7 @@ class GraphBuilder:
         Returns:
             Fully wired ``ContentGraph`` instance.
         """
-        from .models import CallObject, Object, ObjectList, Role, TaskFile
+        from .models import ObjectList, Role, TaskFile
         from .tree import load_all_definitions
 
         root_loaded = load_all_definitions(self._root_defs)
@@ -655,7 +662,7 @@ class GraphBuilder:
 
     def _build_from_loaded(
         self,
-        loaded: dict[str, "ObjectList"],
+        loaded: dict[str, ObjectList],
         scope: NodeScope,
     ) -> None:
         """Process loaded definitions (playbooks, roles, taskfiles).
@@ -772,9 +779,7 @@ class GraphBuilder:
 
     # -- Play ---------------------------------------------------------------
 
-    def _build_play(
-        self, play: Play, playbook_nid: str, file_path: str, play_index: int, scope: NodeScope
-    ) -> str:
+    def _build_play(self, play: Play, playbook_nid: str, file_path: str, play_index: int, scope: NodeScope) -> str:
         """Build graph nodes for a play and its children.
 
         Args:
@@ -1152,9 +1157,7 @@ class GraphBuilder:
         # Handlers
         for h_idx, handler_or_key in enumerate(getattr(role, "handlers", []) or []):
             handler: TaskFile | Task | None = None
-            if isinstance(handler_or_key, TaskFile):
-                handler = handler_or_key
-            elif isinstance(handler_or_key, Task):
+            if isinstance(handler_or_key, TaskFile | Task):
                 handler = handler_or_key
             elif isinstance(handler_or_key, str):
                 resolved = self._resolve_key(handler_or_key)
@@ -1246,18 +1249,14 @@ class GraphBuilder:
                     child_nid = self._build_handler(task_obj, nid, defined_in, 0, i, scope)
                 else:
                     child_path = f"{nid}/tasks[{i}]"
-                    child_nid = self._build_task(
-                        task_obj, nid, defined_in, 0, i, scope, path_prefix=child_path
-                    )
+                    child_nid = self._build_task(task_obj, nid, defined_in, 0, i, scope, path_prefix=child_path)
                 self._graph.add_edge(nid, child_nid, EdgeType.CONTAINS, position=i)
 
         return nid
 
     # -- Helpers ------------------------------------------------------------
 
-    def _ensure_vars_file(
-        self, path: str, scope: NodeScope, variables: YAMLDict | None = None
-    ) -> str:
+    def _ensure_vars_file(self, path: str, scope: NodeScope, variables: YAMLDict | None = None) -> str:
         """Get or create a vars_file node.
 
         Args:

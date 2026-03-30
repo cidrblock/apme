@@ -62,7 +62,10 @@ def _make_minimal_graph() -> ContentGraph:
 
 
 class TestContentNodeToOpaDict:
+    """Tests for ``content_node_to_opa_dict``."""
+
     def test_playcall_shape(self) -> None:
+        """Verify playcall nodes map to the expected OPA dict shape."""
         g = _make_minimal_graph()
         play = g.get_node("site.yml/plays[0]")
         assert play is not None
@@ -77,6 +80,7 @@ class TestContentNodeToOpaDict:
         assert line == [1, 25]
 
     def test_taskcall_shape(self) -> None:
+        """Verify taskcall nodes map to the expected OPA dict shape."""
         g = _make_minimal_graph()
         task = g.get_node("site.yml/plays[0]/tasks[0]")
         assert task is not None
@@ -94,6 +98,7 @@ class TestContentNodeToOpaDict:
         assert topts["when"] == "ansible_os_family == 'Debian'"
 
     def test_vars_file_returns_empty(self) -> None:
+        """Verify VARS_FILE nodes yield an empty dict."""
         node = ContentNode(
             identity=NodeIdentity(path="vars/main.yml", node_type=NodeType.VARS_FILE),
         )
@@ -102,7 +107,10 @@ class TestContentNodeToOpaDict:
 
 
 class TestBuildHierarchyFromGraph:
+    """Tests for ``build_hierarchy_from_graph``."""
+
     def test_basic_structure(self) -> None:
+        """Verify scan payload includes hierarchy, collection_set, and metadata."""
         g = _make_minimal_graph()
         payload = build_hierarchy_from_graph(
             g,
@@ -122,6 +130,7 @@ class TestBuildHierarchyFromGraph:
         assert meta["type"] == "playbook"
 
     def test_nodes_in_hierarchy(self) -> None:
+        """Verify playbook, play, and task node types appear in the tree."""
         g = _make_minimal_graph()
         payload = build_hierarchy_from_graph(g, scan_type="playbook", scan_name="site")
 
@@ -143,12 +152,14 @@ class TestBuildHierarchyFromGraph:
         assert "taskcall" in types
 
     def test_empty_graph(self) -> None:
+        """Verify an empty graph produces empty hierarchy and collection_set."""
         g = ContentGraph()
         payload = build_hierarchy_from_graph(g, scan_type="role", scan_name="test")
         assert payload["hierarchy"] == []
         assert payload["collection_set"] == []
 
     def test_collection_extraction(self) -> None:
+        """Verify collection_set includes namespaces from task modules."""
         g = ContentGraph()
         pb = ContentNode(
             identity=NodeIdentity(path="site.yml", node_type=NodeType.PLAYBOOK),

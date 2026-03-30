@@ -8,7 +8,6 @@ net for Phase 2.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
 
@@ -74,7 +73,6 @@ def content_graph(scandata: SingleScan) -> ContentGraph:
 # Need this import after fixtures so scandata fixture can call it
 from apme_engine.runner import run_scan  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # Structural equivalence
 # ---------------------------------------------------------------------------
@@ -127,9 +125,7 @@ class TestStructuralEquivalence:
         tasks = list(content_graph.nodes(NodeType.TASK))
         assert len(tasks) >= 1, "No task nodes found in graph"
 
-    def test_graph_node_count_reasonable(
-        self, scandata: SingleScan, content_graph: ContentGraph
-    ) -> None:
+    def test_graph_node_count_reasonable(self, scandata: SingleScan, content_graph: ContentGraph) -> None:
         """Graph node count is in the same order of magnitude as TreeLoader.
 
         The graph may have fewer nodes (deduplication) or more (vars_file
@@ -158,9 +154,7 @@ class TestStructuralEquivalence:
             content_graph: ContentGraph from fixture.
         """
         contains_count = sum(
-            1
-            for _, _, data in content_graph.g.edges(data=True)
-            if data.get("edge_type") == EdgeType.CONTAINS.value
+            1 for _, _, data in content_graph.g.edges(data=True) if data.get("edge_type") == EdgeType.CONTAINS.value
         )
         assert contains_count > 0, "No CONTAINS edges found"
 
@@ -175,9 +169,7 @@ class TestStructuralEquivalence:
             et = data.get("edge_type", "")
             if isinstance(et, str):
                 edge_types.add(et)
-        assert len(edge_types) >= 2, (
-            f"Expected diverse edge types, found only: {edge_types}"
-        )
+        assert len(edge_types) >= 2, f"Expected diverse edge types, found only: {edge_types}"
 
 
 # ---------------------------------------------------------------------------
@@ -208,10 +200,7 @@ class TestARIKeyCrossReference:
         if missing_roots:
             total_roots = len(scandata.trees)
             coverage = (total_roots - len(missing_roots)) / max(total_roots, 1)
-            assert coverage >= 0.5, (
-                f"Only {coverage:.0%} of tree roots found in graph. "
-                f"Missing: {missing_roots[:5]}"
-            )
+            assert coverage >= 0.5, f"Only {coverage:.0%} of tree roots found in graph. Missing: {missing_roots[:5]}"
 
 
 # ---------------------------------------------------------------------------
@@ -222,9 +211,7 @@ class TestARIKeyCrossReference:
 class TestOPAPayloadEquivalence:
     """Compare OPA hierarchy payloads from both pipelines."""
 
-    def test_graph_payload_has_hierarchy(
-        self, scandata: SingleScan, content_graph: ContentGraph
-    ) -> None:
+    def test_graph_payload_has_hierarchy(self, scandata: SingleScan, content_graph: ContentGraph) -> None:
         """Graph-based payload produces a hierarchy list.
 
         Args:
@@ -243,9 +230,7 @@ class TestOPAPayloadEquivalence:
         assert isinstance(hierarchy, list)
         assert len(hierarchy) >= 1, "Graph payload produced empty hierarchy"
 
-    def test_graph_payload_has_nodes(
-        self, scandata: SingleScan, content_graph: ContentGraph
-    ) -> None:
+    def test_graph_payload_has_nodes(self, scandata: SingleScan, content_graph: ContentGraph) -> None:
         """Graph-based payload hierarchy trees contain node dicts.
 
         Args:
@@ -268,9 +253,7 @@ class TestOPAPayloadEquivalence:
                         total_nodes += len(nodes)
         assert total_nodes > 0, "Graph payload has trees but no nodes"
 
-    def test_graph_payload_node_types_match(
-        self, scandata: SingleScan, content_graph: ContentGraph
-    ) -> None:
+    def test_graph_payload_node_types_match(self, scandata: SingleScan, content_graph: ContentGraph) -> None:
         """Both payloads produce the same set of OPA node types.
 
         Args:
@@ -297,13 +280,10 @@ class TestOPAPayloadEquivalence:
         missing = old_types - new_types
         if missing:
             assert len(missing) <= 1, (
-                f"Graph payload missing OPA node types: {missing}. "
-                f"Old had: {old_types}, new has: {new_types}"
+                f"Graph payload missing OPA node types: {missing}. Old had: {old_types}, new has: {new_types}"
             )
 
-    def test_collection_set_equivalent(
-        self, scandata: SingleScan, content_graph: ContentGraph
-    ) -> None:
+    def test_collection_set_equivalent(self, scandata: SingleScan, content_graph: ContentGraph) -> None:
         """Both payloads derive the same collection_set.
 
         Args:
@@ -329,8 +309,7 @@ class TestOPAPayloadEquivalence:
             overlap = old_colls & new_colls
             coverage = len(overlap) / len(old_colls)
             assert coverage >= 0.5, (
-                f"Collection set overlap is {coverage:.0%}. "
-                f"Old: {sorted(old_colls)}, New: {sorted(new_colls)}"
+                f"Collection set overlap is {coverage:.0%}. Old: {sorted(old_colls)}, New: {sorted(new_colls)}"
             )
 
 
@@ -359,9 +338,7 @@ class TestVariableProvenanceSmokeTest:
                 tasks_with_vars += 1
 
         assert total_tasks > 0, "No task nodes found"
-        assert tasks_with_vars > 0, (
-            f"No tasks had resolvable variables out of {total_tasks}"
-        )
+        assert tasks_with_vars > 0, f"No tasks had resolvable variables out of {total_tasks}"
 
     def test_property_origins_found(self, content_graph: ContentGraph) -> None:
         """PropertyOrigin should find become/environment on some tasks.

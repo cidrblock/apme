@@ -10,9 +10,7 @@ from apme_engine.engine.content_graph import (
     NodeType,
 )
 from apme_engine.engine.variable_provenance import (
-    PropertyOrigin,
     ProvenanceSource,
-    VariableProvenance,
     VariableProvenanceResolver,
 )
 
@@ -164,7 +162,10 @@ def _make_graph_with_vars_file() -> ContentGraph:
 
 
 class TestVariableProvenance:
+    """Tests for ``VariableProvenanceResolver.resolve_variables``."""
+
     def test_local_shadows_play(self) -> None:
+        """Verify task vars shadow play vars and locals are tagged correctly."""
         g = _make_graph_with_vars()
         resolver = VariableProvenanceResolver(g)
         provs = resolver.resolve_variables("site.yml/plays[0]/tasks[0]")
@@ -180,6 +181,7 @@ class TestVariableProvenance:
         assert provs["app_name"].source == ProvenanceSource.PLAY
 
     def test_role_vars_and_defaults(self) -> None:
+        """Verify role-scoped task resolves task-local variables."""
         g = _make_graph_with_role()
         resolver = VariableProvenanceResolver(g)
         provs = resolver.resolve_variables("roles/web/tasks/main.yml/tasks[0]")
@@ -188,6 +190,7 @@ class TestVariableProvenance:
         assert provs["task_var"].source == ProvenanceSource.LOCAL
 
     def test_runtime_data_flow(self) -> None:
+        """Verify register and set_fact flow appear as runtime provenance."""
         g = _make_graph_with_data_flow()
         resolver = VariableProvenanceResolver(g)
         provs = resolver.resolve_variables("play/tasks[1]")
@@ -200,6 +203,7 @@ class TestVariableProvenance:
         assert provs["deploy_ts"].source == ProvenanceSource.RUNTIME
 
     def test_vars_file_variables(self) -> None:
+        """Verify vars_file variables resolve with VARS_FILE source."""
         g = _make_graph_with_vars_file()
         resolver = VariableProvenanceResolver(g)
         provs = resolver.resolve_variables("play/tasks[0]")
@@ -215,7 +219,10 @@ class TestVariableProvenance:
 
 
 class TestPropertyOrigin:
+    """Tests for ``VariableProvenanceResolver.resolve_property_origins``."""
+
     def test_become_origin_from_play(self) -> None:
+        """Verify become is attributed to the ancestor play."""
         g = _make_graph_with_vars()
         resolver = VariableProvenanceResolver(g)
         origins = resolver.resolve_property_origins("site.yml/plays[0]/tasks[0]")
@@ -225,6 +232,7 @@ class TestPropertyOrigin:
         assert origins["become"].value == {"become": True, "become_user": "root"}
 
     def test_environment_origin_from_play(self) -> None:
+        """Verify environment is attributed to the ancestor play."""
         g = _make_graph_with_vars()
         resolver = VariableProvenanceResolver(g)
         origins = resolver.resolve_property_origins("site.yml/plays[0]/tasks[0]")
@@ -233,6 +241,7 @@ class TestPropertyOrigin:
         assert origins["environment"].defining_node_id == "site.yml/plays[0]"
 
     def test_no_origin_when_not_set(self) -> None:
+        """Verify become is absent when no ancestor defines it."""
         g = _make_graph_with_role()
         resolver = VariableProvenanceResolver(g)
         origins = resolver.resolve_property_origins("roles/web/tasks/main.yml/tasks[0]")

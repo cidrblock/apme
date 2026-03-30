@@ -144,9 +144,8 @@ class PythonFileAnalyzer:
                 self._check_doc_constants(node, result)
                 self._check_argument_spec(node, result)
 
-            elif isinstance(node, ast.If):
-                if _is_name_main_guard(node):
-                    result.has_main = True
+            elif isinstance(node, ast.If) and _is_name_main_guard(node):
+                result.has_main = True
 
     def _check_doc_constants(self, node: ast.Assign, result: PythonAnalysisResult) -> None:
         """Check if an assignment defines DOCUMENTATION, EXAMPLES, or RETURN.
@@ -206,7 +205,7 @@ class PythonFileAnalyzer:
 
 
 def _is_name_main_guard(node: ast.If) -> bool:
-    """Check if an If node is ``if __name__ == '__main__':``
+    """Check if an If node is ``if __name__ == '__main__':``.
 
     Args:
         node: AST If node to check.
