@@ -63,7 +63,8 @@ class RolePathIncludeGraphRule(GraphRule):
         node = graph.get_node(node_id)
         if node is None or node.node_type not in _TASK_TYPES:
             return False
-        if "/roles/" not in (node.file_path or ""):
+        fp = node.file_path or ""
+        if "/roles/" not in fp and not fp.startswith("roles/"):
             return False
         resolved = node.resolved_module_name or node.module
         return resolved in INCLUDE_MODULES

@@ -187,8 +187,8 @@ class VarNamingKeywordGraphRule(GraphRule):
 
         if resolved in INCLUDE_VARS_MODULES:
             var_name = mo.get("name")
-            if var_name and var_name in BLOCKED_NAMES:
-                keyword_vars.append(str(var_name))
+            if isinstance(var_name, str) and var_name in BLOCKED_NAMES:
+                keyword_vars.append(var_name)
 
         reg = node.register
         if reg and reg in BLOCKED_NAMES:

@@ -339,6 +339,21 @@ class TestL080InternalVarPrefixGraphRule:
         assert result is not None
         assert result.verdict is False
 
+    def test_violation_relative_role_path(self, rule: InternalVarPrefixGraphRule) -> None:
+        """Set_fact under relative ``roles/`` path also matches.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        mo: YAMLDict = {"my_var": "hello"}
+        g, tid = _make_task(
+            module="set_fact",
+            resolved_module="ansible.builtin.set_fact",
+            module_options=mo,
+            file_path="roles/myrole/tasks/main.yml",
+        )
+        assert rule.match(g, tid)
+
     def test_skip_outside_role(self, rule: InternalVarPrefixGraphRule) -> None:
         """Set_fact outside /roles/ does not match.
 
@@ -423,6 +438,21 @@ class TestL085RolePathIncludeGraphRule:
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is False
+
+    def test_violation_relative_role_path(self, rule: RolePathIncludeGraphRule) -> None:
+        """Include under relative ``roles/`` path also matches.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        mo: YAMLDict = {"file": "{{ task_file }}"}
+        g, tid = _make_task(
+            module="include_tasks",
+            resolved_module="ansible.builtin.include_tasks",
+            module_options=mo,
+            file_path="roles/web/tasks/main.yml",
+        )
+        assert rule.match(g, tid)
 
     def test_skip_outside_role(self, rule: RolePathIncludeGraphRule) -> None:
         """Include outside /roles/ does not match.
