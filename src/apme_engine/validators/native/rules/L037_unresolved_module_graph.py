@@ -9,6 +9,29 @@ from apme_engine.validators.native.rules.graph_rule_base import GraphRule, Graph
 
 _TASK_TYPES = frozenset({NodeType.TASK, NodeType.HANDLER})
 
+_INCLUDE_IMPORT_ACTIONS = frozenset(
+    {
+        "include",
+        "include_tasks",
+        "import_tasks",
+        "include_role",
+        "import_role",
+        "include_vars",
+        "ansible.builtin.include",
+        "ansible.builtin.include_tasks",
+        "ansible.builtin.import_tasks",
+        "ansible.builtin.include_role",
+        "ansible.builtin.import_role",
+        "ansible.builtin.include_vars",
+        "ansible.legacy.include",
+        "ansible.legacy.include_tasks",
+        "ansible.legacy.import_tasks",
+        "ansible.legacy.include_role",
+        "ansible.legacy.import_role",
+        "ansible.legacy.include_vars",
+    }
+)
+
 
 @dataclass
 class UnresolvedModuleGraphRule(GraphRule):
@@ -50,7 +73,7 @@ class UnresolvedModuleGraphRule(GraphRule):
         mod = (node.module or "").strip()
         if not mod or (node.resolved_module_name or "").strip():
             return False
-        return "include_" not in mod and "import_" not in mod
+        return mod not in _INCLUDE_IMPORT_ACTIONS
 
     def process(self, graph: ContentGraph, node_id: str) -> GraphRuleResult | None:
         """Report a violation when the module reference is unresolved.
@@ -74,7 +97,7 @@ class UnresolvedModuleGraphRule(GraphRule):
                 node_id=node_id,
                 file=(node.file_path, node.line_start),
             )
-        if "include_" in mod or "import_" in mod:
+        if mod in _INCLUDE_IMPORT_ACTIONS:
             return GraphRuleResult(
                 verdict=False,
                 node_id=node_id,

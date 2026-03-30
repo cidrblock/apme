@@ -139,6 +139,15 @@ class TestL037UnresolvedModuleGraphRule:
         g, tid = _make_task(module="import_role", resolved_module="")
         assert not rule.match(g, tid)
 
+    def test_skip_bare_include(self, rule: UnresolvedModuleGraphRule) -> None:
+        """Legacy bare ``include`` action is excluded from matching.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, tid = _make_task(module="include", resolved_module="")
+        assert not rule.match(g, tid)
+
     def test_skip_empty_module(self, rule: UnresolvedModuleGraphRule) -> None:
         """Tasks with no module string do not match.
 

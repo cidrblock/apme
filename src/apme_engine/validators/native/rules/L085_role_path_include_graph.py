@@ -15,20 +15,14 @@ _ROLE_PATH_REF = re.compile("role_path")
 INCLUDE_MODULES = frozenset(
     {
         "include_tasks",
-        "import_tasks",
         "include_vars",
         "include_role",
-        "import_role",
         "ansible.builtin.include_tasks",
-        "ansible.builtin.import_tasks",
         "ansible.builtin.include_vars",
         "ansible.builtin.include_role",
-        "ansible.builtin.import_role",
         "ansible.legacy.include_tasks",
-        "ansible.legacy.import_tasks",
         "ansible.legacy.include_vars",
         "ansible.legacy.include_role",
-        "ansible.legacy.import_role",
     }
 )
 

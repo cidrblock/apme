@@ -551,9 +551,7 @@ class TestRoleMetadataScannerIntegration:
         g, _rid = _make_role(role_metadata={})
         rules: list[GraphRule] = [RoleWithoutMetadataGraphRule()]
         report = scan(g, rules)
-        violations = [
-            rr for nr in report.node_results for rr in nr.rule_results if rr.verdict
-        ]
+        violations = [rr for nr in report.node_results for rr in nr.rule_results if rr.verdict]
         assert len(violations) == 1
         assert violations[0].rule is not None
         assert violations[0].rule.rule_id == "L027"
@@ -583,7 +581,5 @@ class TestRoleMetadataScannerIntegration:
             RoleVarPrefixGraphRule(),
         ]
         report = scan(g, rules)
-        violations = [
-            rr for nr in report.node_results for rr in nr.rule_results if rr.verdict
-        ]
+        violations = [rr for nr in report.node_results for rr in nr.rule_results if rr.verdict]
         assert len(violations) == 0
