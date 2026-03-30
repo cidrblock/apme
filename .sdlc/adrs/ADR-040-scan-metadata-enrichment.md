@@ -54,8 +54,9 @@ message CollectionRef {
 message PythonPackageRef {
   string name = 1;            // e.g. "jmespath" (PEP 503 normalized)
   string version = 2;         // e.g. "1.0.1"
-  string license = 3;         // from package METADATA
-  string supplier = 4;        // from package METADATA Author field
+  reserved 3;                 // was required_by (removed)
+  string license = 4;         // from package METADATA
+  string supplier = 5;        // from package METADATA Author field
 }
 
 message ProjectManifest {
@@ -242,7 +243,7 @@ The proxy already resolves transitive dependencies. The engine reads the install
 - ADR-029: Web Gateway architecture (persistence layer, REST API)
 - ADR-037: Project-centric UI model (project entity that manifests attach to)
 - ADR-038: Public data API (the REST API surface these endpoints extend)
-- DR-002: SBOM generation (manifest data is the prerequisite; CycloneDX serialization is a Gateway view)
+- DR-002: SBOM Format and Scope (manifest data is the prerequisite; CycloneDX serialization is a Gateway view)
 - ADR-024: Thin CLI — future direction for CLI → Gateway REST migration; `apme sbom` is the first case
 - ADR-044: Node Identity / ContentGraph — role inventory deferred until the graph model is available
 

@@ -318,7 +318,7 @@ Primary:
 
 | Operation | Current path | Future path |
 |-----------|-------------|-------------|
-| `sbom` | (not implemented) | CLI → Gateway REST (`GET /api/v1/projects/{id}/sbom`) |
+| `sbom` | (not implemented) | CLI → Gateway REST (`GET /api/v1/projects/{id}/sbom?format=cyclonedx`) |
 | `health-check` | CLI → gRPC Health probes | CLI → Gateway REST (aggregated health) |
 | `session list/info` | CLI → gRPC Primary | CLI → Gateway REST (persisted session data) |
 
