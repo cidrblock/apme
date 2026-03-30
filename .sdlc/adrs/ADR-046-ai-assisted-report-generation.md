@@ -142,7 +142,7 @@ Available data endpoints (all GET, prefix /api/v1):
 /violations/top?limit=N
   Global rule frequency: rule_id, count
 
-/projects/{id}/trend?limit=N
+/projects/{project_id}/trend?limit=N
   Time series per scan: scan_id, created_at, total_violations, fixable, scan_type
 
 /stats/remediation-rates?limit=N
@@ -302,10 +302,10 @@ Add Gateway endpoints to support queries that existing endpoints cannot answer:
 | User query | Visualization | Endpoints used |
 |-----------|---------------|----------------|
 | "Which violations should we focus on?" | bar-chart + table + narrative | `/violations/top`, `/stats/remediation-rates` |
-| "Which projects are improving?" | line-chart + table + narrative | `/dashboard/rankings`, `/projects/{id}/trend` |
+| "Which projects are improving?" | line-chart + table + narrative | `/dashboard/rankings`, `/projects/{project_id}/trend` |
 | "What are the most common mistakes?" | table + narrative | `/violations/top`, `/rules` (ADR-041) |
 | "How effective has AI remediation been?" | donut-chart + bar-chart + table | `/stats/ai-acceptance`, `/stats/remediation-rates` |
-| "Compare project X and project Y" | mirrored-bar + line-chart + table | `/projects/{x}`, `/projects/{y}`, `/projects/{id}/trend` |
+| "Compare project X and project Y" | mirrored-bar + line-chart + table | `/projects/{project_id}`, `/projects/{project_id}/trend` |
 | "Show severity breakdown by project" | heatmap + table | `/reports/matrix?rows=project&cols=severity` |
 | "Executive summary of fleet health" | donut-chart + line-chart + table + narrative | `/dashboard/summary`, `/dashboard/trends`, `/dashboard/rankings` |
 
