@@ -572,9 +572,7 @@ class TestPhase2GScannerIntegration:
     def test_scan_parameterized_role(self) -> None:
         """Scanner picks up R111 violations."""
         mo: YAMLDict = {"name": "{{ role_var }}"}
-        g, _tid = _make_task(
-            module="include_role", resolved_module="ansible.builtin.include_role", module_options=mo
-        )
+        g, _tid = _make_task(module="include_role", resolved_module="ansible.builtin.include_role", module_options=mo)
         rules: list[GraphRule] = [ParameterizedImportRoleGraphRule()]
         report = scan(g, rules)
         violations = [rr for nr in report.node_results for rr in nr.rule_results if rr.verdict]
@@ -585,9 +583,7 @@ class TestPhase2GScannerIntegration:
     def test_scan_parameterized_taskfile(self) -> None:
         """Scanner picks up R112 violations."""
         mo: YAMLDict = {"file": "{{ task_var }}.yml"}
-        g, _tid = _make_task(
-            module="include_tasks", resolved_module="ansible.builtin.include_tasks", module_options=mo
-        )
+        g, _tid = _make_task(module="include_tasks", resolved_module="ansible.builtin.include_tasks", module_options=mo)
         rules: list[GraphRule] = [ParameterizedImportTaskfileGraphRule()]
         report = scan(g, rules)
         violations = [rr for nr in report.node_results for rr in nr.rule_results if rr.verdict]

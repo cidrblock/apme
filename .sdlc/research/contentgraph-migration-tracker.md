@@ -9,9 +9,9 @@
 | Metric | Count |
 |--------|-------|
 | Total native rules | 96 |
-| Ported to GraphRule | 47 |
-| Remaining | 49 |
-| Migration % | 49.0% |
+| Ported to GraphRule | 64 |
+| Remaining | 32 |
+| Migration % | 66.7% |
 
 ## Ported Rules (47)
 
@@ -88,7 +88,7 @@
 | L077 | RoleArgSpecs | ROLE_METADATA |
 | L079 | RoleVarPrefix | ROLE_METADATA |
 
-### Phase 2G — module_options-based batch (PR #TBD)
+### Phase 2G — module_options-based batch (PR #147)
 
 | Rule | Name | Category |
 |------|------|----------|
@@ -97,35 +97,31 @@
 | R111 | ParameterizedImportRole | TASK_LOCAL |
 | R112 | ParameterizedImportTaskfile | TASK_LOCAL |
 
+### Phase 2H — yaml_lines extension + content rules (PR #147)
+
+| Rule | Name | Category |
+|------|------|----------|
+| L040 | NoTabs | TASK_LOCAL |
+| L041 | KeyOrder | TASK_LOCAL |
+| L043 | DeprecatedBareVars | TASK_LOCAL |
+| L051 | Jinja | TASK_LOCAL |
+| L060 | LineLength | TASK_LOCAL |
+| L073 | Indentation | TASK_LOCAL |
+| L076 | AnsibleFactsBracket | TASK_LOCAL |
+| L078 | DotNotation | TASK_LOCAL |
+| L083 | HardcodedGroup | TASK_LOCAL |
+| L091 | BoolFilter | TASK_LOCAL |
+| L094 | DynamicTemplateDate | TASK_LOCAL |
+| L098 | YamlKeyDuplicates | TASK_LOCAL |
+| L099 | YamlQuotedStrings | TASK_LOCAL |
+| M014 | TopLevelFactVariables | TASK_LOCAL |
+| M015 | PlayHostsMagicVariable | TASK_LOCAL |
+| M019 | OmapPairsYamlTags | TASK_LOCAL |
+| M020 | VaultEncryptedTag | TASK_LOCAL |
+
 ---
 
-## Remaining Rules (49)
-
-### Needs `yaml_lines` / raw YAML content
-
-These rules inspect raw YAML text (whitespace, indentation, line
-length, quoting, Jinja spacing, etc.). Requires adding `yaml_lines`
-or equivalent to `ContentNode`.
-
-| Rule | Name | Severity | What it checks |
-|------|------|----------|----------------|
-| L040 | NoTabs | VERY_LOW | Tab characters in YAML |
-| L041 | KeyOrder | VERY_LOW | Task key ordering (name first, etc.) |
-| L043 | DeprecatedBareVars | LOW | Bare Jinja in `with_*` / `when` |
-| L051 | Jinja | VERY_LOW | Jinja spacing style (`{{ x }}` vs `{{x}}`) |
-| L060 | LineLength | VERY_LOW | Line exceeds max length |
-| L073 | Indentation | VERY_LOW | Indentation consistency |
-| L076 | AnsibleFactsBracket | VERY_LOW | `ansible_facts['x']` vs `ansible_facts.x` |
-| L078 | DotNotation | VERY_LOW | Dict bracket vs dot notation |
-| L083 | HardcodedGroup | LOW | Hardcoded group references |
-| L091 | BoolFilter | LOW | Bare `bool` filter style in `when` |
-| L094 | DynamicTemplateDate | LOW | Dynamic date strings in templates |
-| L098 | YamlKeyDuplicates | HIGH | Duplicate keys in YAML |
-| L099 | YamlQuotedStrings | VERY_LOW | Quoted vs unquoted scalar style |
-| M014 | TopLevelFactVariables | HIGH | `set_fact` at play level |
-| M015 | PlayHostsMagicVariable | MEDIUM | Magic variables in `hosts:` |
-| M019 | OmapPairsYamlTags | LOW | `!!omap` / `!!pairs` YAML tags |
-| M020 | VaultEncryptedTag | LOW | `!vault` encrypted marker |
+## Remaining Rules (32)
 
 ### Needs annotation infrastructure
 
@@ -200,7 +196,7 @@ comes from the collection resolver (same infrastructure).
 1. ~~**Phase 2E**: Simple task-local batch 2 (9 rules)~~ **DONE**
 2. ~~**Phase 2F**: Role-metadata rules (7 rules)~~ **DONE**
 3. ~~**Phase 2G**: `module_options`-based rules (4 rules: L035, L046, R111, R112)~~ **DONE**
-4. **Phase 2H**: `yaml_lines` extension + content rules (17 rules)
+4. ~~**Phase 2H**: `yaml_lines` extension + content rules (17 rules)~~ **DONE**
 5. **Phase 2I**: Annotation infrastructure + risk/policy rules (14 rules)
 6. **Phase 2J**: Variable tracking rules (4 rules)
 7. **Phase 2K**: Collection/plugin targets + aggregation + R501 (12 rules)
@@ -212,8 +208,9 @@ comes from the collection resolver (same infrastructure).
 
 Fields still needed for full migration:
 
-- [ ] `yaml_lines: list[str]` — raw YAML source lines for the node's span
-  (Phase 2H: 17 rules need raw text for whitespace/indentation/quoting checks)
+- [x] `yaml_lines: str` — raw YAML source fragment for the node's span
+  (Phase 2H: added to `ContentNode`, populated in `GraphBuilder._build_task()` and
+  `_build_handler()` from `task.yaml_lines`; 17 rules now use it)
 - [x] ~~`raw_args: str | dict`~~ — **NOT NEEDED**: `module_options._raw_params`
   already available (M027, L085 use it); L035, L046 port via `module_options`
 - [x] ~~`is_mutable: bool`~~ — **NOT NEEDED as a field**: simple Jinja detection
@@ -247,7 +244,7 @@ Deliverables: `ContentGraph`, `GraphBuilder`, `GraphRule`, `NodeIdentity`,
 every edge type, `APME_USE_CONTENT_GRAPH` feature flag,
 `test_content_graph_shadow.py` structural equivalence.
 
-### Phase 2 — Rules + switchover: IN PROGRESS (47/96 = 49.0%)
+### Phase 2 — Rules + switchover: IN PROGRESS (64/96 = 66.7%)
 
 Rule porting follows the priority taxonomy from ADR-044:
 
@@ -255,7 +252,7 @@ Rule porting follows the priority taxonomy from ADR-044:
 |----------|---------------|--------|-----------|--------|
 | INHERITED_PROPERTY | ~10 | 9 | — | Done (Phases 2A-2B) |
 | SCOPE_AWARE | ~8 | 8 | — | Done (Phase 2C) |
-| TASK_LOCAL | ~78 | 23 | 49 | In progress (Phases 2D-2K) |
+| TASK_LOCAL | ~78 | 40 | 32 | In progress (Phases 2D-2K) |
 | ROLE_METADATA | (subset of task-local) | 7 | — | Done (Phase 2F) |
 
 End-of-Phase-2 gates (from ADR-044):
