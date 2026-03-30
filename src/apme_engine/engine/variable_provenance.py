@@ -198,6 +198,74 @@ class VariableProvenanceResolver:
 
         return result
 
+    def resolve_all_definitions(self, node_id: str) -> dict[str, list[VariableProvenance]]:
+        """Return every variable definition visible to a node, without shadowing.
+
+        Unlike ``resolve_variables()`` which returns only the winning
+        definition, this returns *all* definitions at every scope level,
+        ordered from innermost scope (self) to outermost (root).  Useful
+        for detecting ineffective overrides (L034) where a lower-precedence
+        definition is shadowed by a higher one.
+
+        Args:
+            node_id: Graph node id whose full variable scope is resolved.
+
+        Returns:
+            Map from variable name to list of ``VariableProvenance`` entries
+            (innermost scope first).
+        """
+        result: dict[str, list[VariableProvenance]] = {}
+        node = self._graph.get_node(node_id)
+        if node is None:
+            return result
+
+        scope_chain = self._build_scope_chain(node_id)
+
+        for scope_node in scope_chain:
+            source = _PROVENANCE_BY_NODE_TYPE.get(scope_node.node_type, ProvenanceSource.EXTERNAL)
+
+            if scope_node.node_type == NodeType.ROLE:
+                for name, value in scope_node.default_variables.items():
+                    result.setdefault(name, []).append(
+                        VariableProvenance(
+                            name=name,
+                            value=value,
+                            source=ProvenanceSource.ROLE_DEFAULT,
+                            defining_node_id=scope_node.node_id,
+                            file_path=scope_node.file_path,
+                            line=scope_node.line_start,
+                        )
+                    )
+                for name, value in scope_node.role_variables.items():
+                    result.setdefault(name, []).append(
+                        VariableProvenance(
+                            name=name,
+                            value=value,
+                            source=ProvenanceSource.ROLE_VAR,
+                            defining_node_id=scope_node.node_id,
+                            file_path=scope_node.file_path,
+                            line=scope_node.line_start,
+                        )
+                    )
+            else:
+                for name, value in scope_node.variables.items():
+                    result.setdefault(name, []).append(
+                        VariableProvenance(
+                            name=name,
+                            value=value,
+                            source=source,
+                            defining_node_id=scope_node.node_id,
+                            file_path=scope_node.file_path,
+                            line=scope_node.line_start,
+                        )
+                    )
+
+            self._collect_vars_file_all(scope_node, result)
+
+        self._collect_runtime_vars_all(node_id, result)
+
+        return result
+
     def resolve_property_origins(self, node_id: str) -> dict[str, PropertyOrigin]:
         """Find the defining scope for each inherited property.
 
@@ -274,6 +342,33 @@ class VariableProvenanceResolver:
                         line=vf_node.line_start,
                     )
 
+    def _collect_vars_file_all(
+        self,
+        scope_node: ContentNode,
+        result: dict[str, list[VariableProvenance]],
+    ) -> None:
+        """Collect vars_file definitions into a multi-definition map.
+
+        Args:
+            scope_node: Scope node with potential ``VARS_INCLUDE`` edges.
+            result: Multi-definition map updated in place.
+        """
+        for target_id, _attrs in self._graph.edges_from(scope_node.node_id, EdgeType.VARS_INCLUDE):
+            vf_node = self._graph.get_node(target_id)
+            if vf_node is None:
+                continue
+            for name, value in vf_node.variables.items():
+                result.setdefault(name, []).append(
+                    VariableProvenance(
+                        name=name,
+                        value=value,
+                        source=ProvenanceSource.VARS_FILE,
+                        defining_node_id=vf_node.node_id,
+                        file_path=vf_node.file_path,
+                        line=vf_node.line_start,
+                    )
+                )
+
     def _collect_runtime_vars(
         self,
         node_id: str,
@@ -306,4 +401,42 @@ class VariableProvenanceResolver:
                     defining_node_id=source_node.node_id,
                     file_path=source_node.file_path,
                     line=source_node.line_start,
+                )
+
+    def _collect_runtime_vars_all(
+        self,
+        node_id: str,
+        result: dict[str, list[VariableProvenance]],
+    ) -> None:
+        """Collect runtime definitions into a multi-definition map.
+
+        Args:
+            node_id: Consumer task node id.
+            result: Multi-definition map updated in place.
+        """
+        for source_id, _attrs in self._graph.edges_to(node_id, EdgeType.DATA_FLOW):
+            source_node = self._graph.get_node(source_id)
+            if source_node is None:
+                continue
+            if source_node.register:
+                result.setdefault(source_node.register, []).append(
+                    VariableProvenance(
+                        name=source_node.register,
+                        value=None,
+                        source=ProvenanceSource.RUNTIME,
+                        defining_node_id=source_node.node_id,
+                        file_path=source_node.file_path,
+                        line=source_node.line_start,
+                    )
+                )
+            for fact_name in source_node.set_facts:
+                result.setdefault(fact_name, []).append(
+                    VariableProvenance(
+                        name=fact_name,
+                        value=source_node.set_facts.get(fact_name),
+                        source=ProvenanceSource.RUNTIME,
+                        defining_node_id=source_node.node_id,
+                        file_path=source_node.file_path,
+                        line=source_node.line_start,
+                    )
                 )

@@ -7,12 +7,29 @@ scope: role
 
 ## External role (R117)
 
-Role is from Galaxy/external source. Requires role metadata; cannot test in playbook harness.
+Detects when a play references a role from Galaxy or an external source (identified by `galaxy_info` in `meta/main.yml`). External roles introduce supply-chain risk and should be reviewed, pinned to versions, and tracked in dependency manifests.
+
+Requires role metadata; cannot be tested in the playbook-only harness.
+
+### Violation (requires role metadata context)
+
+```yaml
+# meta/main.yml of an external Galaxy role:
+galaxy_info:
+  role_name: nginx
+  author: geerlingguy
+  description: Installs and configures Nginx
+  license: BSD
+  min_ansible_version: "2.9"
+```
 
 ### Example: pass
 
 ```yaml
-galaxy_info:
-  role_name: my_role
-  author: Example
+- name: Local play
+  hosts: localhost
+  tasks:
+    - name: Run local task
+      ansible.builtin.debug:
+        msg: "No external roles referenced"
 ```

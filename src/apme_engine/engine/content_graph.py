@@ -210,6 +210,7 @@ class ContentNode:
         role_fqcn: Role FQCN when this node is role-related.
         default_variables: Role defaults mapping.
         role_variables: Role vars mapping.
+        role_metadata: Role meta/main.yml contents (galaxy_info, dependencies, etc.).
         collection_namespace: Declaring collection namespace.
         collection_name: Declaring collection name.
         ari_key: Legacy ARI object key for cross-checks.
@@ -254,6 +255,7 @@ class ContentNode:
     role_fqcn: str = ""
     default_variables: YAMLDict = field(default_factory=dict)
     role_variables: YAMLDict = field(default_factory=dict)
+    role_metadata: YAMLDict = field(default_factory=dict)
 
     # Collection metadata
     collection_namespace: str = ""
@@ -1128,6 +1130,9 @@ class GraphBuilder:
             return nid
         self._visited.add(nid)
 
+        raw_metadata = getattr(role, "metadata", None)
+        role_metadata = _safe_dict(raw_metadata) if isinstance(raw_metadata, dict) else {}
+
         node = ContentNode(
             identity=identity,
             file_path=defined_in,
@@ -1135,6 +1140,7 @@ class GraphBuilder:
             role_fqcn=role_fqcn,
             default_variables=_safe_dict(getattr(role, "default_variables", {})),
             role_variables=_safe_dict(getattr(role, "variables", {})),
+            role_metadata=role_metadata,
             ari_key=role.key,
             scope=scope,
         )
