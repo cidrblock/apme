@@ -945,9 +945,9 @@ class GraphBuilder:
         )
         self._graph.add_node(node)
 
-        for mod_or_key in getattr(coll, "modules", []) or []:
-            from .models import Module
+        from .models import Module
 
+        for mod_or_key in getattr(coll, "modules", []) or []:
             mod: Module | None = None
             if isinstance(mod_or_key, Module):
                 mod = mod_or_key
