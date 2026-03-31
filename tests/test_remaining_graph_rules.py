@@ -31,7 +31,6 @@ from apme_engine.validators.native.rules.L104_galaxy_runtime_graph import Galaxy
 from apme_engine.validators.native.rules.L105_galaxy_repository_graph import GalaxyRepositoryGraphRule
 from apme_engine.validators.native.rules.R401_list_all_inbound_src_graph import ListAllInboundSrcGraphRule
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -366,9 +365,7 @@ class TestCollectionPluginStubRules:
         rule = rule_cls()
         g, _ = _make_task()
         report = scan(g, [rule])
-        violations = [
-            rr for nr in report.node_results for rr in nr.rule_results if rr.verdict
-        ]
+        violations = [rr for nr in report.node_results for rr in nr.rule_results if rr.verdict]
         assert len(violations) == 0
 
 
@@ -384,9 +381,7 @@ class TestPhase2JKScanner:
         """L056 fires for ``.git/`` path through scanner."""
         g, _ = _make_task(file_path="project/.git/config")
         report = scan(g, [SanityGraphRule()])
-        violations = [
-            rr for nr in report.node_results for rr in nr.rule_results if rr.verdict
-        ]
+        violations = [rr for nr in report.node_results for rr in nr.rule_results if rr.verdict]
         assert len(violations) == 1
 
     def test_r401_via_scanner(self) -> None:
@@ -397,7 +392,5 @@ class TestPhase2JKScanner:
             module_options={"url": "https://example.com/x", "dest": "/tmp/"},
         )
         report = scan(g, [ListAllInboundSrcGraphRule()])
-        violations = [
-            rr for nr in report.node_results for rr in nr.rule_results if rr.verdict
-        ]
+        violations = [rr for nr in report.node_results for rr in nr.rule_results if rr.verdict]
         assert len(violations) == 1
