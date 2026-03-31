@@ -27,6 +27,7 @@ from .models import YAMLDict, YAMLValue
 
 if TYPE_CHECKING:
     from .models import (
+        Collection,
         ObjectList,
         Play,
         Playbook,
@@ -214,6 +215,9 @@ class ContentNode:
         role_metadata: Role meta/main.yml contents (galaxy_info, dependencies, etc.).
         collection_namespace: Declaring collection namespace.
         collection_name: Declaring collection name.
+        collection_metadata: Parsed ``galaxy.yml`` contents for COLLECTION nodes.
+        collection_meta_runtime: Parsed ``meta/runtime.yml`` for COLLECTION nodes.
+        collection_files: File paths within the collection root.
         ari_key: Legacy ARI object key for cross-checks.
         annotations: Annotator payloads (risk, module hints, etc.).
         scope: Owned vs referenced content classification.
@@ -264,6 +268,9 @@ class ContentNode:
     # Collection metadata
     collection_namespace: str = ""
     collection_name: str = ""
+    collection_metadata: YAMLDict = field(default_factory=dict)
+    collection_meta_runtime: YAMLDict = field(default_factory=dict)
+    collection_files: list[str] = field(default_factory=list)
 
     # ARI cross-reference (populated during build for validation)
     ari_key: str = ""
@@ -667,6 +674,9 @@ _CONTENT_NODE_SIMPLE_FIELDS: tuple[str, ...] = (
     "role_metadata",
     "collection_namespace",
     "collection_name",
+    "collection_metadata",
+    "collection_meta_runtime",
+    "collection_files",
     "ari_key",
 )
 
@@ -841,7 +851,13 @@ class GraphBuilder:
             loaded: Output of ``load_all_definitions`` (playbooks, roles, taskfiles lists).
             scope: Whether nodes are owned project content or referenced externals.
         """
-        from .models import ObjectList, Playbook, Role, TaskFile
+        from .models import Collection, ObjectList, Playbook, Role, TaskFile
+
+        collections = loaded.get("collections", ObjectList())
+        if isinstance(collections, ObjectList):
+            for item in collections.items:
+                if isinstance(item, Collection):
+                    self._build_collection(item, scope)
 
         playbooks = loaded.get("playbooks", ObjectList())
         if isinstance(playbooks, ObjectList):
@@ -860,6 +876,55 @@ class GraphBuilder:
             for item in taskfiles.items:
                 if isinstance(item, TaskFile):
                     self._build_taskfile(item, scope=scope)
+
+    # -- Collection ---------------------------------------------------------
+
+    def _build_collection(self, coll: Collection, scope: NodeScope) -> str:
+        """Build a COLLECTION graph node from an ARI Collection object.
+
+        Populates ``collection_metadata`` (galaxy.yml), ``collection_meta_runtime``
+        (meta/runtime.yml), and ``collection_files`` (file listing) so that
+        collection-level rules (L087, L088, L096, L103–L105) can inspect them.
+
+        Args:
+            coll: Parsed collection ARI object.
+            scope: Ownership scope for the created node.
+
+        Returns:
+            Collection node id.
+        """
+        coll_name = getattr(coll, "name", "") or ""
+        coll_path = getattr(coll, "path", "") or coll_name
+        identity = NodeIdentity(path=coll_path, node_type=NodeType.COLLECTION)
+        nid = identity.path
+
+        if nid in self._visited:
+            return nid
+        self._visited.add(nid)
+
+        metadata = _safe_dict(getattr(coll, "metadata", {}))
+        meta_runtime = _safe_dict(getattr(coll, "meta_runtime", {}))
+
+        files_raw = getattr(coll, "files", {})
+        collection_files = [str(f) for f in files_raw] if isinstance(files_raw, (dict, list)) else []
+
+        ns = metadata.get("namespace", "") or ""
+        name = metadata.get("name", "") or coll_name
+
+        node = ContentNode(
+            identity=identity,
+            file_path=coll_path,
+            name=coll_name or None,
+            collection_namespace=str(ns),
+            collection_name=str(name),
+            collection_metadata=metadata,
+            collection_meta_runtime=meta_runtime,
+            collection_files=collection_files,
+            ari_key=coll.key,
+            scope=scope,
+        )
+        self._graph.add_node(node)
+        return nid
 
     # -- Playbook -----------------------------------------------------------
 
