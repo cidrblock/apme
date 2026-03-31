@@ -123,7 +123,7 @@ and `getSessionTrend` exist in `api.ts` but are not called from DashboardPage.
 **Capabilities**:
 - Search filter (client-side text match)
 - Client-side sortable columns (name, health score, violations, last scanned)
-- Create project modal (name, repo URL, branch, ansible version, collections)
+- Create project modal (name, repo URL, branch; ansible version and collections are configured per operation via `CheckOptionsForm`)
 - Kebab menu per row: edit, delete
 - Row click navigates to project detail
 - Empty state with create prompt
@@ -140,7 +140,7 @@ and `getSessionTrend` exist in `api.ts` but are not called from DashboardPage.
 2. **Activity** — check/remediate buttons, scan history table linking to activity detail
 3. **Violations** — current violation list with severity/rule filters
 4. **Dependencies** — collections and Python packages used, linking to dependency detail pages
-5. **Settings** — edit project config (name, repo URL, branch, ansible version, collections), delete project
+5. **Settings** — edit project details (name, repo URL, branch); delete project. Ansible version and collections are per-operation options, not persisted project settings.
 
 **Data sources**:
 - `GET /projects/{id}` — project detail

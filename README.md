@@ -166,7 +166,7 @@ abbenay          50057  AI provider (gRPC)
 ./containers/podman/build.sh --no-cache # rebuild from scratch
 ```
 
-The build script creates a shared base image first (`apme-base`) so pip
+The build script creates a shared base image first (`localhost/apme-base:latest`) so pip
 dependencies are resolved once, then builds each service image. It also
 pulls the Abbenay AI image from `ghcr.io`. At the end it offers to start
 the pod automatically.
