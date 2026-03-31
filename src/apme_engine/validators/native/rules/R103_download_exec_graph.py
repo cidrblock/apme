@@ -103,20 +103,13 @@ class DownloadExecGraphRule(GraphRule):
 
         detail: YAMLDict = {"command": cmd}
 
-        siblings = graph.children(parent_play.node_id)
-        for sibling in siblings:
-            if sibling.line_start >= node.line_start:
-                continue
-            if sibling.node_type not in _TASK_TYPES:
-                continue
-
-            sib_profile = get_risk_profile(
-                sibling.resolved_module_name, sibling.module
-            )
+        preceding = _preceding_tasks(graph, parent_play.node_id, node)
+        for task_node in preceding:
+            sib_profile = get_risk_profile(task_node.resolved_module_name, task_node.module)
             if sib_profile is None or sib_profile.risk_type != "inbound":
                 continue
 
-            sib_mo = sibling.module_options
+            sib_mo = task_node.module_options
             if not isinstance(sib_mo, dict):
                 continue
 
@@ -142,9 +135,32 @@ class DownloadExecGraphRule(GraphRule):
         )
 
 
-def _find_enclosing_play(
-    graph: ContentGraph, node_id: str
-) -> ContentNode | None:
+def _preceding_tasks(graph: ContentGraph, play_id: str, current: ContentNode) -> list[ContentNode]:
+    """Collect all task/handler descendants of *play_id* that precede *current*.
+
+    Walks the full descendant tree so tasks inside ``block:`` scopes are
+    included, not just direct children.
+
+    Args:
+        graph: The content graph.
+        play_id: Node ID of the enclosing play.
+        current: The current command-execution node.
+
+    Returns:
+        Task/handler nodes with ``line_start`` < ``current.line_start``.
+    """
+    result: list[ContentNode] = []
+    for desc_id in graph.descendants(play_id):
+        desc = graph.get_node(desc_id)
+        if desc is None or desc.node_type not in _TASK_TYPES:
+            continue
+        if desc.line_start >= current.line_start:
+            continue
+        result.append(desc)
+    return result
+
+
+def _find_enclosing_play(graph: ContentGraph, node_id: str) -> ContentNode | None:
     """Walk ancestors to find the nearest PLAY node.
 
     Args:

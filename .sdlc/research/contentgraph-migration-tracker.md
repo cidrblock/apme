@@ -120,7 +120,7 @@
 | M019 | OmapPairsYamlTags | TASK_LOCAL |
 | M020 | VaultEncryptedTag | TASK_LOCAL |
 
-### Phase 2I — Annotation rules via module_options (PR #TBD)
+### Phase 2I — Annotation rules via module_options (PR #149)
 
 Strategy: Inline module-options field mapping + `is_templated()` heuristic
 instead of wiring the legacy annotation pipeline. Shared infrastructure

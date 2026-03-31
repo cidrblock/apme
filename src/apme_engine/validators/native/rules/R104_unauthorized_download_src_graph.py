@@ -104,22 +104,18 @@ def _is_allowed_url(src: str, allow_list: list[str], deny_list: list[str]) -> bo
 
     When ``allow_list`` is non-empty the URL must match at least one
     allow pattern.  Otherwise, the URL must not match any deny pattern.
+    Patterns are Python regex strings passed to ``re.match()``.
 
     Args:
         src: URL to check.
-        allow_list: Allowed URL glob patterns.
-        deny_list: Denied URL glob patterns.
+        allow_list: Allowed URL regex patterns.
+        deny_list: Denied URL regex patterns.
 
     Returns:
         True if the URL is allowed.
     """
     if allow_list:
-        for pattern in allow_list:
-            if re.match(pattern, src):
-                return True
-        return False
+        return any(re.match(pattern, src) for pattern in allow_list)
     if deny_list:
-        for pattern in deny_list:
-            if re.match(pattern, src):
-                return False
+        return not any(re.match(pattern, src) for pattern in deny_list)
     return True

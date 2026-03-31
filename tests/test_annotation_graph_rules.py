@@ -54,7 +54,6 @@ from apme_engine.validators.native.rules.R115_file_deletion_graph import (
     FileDeletionGraphRule,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -209,9 +208,7 @@ class TestModuleRiskMapping:
 
     def test_resolve_field_chain(self) -> None:
         """Field chain falls back to second key."""
-        profile = RiskProfile(
-            risk_type="test", field_chains={"cmd": ("_raw_params", "cmd")}
-        )
+        profile = RiskProfile(risk_type="test", field_chains={"cmd": ("_raw_params", "cmd")})
         assert resolve_field({"cmd": "ls -la"}, profile, "cmd") == "ls -la"
 
     def test_resolve_field_missing(self) -> None:
@@ -828,7 +825,7 @@ class TestR114FileChangeGraphRule:
         assert result.verdict is False
 
     def test_lineinfile(self, rule: FileChangeGraphRule) -> None:
-        """lineinfile with templated path triggers.
+        """Lineinfile with templated path triggers.
 
         Args:
             rule: Rule instance under test.
@@ -1106,6 +1103,68 @@ class TestR103DownloadExecGraphRule:
         result = rule.process(g, dl_id)
         assert result is not None
         assert result.verdict is False
+
+    def test_block_nested_download_exec(self, rule: DownloadExecGraphRule) -> None:
+        """Download and exec inside the same block triggers violation.
+
+        Tasks inside a ``block:`` are CONTAINS children of the BLOCK node,
+        not direct children of the PLAY.  R103 must walk descendants, not
+        just direct children.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g = ContentGraph()
+        pb = ContentNode(
+            identity=NodeIdentity(path="site.yml", node_type=NodeType.PLAYBOOK),
+            file_path="site.yml",
+            scope=NodeScope.OWNED,
+        )
+        play = ContentNode(
+            identity=NodeIdentity(path="site.yml/plays[0]", node_type=NodeType.PLAY),
+            file_path="site.yml",
+            scope=NodeScope.OWNED,
+        )
+        block = ContentNode(
+            identity=NodeIdentity(path="site.yml/plays[0]/tasks[0]", node_type=NodeType.BLOCK),
+            file_path="site.yml",
+            line_start=3,
+            scope=NodeScope.OWNED,
+        )
+        dl_task = ContentNode(
+            identity=NodeIdentity(path="site.yml/plays[0]/tasks[0]/block[0]", node_type=NodeType.TASK),
+            file_path="site.yml",
+            line_start=5,
+            module="get_url",
+            resolved_module_name="ansible.builtin.get_url",
+            module_options={"url": "{{ evil_url }}", "dest": "/tmp/run.sh"},
+            scope=NodeScope.OWNED,
+        )
+        exec_task = ContentNode(
+            identity=NodeIdentity(path="site.yml/plays[0]/tasks[0]/block[1]", node_type=NodeType.TASK),
+            file_path="site.yml",
+            line_start=10,
+            module="shell",
+            resolved_module_name="ansible.builtin.shell",
+            module_options={"_raw_params": "/tmp/run.sh"},
+            scope=NodeScope.OWNED,
+        )
+        g.add_node(pb)
+        g.add_node(play)
+        g.add_node(block)
+        g.add_node(dl_task)
+        g.add_node(exec_task)
+        g.add_edge(pb.node_id, play.node_id, EdgeType.CONTAINS)
+        g.add_edge(play.node_id, block.node_id, EdgeType.CONTAINS)
+        g.add_edge(block.node_id, dl_task.node_id, EdgeType.CONTAINS)
+        g.add_edge(block.node_id, exec_task.node_id, EdgeType.CONTAINS)
+
+        assert rule.match(g, exec_task.node_id)
+        result = rule.process(g, exec_task.node_id)
+        assert result is not None
+        assert result.verdict is True
+        assert result.detail is not None
+        assert result.detail["executed_file"] == "/tmp/run.sh"
 
 
 # ===========================================================================
