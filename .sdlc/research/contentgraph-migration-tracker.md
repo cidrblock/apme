@@ -324,10 +324,11 @@ End-of-Phase-2 gates (from ADR-044):
 - [x] Graph rules execute in native validator via gRPC (PR #153)
 - [x] OPA hierarchy built from ContentGraph (PR #154)
 - [x] Stop sending jsonpickle scandata via gRPC (PR #156)
+- [x] Decouple `GraphBuilder` from `tree.py` — inlined
+      `load_all_definitions` into `content_graph.py` (PR #161)
 - [ ] Remove `TreeLoader`, `AnsibleRunContext`, `RunTarget`, `ObjectList`,
-      `Context.add()` (deferred — `GraphBuilder` still uses
-      `load_all_definitions` from `tree.py`; engine pipeline refactor
-      is Phase 3 scope)
+      `Context.add()` (deferred — `scan_state.py` still uses `TreeLoader`
+      for the legacy scan pipeline; engine pipeline refactor is Phase 3)
 
 ### Phase 3 — Progression + provenance: NOT STARTED
 
@@ -401,6 +402,7 @@ Phase 2 achieved:
 
 Remaining for Phase 3 (engine pipeline refactor):
 
+- [x] Decouple `GraphBuilder` from `tree.py` (PR #161)
 - [ ] Remove `TreeLoader`, `AnsibleRunContext`, `RunTarget`, `ObjectList`,
-      `Context.add()` — blocked by `GraphBuilder` dependency on
-      `tree.load_all_definitions()`
+      `Context.add()` — blocked by `scan_state.py` dependency on
+      `TreeLoader` for the legacy scan pipeline
