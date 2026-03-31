@@ -212,7 +212,7 @@ class TestL041KeyOrderGraphRule:
         Returns:
             None
         """
-        yaml_text = "- ansible.builtin.package:\n    name: nginx\n  name: Install\n"
+        yaml_text = "- ansible.builtin.package:\n    state: present\n  name: Install\n"
         g, tid = _make_task(
             module="ansible.builtin.package",
             resolved_module="ansible.builtin.package",
@@ -221,6 +221,11 @@ class TestL041KeyOrderGraphRule:
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is True
+        assert result.detail is not None
+        keys = result.detail.get("keys_order")
+        assert isinstance(keys, list)
+        assert "ansible.builtin.package" in keys
+        assert "name" in keys
 
 
 # ---------------------------------------------------------------------------
@@ -1030,13 +1035,12 @@ class TestPhase2HYamlLinesScannerIntegration:
     def test_scan_l041_and_l098_on_same_task(self) -> None:
         """Scanner runs multiple Phase 2H rules on one task node.
 
-        Duplicate mapping keys (L098) use keys other than ``name`` so L041's
-        ``keys.index("name")`` reflects the task ``name`` after ``debug``.
+        Duplicate ``when`` triggers L098; ``name`` after ``debug`` triggers L041.
 
         Returns:
             None
         """
-        yaml_text = "dup: 1\ndup: 2\n- debug:\n    msg: x\n  name: late\n"
+        yaml_text = "- debug:\n    msg: x\n  when: true\n  when: true\n  name: late\n"
         g, _tid = _make_task(module="debug", yaml_lines=yaml_text)
         rules: list[GraphRule] = [KeyOrderGraphRule(), YamlKeyDuplicatesGraphRule()]
         report = scan(g, rules)
