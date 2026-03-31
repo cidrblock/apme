@@ -141,7 +141,9 @@ apme remediate --ai --auto-approve /path/to/playbook-or-project
 
 The full pod runs 9 containers: engine services (Primary, Native, OPA, Ansible,
 Gitleaks, Galaxy Proxy), Gateway (REST API + persistence), UI (React dashboard),
-and Abbenay (AI provider). All scripts run from the **repo root**.
+and Abbenay (AI provider). Pod management scripts (`build.sh`, `up.sh`,
+`down.sh`, `wait-for-pod.sh`) run from the **repo root**. The CLI helper
+`run-cli.sh` runs from the directory you want to scan.
 
 ```
 Container        Port   Role
@@ -206,23 +208,23 @@ on each invocation with your current directory mounted at `/workspace`.
 ```bash
 cd /path/to/your/project
 
-# Check (default: check .)
+# Default (no args): runs `scan .`
 /path/to/apme/containers/podman/run-cli.sh
 
 # Check with JSON output
-containers/podman/run-cli.sh check --json .
+/path/to/apme/containers/podman/run-cli.sh check --json .
 
 # Remediate (Tier 1 deterministic fixes)
-containers/podman/run-cli.sh remediate .
+/path/to/apme/containers/podman/run-cli.sh remediate .
 
 # Remediate with AI (requires Abbenay configured)
-containers/podman/run-cli.sh remediate --ai .
+/path/to/apme/containers/podman/run-cli.sh remediate --ai .
 
 # Format YAML (dry-run)
-containers/podman/run-cli.sh format --check .
+/path/to/apme/containers/podman/run-cli.sh format --check .
 
 # Health check
-containers/podman/run-cli.sh health-check
+/path/to/apme/containers/podman/run-cli.sh health-check
 ```
 
 #### AI setup (optional)
