@@ -52,6 +52,12 @@ class RoleArgSpecsGraphRule(GraphRule):
     def process(self, graph: ContentGraph, node_id: str) -> GraphRuleResult | None:
         """Flag roles missing ``argument_specs`` in metadata.
 
+        Falls back to a filesystem check for a standalone
+        ``meta/argument_specs.yml`` (or ``.yaml``).  ``node.file_path``
+        for ROLE nodes is relative to the scan basedir, so the on-disk
+        check assumes CWD is the project root (same assumption as the
+        CLI and daemon scan entry-points).
+
         Args:
             graph: The full ContentGraph.
             node_id: ID of the node to evaluate.
@@ -74,7 +80,9 @@ class RoleArgSpecsGraphRule(GraphRule):
                 detail=cast(
                     YAMLDict,
                     {
-                        "message": "role should have meta/argument_specs.yml for fail-fast validation",
+                        "message": (
+                            "role should have argument_specs in meta/main.yml or a standalone meta/argument_specs.yml"
+                        ),
                     },
                 ),
                 node_id=node_id,
