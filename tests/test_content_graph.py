@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 from apme_engine.engine.content_graph import (
@@ -264,6 +266,159 @@ class TestGraphBuilderMinimal:
         builder = GraphBuilder(defs, {})
         graph = builder.build()
         assert graph.node_count() == 0
+
+
+# ---------------------------------------------------------------------------
+# GraphBuilder — loop variant extraction
+# ---------------------------------------------------------------------------
+
+
+def _build_task_node_with_options(options: dict[str, object]) -> ContentNode:
+    """Build a ContentNode for a task with the given options dict.
+
+    Creates a minimal GraphBuilder scaffold (playbook -> play -> task)
+    and returns the resulting task node.
+
+    Args:
+        options: Task-level options dict (loop, when, with_*, etc.).
+
+    Returns:
+        The single task ContentNode produced by the builder.
+    """
+    from apme_engine.engine.models import ObjectList, Play, Playbook, Task, YAMLDict
+
+    task = Task(
+        key="task test_pb.yml#play[0]#task[0]",
+        module="ansible.builtin.set_fact",
+        options=cast(YAMLDict, options),
+        module_options={"filtered": "{{ items }}"},
+    )
+    play = Play(
+        key="play test_pb.yml#play[0]",
+        defined_in="test_pb.yml",
+        tasks=[task],
+    )
+    pb = Playbook(
+        key="playbook test_pb.yml",
+        defined_in="test_pb.yml",
+        plays=[play],
+    )
+    root_defs: dict[str, object] = {
+        "definitions": {
+            "playbooks": ObjectList(items=[pb]),
+        },
+        "mappings": None,
+    }
+    builder = GraphBuilder(root_defs, {})
+    graph = builder.build()
+    task_nodes = [n for n in graph.nodes(NodeType.TASK)]
+    assert len(task_nodes) == 1
+    return task_nodes[0]
+
+
+class TestGraphBuilderLoopVariants:
+    """Verify _build_task populates node.loop for all loop constructs."""
+
+    def test_modern_loop(self) -> None:
+        """Modern ``loop:`` keyword populates node.loop."""
+        node = _build_task_node_with_options({"loop": "{{ all_services }}"})
+        assert node.loop is not None
+        assert node.loop == "{{ all_services }}"
+
+    def test_with_items(self) -> None:
+        """Legacy ``with_items`` populates node.loop."""
+        node = _build_task_node_with_options({"with_items": "{{ services }}"})
+        assert node.loop is not None
+
+    def test_with_dict(self) -> None:
+        """``with_dict`` populates node.loop."""
+        node = _build_task_node_with_options({"with_dict": {"a": 1, "b": 2}})
+        assert node.loop is not None
+        assert node.loop == {"a": 1, "b": 2}
+
+    def test_with_sequence(self) -> None:
+        """``with_sequence`` populates node.loop."""
+        node = _build_task_node_with_options({"with_sequence": "start=1 end=5"})
+        assert node.loop is not None
+
+    def test_with_fileglob(self) -> None:
+        """``with_fileglob`` populates node.loop."""
+        node = _build_task_node_with_options({"with_fileglob": "/etc/*.conf"})
+        assert node.loop is not None
+
+    def test_with_subelements(self) -> None:
+        """``with_subelements`` populates node.loop."""
+        node = _build_task_node_with_options({"with_subelements": ["{{ users }}", "keys"]})
+        assert node.loop is not None
+
+    def test_with_nested(self) -> None:
+        """``with_nested`` populates node.loop."""
+        node = _build_task_node_with_options({"with_nested": [["a", "b"], [1, 2]]})
+        assert node.loop is not None
+
+    def test_with_together(self) -> None:
+        """``with_together`` populates node.loop."""
+        node = _build_task_node_with_options({"with_together": [["a", "b"], [1, 2]]})
+        assert node.loop is not None
+
+    def test_with_flattened(self) -> None:
+        """``with_flattened`` populates node.loop."""
+        node = _build_task_node_with_options({"with_flattened": [["a"], ["b", "c"]]})
+        assert node.loop is not None
+
+    def test_with_indexed_items(self) -> None:
+        """``with_indexed_items`` populates node.loop."""
+        node = _build_task_node_with_options({"with_indexed_items": ["a", "b"]})
+        assert node.loop is not None
+
+    def test_with_random_choice(self) -> None:
+        """``with_random_choice`` populates node.loop."""
+        node = _build_task_node_with_options({"with_random_choice": ["a", "b", "c"]})
+        assert node.loop is not None
+
+    def test_with_cartesian(self) -> None:
+        """``with_cartesian`` populates node.loop."""
+        node = _build_task_node_with_options({"with_cartesian": [["a", "b"], [1, 2]]})
+        assert node.loop is not None
+
+    def test_no_loop(self) -> None:
+        """Task without any loop construct has node.loop == None."""
+        node = _build_task_node_with_options({"when": "some_condition"})
+        assert node.loop is None
+
+    def test_loop_preferred_over_with(self) -> None:
+        """Modern ``loop:`` takes precedence when both present."""
+        node = _build_task_node_with_options(
+            {
+                "loop": "{{ primary_list }}",
+                "with_items": "{{ fallback_list }}",
+            }
+        )
+        assert node.loop == "{{ primary_list }}"
+
+    def test_empty_list_loop_treated_as_no_loop(self) -> None:
+        """Falsy ``loop: []`` is treated as no loop.
+
+        In Ansible, ``loop: []`` is a no-op (zero iterations), so
+        treating it as absent is correct behavior.
+        """
+        node = _build_task_node_with_options({"loop": []})
+        assert node.loop is None
+
+    def test_empty_dict_loop_treated_as_no_loop(self) -> None:
+        """Falsy ``loop: {}`` is treated as no loop."""
+        node = _build_task_node_with_options({"loop": {}})
+        assert node.loop is None
+
+    def test_empty_loop_does_not_mask_with(self) -> None:
+        """Falsy ``loop`` falls through to ``with_*`` if present."""
+        node = _build_task_node_with_options(
+            {
+                "loop": [],
+                "with_items": "{{ services }}",
+            }
+        )
+        assert node.loop is not None
 
 
 # ---------------------------------------------------------------------------
