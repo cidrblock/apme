@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 
 from apme_engine.engine.content_graph import ContentGraph, NodeType
@@ -12,17 +11,22 @@ from apme_engine.validators.native.rules.graph_rule_base import GraphRule, Graph
 
 
 def _has_readme(files: list[str]) -> bool:
-    """Return True if any listed path has a README* basename (case-insensitive).
+    """Return True if a root-level README* file exists.
+
+    Only depth-0 paths (no ``/``) are considered so that ``docs/README.md``
+    does not satisfy the requirement.
 
     Args:
         files: Relative paths within the collection root.
 
     Returns:
-        True when a basename starts with ``readme`` (case-insensitive).
+        True when a root-level path starts with ``readme`` (case-insensitive).
     """
     for raw in files:
-        base = os.path.basename(raw.replace("\\", "/"))
-        if base.lower().startswith("readme"):
+        norm = raw.replace("\\", "/")
+        if "/" in norm:
+            continue
+        if norm.lower().startswith("readme"):
             return True
     return False
 

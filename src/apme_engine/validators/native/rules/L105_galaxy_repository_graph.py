@@ -14,15 +14,21 @@ from apme_engine.validators.native.rules.graph_rule_base import GraphRule, Graph
 def _repository_nonempty(meta: Mapping[str, object]) -> bool:
     """Return True if ``repository`` is present and non-empty.
 
+    Handles both flat ``galaxy.yml`` metadata (``repository`` at top level) and
+    ``MANIFEST.json`` metadata (``repository`` nested under ``collection_info``).
+
     Args:
-        meta: Parsed ``galaxy.yml`` mapping.
+        meta: Parsed metadata mapping (``galaxy.yml`` or ``MANIFEST.json``).
 
     Returns:
         True when ``repository`` is set to a non-empty value.
     """
-    if "repository" not in meta:
+    ci = meta.get("collection_info")
+    source = ci if isinstance(ci, Mapping) else meta
+
+    if "repository" not in source:
         return False
-    value = meta["repository"]
+    value = source["repository"]
     if value is None:
         return False
     if isinstance(value, str):

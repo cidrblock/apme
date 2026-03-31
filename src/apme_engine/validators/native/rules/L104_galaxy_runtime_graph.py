@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 
 from apme_engine.engine.content_graph import ContentGraph, NodeType
@@ -12,29 +11,23 @@ from apme_engine.validators.native.rules.graph_rule_base import GraphRule, Graph
 
 
 def _has_meta_runtime(files: list[str]) -> bool:
-    """Return True if ``meta/runtime.yml`` or ``meta/runtime.yaml`` is listed.
+    """Return True if exactly ``meta/runtime.yml`` (or ``.yaml``) exists.
 
-    Matches normalized relative paths and ``meta``/basename combinations
-    (case-insensitive).
+    Paths are relative to the collection root, so the only valid matches are
+    ``meta/runtime.yml`` and ``meta/runtime.yaml`` (case-insensitive).
+    Nested paths like ``vendor/ns/col/meta/runtime.yml`` are not the
+    collection's own runtime file.
 
     Args:
         files: Relative paths within the collection root.
 
     Returns:
-        True when a runtime file path is recognized.
+        True when the collection's own runtime file is present.
     """
     for raw in files:
-        norm = raw.replace("\\", "/")
-        lower = norm.lower()
-        if lower == "meta/runtime.yml" or lower == "meta/runtime.yaml":
+        lower = raw.replace("\\", "/").lower()
+        if lower in ("meta/runtime.yml", "meta/runtime.yaml"):
             return True
-        if lower.endswith("/meta/runtime.yml") or lower.endswith("/meta/runtime.yaml"):
-            return True
-        base = os.path.basename(norm)
-        if base.lower() in ("runtime.yml", "runtime.yaml"):
-            parent = os.path.dirname(norm)
-            if os.path.basename(parent).lower() == "meta":
-                return True
     return False
 
 

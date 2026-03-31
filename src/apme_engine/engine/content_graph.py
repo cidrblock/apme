@@ -882,9 +882,16 @@ class GraphBuilder:
     def _build_collection(self, coll: Collection, scope: NodeScope) -> str:
         """Build a COLLECTION graph node from an ARI Collection object.
 
-        Populates ``collection_metadata`` (galaxy.yml), ``collection_meta_runtime``
-        (meta/runtime.yml), and ``collection_files`` (file listing) so that
-        collection-level rules (L087, L088, L096, L103–L105) can inspect them.
+        Normalizes ARI's raw data structures:
+
+        - ``coll.metadata`` may be ``MANIFEST.json`` (galaxy.yml fields nested
+          under ``collection_info``) or a flat ``galaxy.yml`` dict.  We store
+          the raw dict as ``collection_metadata`` and extract ``namespace``/
+          ``name`` from whichever level they appear.
+        - ``coll.files`` may be ``FILES.json`` (a dict with a ``files`` list
+          of ``{"name": ...}`` entries) or a flat list/dict of paths.  We
+          normalize to a flat ``list[str]`` of relative paths.
+        - ``coll.meta_runtime`` is already parsed ``meta/runtime.yml``.
 
         Args:
             coll: Parsed collection ARI object.
@@ -904,12 +911,15 @@ class GraphBuilder:
 
         metadata = _safe_dict(getattr(coll, "metadata", {}))
         meta_runtime = _safe_dict(getattr(coll, "meta_runtime", {}))
+        collection_files = _normalize_collection_files(getattr(coll, "files", {}))
 
-        files_raw = getattr(coll, "files", {})
-        collection_files = [str(f) for f in files_raw] if isinstance(files_raw, (dict, list)) else []
-
-        ns = metadata.get("namespace", "") or ""
-        name = metadata.get("name", "") or coll_name
+        ci = metadata.get("collection_info", {})
+        if isinstance(ci, dict) and ci:
+            ns = ci.get("namespace", "") or ""
+            name = ci.get("name", "") or coll_name
+        else:
+            ns = metadata.get("namespace", "") or ""
+            name = metadata.get("name", "") or coll_name
 
         node = ContentNode(
             identity=identity,
@@ -1744,6 +1754,42 @@ def _load_all_definitions(definitions: dict[str, object]) -> dict[str, ObjectLis
 # ---------------------------------------------------------------------------
 # Utility functions
 # ---------------------------------------------------------------------------
+
+
+def _normalize_collection_files(files_raw: object) -> list[str]:
+    """Normalize ARI's ``Collection.files`` into a flat list of relative paths.
+
+    ``FILES.json`` is a dict like ``{"files": [{"name": "...", ...}, ...], "format": 1}``.
+    A source-tree collection may instead have a plain list of strings or a dict
+    whose keys are paths.  We handle all variants.
+
+    Args:
+        files_raw: The raw ``Collection.files`` value from ARI.
+
+    Returns:
+        Sorted list of relative file-path strings.
+    """
+    if not files_raw:
+        return []
+
+    if isinstance(files_raw, dict):
+        entries = files_raw.get("files", None)
+        if isinstance(entries, list):
+            paths: list[str] = []
+            for entry in entries:
+                if isinstance(entry, dict):
+                    n = entry.get("name")
+                    if isinstance(n, str):
+                        paths.append(n)
+                elif isinstance(entry, str):
+                    paths.append(entry)
+            return sorted(paths)
+        return sorted(str(k) for k in files_raw if k != "format")
+
+    if isinstance(files_raw, list):
+        return sorted(str(f) for f in files_raw)
+
+    return []
 
 
 def _safe_dict(v: object) -> YAMLDict:

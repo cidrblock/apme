@@ -383,7 +383,7 @@ class TestCollectionLicenseGraphRule:
         assert result.detail is not None
 
     def test_pass_with_license(self, rule: CollectionLicenseGraphRule) -> None:
-        """LICENSE or COPYING basename passes (case-insensitive).
+        """Root-level LICENSE or COPYING passes (case-insensitive).
 
         Args:
             rule: Rule instance under test.
@@ -393,6 +393,17 @@ class TestCollectionLicenseGraphRule:
             result = rule.process(g, nid)
             assert result is not None
             assert result.verdict is False
+
+    def test_nested_license_does_not_satisfy(self, rule: CollectionLicenseGraphRule) -> None:
+        """``docs/LICENSE`` should not satisfy the root-level requirement.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_collection(collection_files=["docs/LICENSE", "galaxy.yml"])
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is True
 
     def test_task_node_process_none(self, rule: CollectionLicenseGraphRule) -> None:
         """``process`` on non-collection node returns None.
@@ -428,7 +439,7 @@ class TestCollectionReadmeGraphRule:
         assert result.verdict is True
 
     def test_pass_with_readme(self, rule: CollectionReadmeGraphRule) -> None:
-        """README* basename passes.
+        """Root-level README* passes.
 
         Args:
             rule: Rule instance under test.
@@ -437,6 +448,17 @@ class TestCollectionReadmeGraphRule:
         result = rule.process(g, nid)
         assert result is not None
         assert result.verdict is False
+
+    def test_nested_readme_does_not_satisfy(self, rule: CollectionReadmeGraphRule) -> None:
+        """``docs/README.md`` should not satisfy the root-level requirement.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_collection(collection_files=["docs/README.md", "galaxy.yml"])
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is True
 
 
 class TestMetaRuntimeGraphRule:
@@ -509,7 +531,7 @@ class TestGalaxyChangelogGraphRule:
         assert result.verdict is True
 
     def test_pass_with_changelog(self, rule: GalaxyChangelogGraphRule) -> None:
-        """CHANGELOG.rst passes.
+        """Root-level CHANGELOG.rst passes.
 
         Args:
             rule: Rule instance under test.
@@ -518,6 +540,17 @@ class TestGalaxyChangelogGraphRule:
         result = rule.process(g, nid)
         assert result is not None
         assert result.verdict is False
+
+    def test_nested_changelog_does_not_satisfy(self, rule: GalaxyChangelogGraphRule) -> None:
+        """``docs/CHANGELOG.md`` should not satisfy the root-level requirement.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_collection(collection_files=["docs/CHANGELOG.md", "galaxy.yml"])
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is True
 
 
 class TestGalaxyRuntimeGraphRule:
@@ -544,8 +577,8 @@ class TestGalaxyRuntimeGraphRule:
             assert result is not None
             assert result.verdict is False, entry
 
-    def test_pass_nested_meta_runtime(self, rule: GalaxyRuntimeGraphRule) -> None:
-        """Path ending with ``/meta/runtime.yml`` passes.
+    def test_nested_meta_runtime_does_not_satisfy(self, rule: GalaxyRuntimeGraphRule) -> None:
+        """Nested ``vendor/ns/col/meta/runtime.yml`` is not the collection's own.
 
         Args:
             rule: Rule instance under test.
@@ -553,7 +586,7 @@ class TestGalaxyRuntimeGraphRule:
         g, nid = _make_collection(collection_files=["vendor/ns/col/meta/runtime.yml"])
         result = rule.process(g, nid)
         assert result is not None
-        assert result.verdict is False
+        assert result.verdict is True
 
     def test_violation_missing_runtime(self, rule: GalaxyRuntimeGraphRule) -> None:
         """No runtime file → violation.
@@ -613,7 +646,7 @@ class TestGalaxyRepositoryGraphRule:
         assert result.verdict is True
 
     def test_pass_with_repository(self, rule: GalaxyRepositoryGraphRule) -> None:
-        """Non-empty repository → pass.
+        """Non-empty repository (flat galaxy.yml) → pass.
 
         Args:
             rule: Rule instance under test.
@@ -624,6 +657,40 @@ class TestGalaxyRepositoryGraphRule:
         result = rule.process(g, nid)
         assert result is not None
         assert result.verdict is False
+
+    def test_pass_manifest_json_repository(self, rule: GalaxyRepositoryGraphRule) -> None:
+        """Non-empty repository inside MANIFEST.json ``collection_info`` → pass.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_collection(
+            collection_metadata={
+                "collection_info": {
+                    "namespace": "ns",
+                    "name": "col",
+                    "repository": "https://github.com/ns/col",
+                },
+            },
+        )
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is False
+
+    def test_violation_manifest_json_missing_repository(self, rule: GalaxyRepositoryGraphRule) -> None:
+        """MANIFEST.json ``collection_info`` without ``repository`` → violation.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_collection(
+            collection_metadata={
+                "collection_info": {"namespace": "ns", "name": "col"},
+            },
+        )
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is True
 
 
 # ===========================================================================

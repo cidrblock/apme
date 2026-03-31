@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 
 from apme_engine.engine.content_graph import ContentGraph, NodeType
@@ -12,17 +11,23 @@ from apme_engine.validators.native.rules.graph_rule_base import GraphRule, Graph
 
 
 def _has_license_or_copying(files: list[str]) -> bool:
-    """Return True if any listed path has a LICENSE* or COPYING* basename.
+    """Return True if a root-level LICENSE* or COPYING* file exists.
+
+    Only depth-0 paths (no ``/``) are considered so that ``docs/LICENSE``
+    does not satisfy the requirement.
 
     Args:
         files: Relative paths within the collection root.
 
     Returns:
-        True when a basename starts with ``license`` or ``copying`` (case-insensitive).
+        True when a root-level path starts with ``license`` or ``copying``
+        (case-insensitive).
     """
     for raw in files:
-        base = os.path.basename(raw.replace("\\", "/"))
-        lower = base.lower()
+        norm = raw.replace("\\", "/")
+        if "/" in norm:
+            continue
+        lower = norm.lower()
         if lower.startswith("license") or lower.startswith("copying"):
             return True
     return False
