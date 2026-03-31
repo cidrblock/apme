@@ -396,6 +396,25 @@ class TestGraphBuilderLoopVariants:
         )
         assert node.loop == "{{ primary_list }}"
 
+    def test_empty_loop_treated_as_no_loop(self) -> None:
+        """Falsy loop values (empty list/dict) are treated as no loop.
+
+        In Ansible, ``loop: []`` is a no-op (zero iterations), so
+        treating it as absent is correct behavior.
+        """
+        node = _build_task_node_with_options({"loop": []})
+        assert node.loop is None
+
+    def test_empty_loop_does_not_mask_with(self) -> None:
+        """Falsy ``loop`` falls through to ``with_*`` if present."""
+        node = _build_task_node_with_options(
+            {
+                "loop": [],
+                "with_items": "{{ services }}",
+            }
+        )
+        assert node.loop is not None
+
 
 # ---------------------------------------------------------------------------
 # ContentGraph serialization roundtrip
