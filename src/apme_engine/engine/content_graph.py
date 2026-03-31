@@ -777,10 +777,9 @@ class GraphBuilder:
             Fully wired ``ContentGraph`` instance.
         """
         from .models import ObjectList, Role, TaskFile
-        from .tree import load_all_definitions
 
-        root_loaded = load_all_definitions(self._root_defs)
-        ext_loaded = load_all_definitions(self._ext_defs)
+        root_loaded = _load_all_definitions(self._root_defs)
+        ext_loaded = _load_all_definitions(self._ext_defs)
 
         # Build flat key → object lookup for string-key resolution.
         types = ["collections", "roles", "taskfiles", "modules", "playbooks", "plays", "tasks"]
@@ -1591,6 +1590,86 @@ class GraphBuilder:
                 producer = registered.get(var_name) or set_fact_producers.get(var_name)
                 if producer and producer != nid:
                     self._graph.add_edge(producer, nid, EdgeType.DATA_FLOW)
+
+
+# ---------------------------------------------------------------------------
+# Definition loading (inlined from tree.py to decouple GraphBuilder)
+# ---------------------------------------------------------------------------
+
+
+def _safe_object_list(v: object) -> list[object]:
+    """Coerce a value to a list of model objects for definition loading.
+
+    Accepts ``ObjectList``, plain ``list``, or returns empty list.
+
+    Args:
+        v: Value that may be ObjectList, list, or other.
+
+    Returns:
+        List of items suitable for definition registration.
+    """
+    from .models import CallObject, Object, ObjectList
+
+    if isinstance(v, ObjectList):
+        return list(v.items)
+    if isinstance(v, list):
+        return [x for x in v if isinstance(x, Object | CallObject)]
+    return []
+
+
+def _load_single_definition(defs: dict[str, object], key: str) -> ObjectList:
+    """Load an ``ObjectList`` for one definition type key.
+
+    Args:
+        defs: Definitions dict keyed by type (e.g. ``roles``, ``tasks``).
+        key: Type key to load.
+
+    Returns:
+        ``ObjectList`` containing items for that key.
+    """
+    from .models import CallObject, Object, ObjectList
+
+    obj_list = ObjectList()
+    items = _safe_object_list(defs.get(key, []))
+    for item in items:
+        if isinstance(item, Object | CallObject):
+            obj_list.add(item)
+    return obj_list
+
+
+_DEFINITION_TYPES = ["collections", "roles", "taskfiles", "modules", "playbooks", "plays", "tasks"]
+
+
+def _load_all_definitions(definitions: dict[str, object]) -> dict[str, ObjectList]:
+    """Load all definition types from an ARI definitions structure.
+
+    Normalizes the input (handles ``mappings`` wrapper vs flat dict),
+    then merges per-artifact definitions into a single ``ObjectList``
+    per type key.
+
+    Args:
+        definitions: Root definitions dict from ARI scanner output.
+
+    Returns:
+        Dict mapping type keys to merged ``ObjectList`` instances.
+    """
+    from .models import ObjectList
+
+    _definitions: dict[str, object] = {}
+    _definitions = {"root": definitions} if "mappings" in definitions else definitions
+    loaded: dict[str, ObjectList] = {}
+    for type_key in _DEFINITION_TYPES:
+        loaded[type_key] = ObjectList()
+    for _, definitions_per_artifact in _definitions.items():
+        defs_raw = definitions_per_artifact.get("definitions", {}) if isinstance(definitions_per_artifact, dict) else {}
+        defs = defs_raw if isinstance(defs_raw, dict) else {}
+        for type_key in _DEFINITION_TYPES:
+            obj_list = _load_single_definition(defs, type_key)
+            if type_key not in loaded:
+                loaded[type_key] = obj_list
+            else:
+                loaded[type_key].merge(obj_list)
+    return loaded
 
 
 # ---------------------------------------------------------------------------
