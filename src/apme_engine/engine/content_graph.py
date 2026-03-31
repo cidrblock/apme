@@ -27,6 +27,7 @@ from .models import YAMLDict, YAMLValue
 
 if TYPE_CHECKING:
     from .models import (
+        Collection,
         ObjectList,
         Play,
         Playbook,
@@ -214,6 +215,9 @@ class ContentNode:
         role_metadata: Role meta/main.yml contents (galaxy_info, dependencies, etc.).
         collection_namespace: Declaring collection namespace.
         collection_name: Declaring collection name.
+        collection_metadata: Parsed ``galaxy.yml`` contents for COLLECTION nodes.
+        collection_meta_runtime: Parsed ``meta/runtime.yml`` for COLLECTION nodes.
+        collection_files: File paths within the collection root.
         ari_key: Legacy ARI object key for cross-checks.
         annotations: Annotator payloads (risk, module hints, etc.).
         scope: Owned vs referenced content classification.
@@ -264,6 +268,9 @@ class ContentNode:
     # Collection metadata
     collection_namespace: str = ""
     collection_name: str = ""
+    collection_metadata: YAMLDict = field(default_factory=dict)
+    collection_meta_runtime: YAMLDict = field(default_factory=dict)
+    collection_files: list[str] = field(default_factory=list)
 
     # ARI cross-reference (populated during build for validation)
     ari_key: str = ""
@@ -667,6 +674,9 @@ _CONTENT_NODE_SIMPLE_FIELDS: tuple[str, ...] = (
     "role_metadata",
     "collection_namespace",
     "collection_name",
+    "collection_metadata",
+    "collection_meta_runtime",
+    "collection_files",
     "ari_key",
 )
 
@@ -777,10 +787,9 @@ class GraphBuilder:
             Fully wired ``ContentGraph`` instance.
         """
         from .models import ObjectList, Role, TaskFile
-        from .tree import load_all_definitions
 
-        root_loaded = load_all_definitions(self._root_defs)
-        ext_loaded = load_all_definitions(self._ext_defs)
+        root_loaded = _load_all_definitions(self._root_defs)
+        ext_loaded = _load_all_definitions(self._ext_defs)
 
         # Build flat key → object lookup for string-key resolution.
         types = ["collections", "roles", "taskfiles", "modules", "playbooks", "plays", "tasks"]
@@ -842,7 +851,13 @@ class GraphBuilder:
             loaded: Output of ``load_all_definitions`` (playbooks, roles, taskfiles lists).
             scope: Whether nodes are owned project content or referenced externals.
         """
-        from .models import ObjectList, Playbook, Role, TaskFile
+        from .models import Collection, ObjectList, Playbook, Role, TaskFile
+
+        collections = loaded.get("collections", ObjectList())
+        if isinstance(collections, ObjectList):
+            for item in collections.items:
+                if isinstance(item, Collection):
+                    self._build_collection(item, scope)
 
         playbooks = loaded.get("playbooks", ObjectList())
         if isinstance(playbooks, ObjectList):
@@ -861,6 +876,65 @@ class GraphBuilder:
             for item in taskfiles.items:
                 if isinstance(item, TaskFile):
                     self._build_taskfile(item, scope=scope)
+
+    # -- Collection ---------------------------------------------------------
+
+    def _build_collection(self, coll: Collection, scope: NodeScope) -> str:
+        """Build a COLLECTION graph node from an ARI Collection object.
+
+        Normalizes ARI's raw data structures:
+
+        - ``coll.metadata`` may be ``MANIFEST.json`` (galaxy.yml fields nested
+          under ``collection_info``) or a flat ``galaxy.yml`` dict.  We store
+          the raw dict as ``collection_metadata`` and extract ``namespace``/
+          ``name`` from whichever level they appear.
+        - ``coll.files`` may be ``FILES.json`` (a dict with a ``files`` list
+          of ``{"name": ...}`` entries) or a flat list/dict of paths.  We
+          normalize to a flat ``list[str]`` of relative paths.
+        - ``coll.meta_runtime`` is already parsed ``meta/runtime.yml``.
+
+        Args:
+            coll: Parsed collection ARI object.
+            scope: Ownership scope for the created node.
+
+        Returns:
+            Collection node id.
+        """
+        coll_name = getattr(coll, "name", "") or ""
+        coll_path = getattr(coll, "path", "") or coll_name
+        identity = NodeIdentity(path=coll_path, node_type=NodeType.COLLECTION)
+        nid = identity.path
+
+        if nid in self._visited:
+            return nid
+        self._visited.add(nid)
+
+        metadata = _safe_dict(getattr(coll, "metadata", {}))
+        meta_runtime = _safe_dict(getattr(coll, "meta_runtime", {}))
+        collection_files = _normalize_collection_files(getattr(coll, "files", {}))
+
+        ci = metadata.get("collection_info", {})
+        if isinstance(ci, dict) and ci:
+            ns = ci.get("namespace", "") or ""
+            name = ci.get("name", "") or coll_name
+        else:
+            ns = metadata.get("namespace", "") or ""
+            name = metadata.get("name", "") or coll_name
+
+        node = ContentNode(
+            identity=identity,
+            file_path=coll_path,
+            name=coll_name or None,
+            collection_namespace=str(ns),
+            collection_name=str(name),
+            collection_metadata=metadata,
+            collection_meta_runtime=meta_runtime,
+            collection_files=collection_files,
+            ari_key=coll.key,
+            scope=scope,
+        )
+        self._graph.add_node(node)
+        return nid
 
     # -- Playbook -----------------------------------------------------------
 
@@ -1598,8 +1672,124 @@ class GraphBuilder:
 
 
 # ---------------------------------------------------------------------------
+# Definition loading (inlined from tree.py to decouple GraphBuilder)
+# ---------------------------------------------------------------------------
+
+
+def _safe_object_list(v: object) -> list[object]:
+    """Coerce a value to a list of model objects for definition loading.
+
+    Accepts ``ObjectList``, plain ``list``, or returns empty list.
+
+    Args:
+        v: Value that may be ObjectList, list, or other.
+
+    Returns:
+        List of items suitable for definition registration.
+    """
+    from .models import CallObject, Object, ObjectList
+
+    if isinstance(v, ObjectList):
+        return list(v.items)
+    if isinstance(v, list):
+        return [x for x in v if isinstance(x, Object | CallObject)]
+    return []
+
+
+def _load_single_definition(defs: dict[str, object], key: str) -> ObjectList:
+    """Load an ``ObjectList`` for one definition type key.
+
+    Args:
+        defs: Definitions dict keyed by type (e.g. ``roles``, ``tasks``).
+        key: Type key to load.
+
+    Returns:
+        ``ObjectList`` containing items for that key.
+    """
+    from .models import CallObject, Object, ObjectList
+
+    obj_list = ObjectList()
+    items = _safe_object_list(defs.get(key, []))
+    for item in items:
+        if isinstance(item, Object | CallObject):
+            obj_list.add(item)
+    return obj_list
+
+
+_DEFINITION_TYPES = ["collections", "roles", "taskfiles", "modules", "playbooks", "plays", "tasks"]
+
+
+def _load_all_definitions(definitions: dict[str, object]) -> dict[str, ObjectList]:
+    """Load all definition types from an ARI definitions structure.
+
+    Normalizes the input (handles ``mappings`` wrapper vs flat dict),
+    then merges per-artifact definitions into a single ``ObjectList``
+    per type key.
+
+    Args:
+        definitions: Root definitions dict from ARI scanner output.
+
+    Returns:
+        Dict mapping type keys to merged ``ObjectList`` instances.
+    """
+    from .models import ObjectList
+
+    _definitions: dict[str, object] = {}
+    _definitions = {"root": definitions} if "mappings" in definitions else definitions
+    loaded: dict[str, ObjectList] = {}
+    for type_key in _DEFINITION_TYPES:
+        loaded[type_key] = ObjectList()
+    for _, definitions_per_artifact in _definitions.items():
+        defs_raw = definitions_per_artifact.get("definitions", {}) if isinstance(definitions_per_artifact, dict) else {}
+        defs = defs_raw if isinstance(defs_raw, dict) else {}
+        for type_key in _DEFINITION_TYPES:
+            obj_list = _load_single_definition(defs, type_key)
+            if type_key not in loaded:
+                loaded[type_key] = obj_list
+            else:
+                loaded[type_key].merge(obj_list)
+    return loaded
+
+
+# ---------------------------------------------------------------------------
 # Utility functions
 # ---------------------------------------------------------------------------
+
+
+def _normalize_collection_files(files_raw: object) -> list[str]:
+    """Normalize ARI's ``Collection.files`` into a flat list of relative paths.
+
+    ``FILES.json`` is a dict like ``{"files": [{"name": "...", ...}, ...], "format": 1}``.
+    A source-tree collection may instead have a plain list of strings or a dict
+    whose keys are paths.  We handle all variants.
+
+    Args:
+        files_raw: The raw ``Collection.files`` value from ARI.
+
+    Returns:
+        Sorted list of relative file-path strings.
+    """
+    if not files_raw:
+        return []
+
+    if isinstance(files_raw, dict):
+        entries = files_raw.get("files", None)
+        if isinstance(entries, list):
+            paths: list[str] = []
+            for entry in entries:
+                if isinstance(entry, dict):
+                    n = entry.get("name")
+                    if isinstance(n, str):
+                        paths.append(n)
+                elif isinstance(entry, str):
+                    paths.append(entry)
+            return sorted(paths)
+        return sorted(str(k) for k in files_raw if k != "format")
+
+    if isinstance(files_raw, list):
+        return sorted(str(f) for f in files_raw)
+
+    return []
 
 
 def _safe_dict(v: object) -> YAMLDict:

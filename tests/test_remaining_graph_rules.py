@@ -1,7 +1,7 @@
 """Unit and integration tests for Phase 2J+K GraphRules.
 
-Covers L056, R401, and 9 collection/plugin stub rules
-(L087-L090, L095-L096, L103-L105).
+Covers L056, R401, collection metadata rules (L087, L088, L096, L103–L105),
+and remaining plugin/schema stub rules (L089, L090, L095).
 """
 
 from __future__ import annotations
@@ -304,30 +304,413 @@ class TestR401ListAllInboundSrcGraphRule:
         assert not rule.match(g, nid)
 
 
+def _make_collection(
+    *,
+    path: str = "mycollection/galaxy.yml",
+    file_path: str = "mycollection/galaxy.yml",
+    line_start: int = 1,
+    collection_files: list[str] | None = None,
+    collection_metadata: YAMLDict | None = None,
+    collection_meta_runtime: YAMLDict | None = None,
+) -> tuple[ContentGraph, str]:
+    """Build a graph with a single owned COLLECTION node.
+
+    Args:
+        path: Node identity path.
+        file_path: galaxy.yml path for location metadata.
+        line_start: Starting line in ``file_path``.
+        collection_files: Relative paths inside the collection.
+        collection_metadata: Parsed galaxy.yml mapping.
+        collection_meta_runtime: Parsed meta/runtime.yml mapping.
+
+    Returns:
+        Tuple of ``(graph, collection_node_id)``.
+    """
+    g = ContentGraph()
+    node = ContentNode(
+        identity=NodeIdentity(path=path, node_type=NodeType.COLLECTION),
+        file_path=file_path,
+        line_start=line_start,
+        collection_files=list(collection_files or []),
+        collection_metadata=dict(collection_metadata or {}),
+        collection_meta_runtime=dict(collection_meta_runtime or {}),
+        scope=NodeScope.OWNED,
+    )
+    g.add_node(node)
+    return g, node.node_id
+
+
 # ===========================================================================
-# Collection/plugin stub rules — match always False
+# Collection graph rules (L087, L088, L096, L103–L105)
+# ===========================================================================
+
+
+class TestCollectionLicenseGraphRule:
+    """Tests for L087 CollectionLicenseGraphRule."""
+
+    @pytest.fixture  # type: ignore[untyped-decorator]
+    def rule(self) -> CollectionLicenseGraphRule:
+        """Create a rule instance.
+
+        Returns:
+            A CollectionLicenseGraphRule.
+        """
+        return CollectionLicenseGraphRule()
+
+    def test_match_requires_collection_with_files(self, rule: CollectionLicenseGraphRule) -> None:
+        """Match only when ``collection_files`` is non-empty.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g_empty, nid_empty = _make_collection(collection_files=[])
+        assert not rule.match(g_empty, nid_empty)
+
+        g_ok, nid_ok = _make_collection(collection_files=["README.md"])
+        assert rule.match(g_ok, nid_ok)
+
+    def test_violation_without_license(self, rule: CollectionLicenseGraphRule) -> None:
+        """No LICENSE* or COPYING* basename → violation.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_collection(collection_files=["foo.txt", "roles/x/tasks/main.yml"])
+        assert rule.match(g, nid)
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is True
+        assert result.detail is not None
+
+    def test_pass_with_license(self, rule: CollectionLicenseGraphRule) -> None:
+        """Root-level LICENSE or COPYING passes (case-insensitive).
+
+        Args:
+            rule: Rule instance under test.
+        """
+        for name in ("LICENSE", "license.md", "COPYING", "copying.txt"):
+            g, nid = _make_collection(collection_files=[name])
+            result = rule.process(g, nid)
+            assert result is not None
+            assert result.verdict is False
+
+    def test_nested_license_does_not_satisfy(self, rule: CollectionLicenseGraphRule) -> None:
+        """``docs/LICENSE`` should not satisfy the root-level requirement.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_collection(collection_files=["docs/LICENSE", "galaxy.yml"])
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is True
+
+    def test_task_node_process_none(self, rule: CollectionLicenseGraphRule) -> None:
+        """``process`` on non-collection node returns None.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_task()
+        assert rule.process(g, nid) is None
+
+
+class TestCollectionReadmeGraphRule:
+    """Tests for L088 CollectionReadmeGraphRule."""
+
+    @pytest.fixture  # type: ignore[untyped-decorator]
+    def rule(self) -> CollectionReadmeGraphRule:
+        """Create a rule instance.
+
+        Returns:
+            A CollectionReadmeGraphRule.
+        """
+        return CollectionReadmeGraphRule()
+
+    def test_violation_without_readme(self, rule: CollectionReadmeGraphRule) -> None:
+        """No README* → violation.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_collection(collection_files=["galaxy.yml"])
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is True
+
+    def test_pass_with_readme(self, rule: CollectionReadmeGraphRule) -> None:
+        """Root-level README* passes.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_collection(collection_files=["docs/x.txt", "README.md"])
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is False
+
+    def test_nested_readme_does_not_satisfy(self, rule: CollectionReadmeGraphRule) -> None:
+        """``docs/README.md`` should not satisfy the root-level requirement.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_collection(collection_files=["docs/README.md", "galaxy.yml"])
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is True
+
+
+class TestMetaRuntimeGraphRule:
+    """Tests for L096 MetaRuntimeGraphRule."""
+
+    @pytest.fixture  # type: ignore[untyped-decorator]
+    def rule(self) -> MetaRuntimeGraphRule:
+        """Create a rule instance.
+
+        Returns:
+            A MetaRuntimeGraphRule.
+        """
+        return MetaRuntimeGraphRule()
+
+    def test_match_requires_runtime_dict(self, rule: MetaRuntimeGraphRule) -> None:
+        """Match when ``collection_meta_runtime`` is non-empty.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g0, n0 = _make_collection(collection_meta_runtime={})
+        assert not rule.match(g0, n0)
+        g1, n1 = _make_collection(collection_meta_runtime={"foo": 1})
+        assert rule.match(g1, n1)
+
+    def test_violation_missing_requires_ansible(self, rule: MetaRuntimeGraphRule) -> None:
+        """Missing ``requires_ansible`` key → violation.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_collection(collection_meta_runtime={"collections": {}})
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is True
+
+    def test_pass_with_requires_ansible(self, rule: MetaRuntimeGraphRule) -> None:
+        """Present ``requires_ansible`` → pass.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_collection(collection_meta_runtime={"requires_ansible": ">=2.14"})
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is False
+
+
+class TestGalaxyChangelogGraphRule:
+    """Tests for L103 GalaxyChangelogGraphRule."""
+
+    @pytest.fixture  # type: ignore[untyped-decorator]
+    def rule(self) -> GalaxyChangelogGraphRule:
+        """Create a rule instance.
+
+        Returns:
+            A GalaxyChangelogGraphRule.
+        """
+        return GalaxyChangelogGraphRule()
+
+    def test_violation_without_changelog(self, rule: GalaxyChangelogGraphRule) -> None:
+        """No CHANGELOG* → violation.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_collection(collection_files=["galaxy.yml"])
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is True
+
+    def test_pass_with_changelog(self, rule: GalaxyChangelogGraphRule) -> None:
+        """Root-level CHANGELOG.rst passes.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_collection(collection_files=["CHANGELOG.rst"])
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is False
+
+    def test_nested_changelog_does_not_satisfy(self, rule: GalaxyChangelogGraphRule) -> None:
+        """``docs/CHANGELOG.md`` should not satisfy the root-level requirement.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_collection(collection_files=["docs/CHANGELOG.md", "galaxy.yml"])
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is True
+
+
+class TestGalaxyRuntimeGraphRule:
+    """Tests for L104 GalaxyRuntimeGraphRule."""
+
+    @pytest.fixture  # type: ignore[untyped-decorator]
+    def rule(self) -> GalaxyRuntimeGraphRule:
+        """Create a rule instance.
+
+        Returns:
+            A GalaxyRuntimeGraphRule.
+        """
+        return GalaxyRuntimeGraphRule()
+
+    def test_pass_meta_runtime_yml_path(self, rule: GalaxyRuntimeGraphRule) -> None:
+        """Listed ``meta/runtime.yml`` passes.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        for entry in ("meta/runtime.yml", "meta/runtime.yaml", r"meta\runtime.yml"):
+            g, nid = _make_collection(collection_files=[entry])
+            result = rule.process(g, nid)
+            assert result is not None
+            assert result.verdict is False, entry
+
+    def test_nested_meta_runtime_does_not_satisfy(self, rule: GalaxyRuntimeGraphRule) -> None:
+        """Nested ``vendor/ns/col/meta/runtime.yml`` is not the collection's own.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_collection(collection_files=["vendor/ns/col/meta/runtime.yml"])
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is True
+
+    def test_violation_missing_runtime(self, rule: GalaxyRuntimeGraphRule) -> None:
+        """No runtime file → violation.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_collection(collection_files=["galaxy.yml", "plugins/modules/x.py"])
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is True
+
+
+class TestGalaxyRepositoryGraphRule:
+    """Tests for L105 GalaxyRepositoryGraphRule."""
+
+    @pytest.fixture  # type: ignore[untyped-decorator]
+    def rule(self) -> GalaxyRepositoryGraphRule:
+        """Create a rule instance.
+
+        Returns:
+            A GalaxyRepositoryGraphRule.
+        """
+        return GalaxyRepositoryGraphRule()
+
+    def test_match_requires_metadata(self, rule: GalaxyRepositoryGraphRule) -> None:
+        """Match when ``collection_metadata`` is non-empty.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g0, n0 = _make_collection(collection_metadata={})
+        assert not rule.match(g0, n0)
+        g1, n1 = _make_collection(collection_metadata={"namespace": "x"})
+        assert rule.match(g1, n1)
+
+    def test_violation_missing_repository(self, rule: GalaxyRepositoryGraphRule) -> None:
+        """No repository key → violation.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_collection(collection_metadata={"namespace": "ns", "name": "n"})
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is True
+
+    def test_violation_empty_repository(self, rule: GalaxyRepositoryGraphRule) -> None:
+        """Empty string repository → violation.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_collection(collection_metadata={"repository": "  "})
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is True
+
+    def test_pass_with_repository(self, rule: GalaxyRepositoryGraphRule) -> None:
+        """Non-empty repository (flat galaxy.yml) → pass.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_collection(
+            collection_metadata={"repository": "https://github.com/org/repo"},
+        )
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is False
+
+    def test_pass_manifest_json_repository(self, rule: GalaxyRepositoryGraphRule) -> None:
+        """Non-empty repository inside MANIFEST.json ``collection_info`` → pass.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_collection(
+            collection_metadata={
+                "collection_info": {
+                    "namespace": "ns",
+                    "name": "col",
+                    "repository": "https://github.com/ns/col",
+                },
+            },
+        )
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is False
+
+    def test_violation_manifest_json_missing_repository(self, rule: GalaxyRepositoryGraphRule) -> None:
+        """MANIFEST.json ``collection_info`` without ``repository`` → violation.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_collection(
+            collection_metadata={
+                "collection_info": {"namespace": "ns", "name": "col"},
+            },
+        )
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is True
+
+
+# ===========================================================================
+# Remaining plugin/schema stub rules — match always False for generic graphs
 # ===========================================================================
 
 
 _STUB_RULES: list[tuple[str, type[GraphRule]]] = [
-    ("L087", CollectionLicenseGraphRule),
-    ("L088", CollectionReadmeGraphRule),
     ("L089", PluginTypeHintsGraphRule),
     ("L090", PluginFileSizeGraphRule),
     ("L095", SchemaValidationGraphRule),
-    ("L096", MetaRuntimeGraphRule),
-    ("L103", GalaxyChangelogGraphRule),
-    ("L104", GalaxyRuntimeGraphRule),
-    ("L105", GalaxyRepositoryGraphRule),
 ]
 
 
 class TestCollectionPluginStubRules:
-    """Verify all collection/plugin stub rules have match=False."""
+    """Verify remaining stub rules have match=False on generic playbook graphs."""
 
     @pytest.mark.parametrize("rule_id,rule_cls", _STUB_RULES)  # type: ignore[untyped-decorator]
     def test_match_always_false(self, rule_id: str, rule_cls: type[GraphRule]) -> None:
-        """Stub rule ``match()`` always returns False for any node type.
+        """Stub rule ``match()`` returns False for task/playbook nodes.
 
         Args:
             rule_id: Rule identifier string.
@@ -344,7 +727,7 @@ class TestCollectionPluginStubRules:
 
     @pytest.mark.parametrize("rule_id,rule_cls", _STUB_RULES)  # type: ignore[untyped-decorator]
     def test_process_returns_none(self, rule_id: str, rule_cls: type[GraphRule]) -> None:
-        """Stub rule ``process()`` returns None.
+        """Stub rule ``process()`` returns None on a task node.
 
         Args:
             rule_id: Rule identifier string.
@@ -356,7 +739,7 @@ class TestCollectionPluginStubRules:
 
     @pytest.mark.parametrize("rule_id,rule_cls", _STUB_RULES)  # type: ignore[untyped-decorator]
     def test_scanner_produces_no_violations(self, rule_id: str, rule_cls: type[GraphRule]) -> None:
-        """Scanner produces zero violations for stub rules.
+        """Scanner produces zero violations for stub rules on a task-only graph.
 
         Args:
             rule_id: Rule identifier string.
