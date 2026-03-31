@@ -291,3 +291,18 @@ class TestLoadGraphRules:
         """Verify non-existent directory is skipped."""
         rules = load_graph_rules(rules_dir="/nonexistent/path")
         assert rules == []
+
+    def test_all_graph_rules_load_without_errors(self) -> None:
+        """All *_graph.py rule modules must load without import errors.
+
+        Regression test for Python 3.14 dataclass loading bug: load_classes_in_dir
+        must register modules in sys.modules before exec_module so @dataclass
+        can resolve cls.__module__.
+        """
+        from pathlib import Path
+
+        import apme_engine.validators.native.rules as rules_pkg
+
+        rules_dir = str(Path(rules_pkg.__file__).parent)
+        rules = load_graph_rules(rules_dir=rules_dir)
+        assert len(rules) >= 80, f"Expected at least 80 graph rules, got {len(rules)}"

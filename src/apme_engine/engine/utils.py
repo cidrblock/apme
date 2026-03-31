@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 import traceback
 from copy import deepcopy
 from importlib.util import module_from_spec, spec_from_file_location
@@ -748,7 +749,11 @@ def load_classes_in_dir(
             if spec is None or spec.loader is None:
                 continue
             mod = module_from_spec(spec)
-            spec.loader.exec_module(mod)
+            sys.modules[short_module_name] = mod
+            try:
+                spec.loader.exec_module(mod)
+            finally:
+                sys.modules.pop(short_module_name, None)
             for k in mod.__dict__:
                 cls = getattr(mod, k)
                 if not callable(cls):
