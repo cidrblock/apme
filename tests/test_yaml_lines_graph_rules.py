@@ -203,6 +203,25 @@ class TestL041KeyOrderGraphRule:
         assert result is not None
         assert result.verdict is False
 
+    def test_violation_fqcn_module_before_name(self, rule: KeyOrderGraphRule) -> None:
+        """Violation when ``name`` appears after a FQCN module key.
+
+        Args:
+            rule: Rule instance under test.
+
+        Returns:
+            None
+        """
+        yaml_text = "- ansible.builtin.package:\n    name: nginx\n  name: Install\n"
+        g, tid = _make_task(
+            module="ansible.builtin.package",
+            resolved_module="ansible.builtin.package",
+            yaml_lines=yaml_text,
+        )
+        result = rule.process(g, tid)
+        assert result is not None
+        assert result.verdict is True
+
 
 # ---------------------------------------------------------------------------
 # L060 — LineLength
@@ -727,6 +746,26 @@ class TestL083HardcodedGroupGraphRule:
         groups = cast(list[str], result.detail.get("found_groups") or [])
         assert "webservers" in groups
 
+    def test_violation_relative_role_path(self, rule: HardcodedGroupGraphRule) -> None:
+        """Violation for ``groups['...']`` using a relative role path.
+
+        Args:
+            rule: Rule instance under test.
+
+        Returns:
+            None
+        """
+        g, tid = _make_task(
+            file_path="roles/myrole/tasks/main.yml",
+            yaml_lines="when: 'db1' in groups['databases']\n",
+        )
+        result = rule.process(g, tid)
+        assert result is not None
+        assert result.verdict is True
+        assert result.detail is not None
+        groups = cast(list[str], result.detail.get("found_groups") or [])
+        assert "databases" in groups
+
     def test_pass_not_under_roles(self, rule: HardcodedGroupGraphRule) -> None:
         """Pass when file path is not under ``/roles/`` (rule does not apply).
 
@@ -830,6 +869,25 @@ class TestL094DynamicTemplateDateGraphRule:
         assert result is not None
         assert result.verdict is True
         assert result.detail is not None
+
+    def test_violation_unresolved_template_module(self, rule: DynamicTemplateDateGraphRule) -> None:
+        """Violation when resolved name is empty but declared module is ``template``.
+
+        Args:
+            rule: Rule instance under test.
+
+        Returns:
+            None
+        """
+        g, tid = _make_task(
+            module="template",
+            resolved_module="",
+            yaml_lines="src: report.j2\ndest: /tmp/out\nwhen: ansible_date_time is defined\n",
+        )
+        assert rule.match(g, tid) is True
+        result = rule.process(g, tid)
+        assert result is not None
+        assert result.verdict is True
 
     def test_pass_template_without_dynamic_date(self, rule: DynamicTemplateDateGraphRule) -> None:
         """Pass for template tasks without dynamic date expressions.

@@ -28,7 +28,7 @@ def _top_level_keys_from_yaml(yaml_lines: str) -> list[str]:
             continue
         if stripped.startswith("- "):
             stripped = stripped[2:].lstrip()
-        match = re.match(r"^(\w+)\s*:", stripped)
+        match = re.match(r"^([\w.]+)\s*:", stripped)
         if match:
             keys.append(match.group(1))
     return keys
