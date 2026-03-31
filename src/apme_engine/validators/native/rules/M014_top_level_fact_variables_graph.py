@@ -1,4 +1,4 @@
-"""GraphRule M014: top-level fact variables — use ansible_facts[\"name\"] (removed in 2.24).
+r"""GraphRule M014: top-level fact variables — use ansible_facts[\"name\"] (removed in 2.24).
 
 Graph-aware port of ``M014_top_level_fact_variables.py``.
 """

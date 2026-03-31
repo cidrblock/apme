@@ -37,7 +37,7 @@ class UnnecessarySetFactGraphRule(GraphRule):
     """
 
     rule_id: str = "L035"
-    description: str = "set_fact is used without random filter"
+    description: str = "set_fact uses the random filter, making the task non-idempotent"
     enabled: bool = True
     name: str = "UnnecessarySetFact"
     version: str = "v0.0.1"

@@ -36,9 +36,9 @@ class NoFreeFormGraphRule(GraphRule):
 
     The preferred style is a YAML mapping with explicit keys rather than
     a single string containing key=value pairs (e.g. ``stat: path=/tmp``).
-    Command-family modules (command, shell, raw, script) are always
-    flagged when using _raw_params because their free-form usage
-    is the anti-pattern this rule targets.
+    Command-family modules (command, shell, raw, script) are flagged
+    when ``_raw_params`` contains a non-empty string.  Other modules
+    are flagged when ``_raw_params`` contains ``key=value`` patterns.
 
     Attributes:
         rule_id: Rule identifier.
@@ -76,9 +76,9 @@ class NoFreeFormGraphRule(GraphRule):
     def process(self, graph: ContentGraph, node_id: str) -> GraphRuleResult | None:
         """Report when _raw_params indicates free-form module invocation.
 
-        For command-family modules any _raw_params presence is a violation.
-        For other modules, _raw_params containing key=value patterns
-        is the indicator.
+        For command-family modules, a non-empty ``_raw_params`` string is a
+        violation.  For other modules, ``_raw_params`` containing ``key=value``
+        patterns is the indicator.
 
         Args:
             graph: The full ContentGraph.

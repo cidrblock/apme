@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from apme_engine.engine.content_graph import ContentGraph, NodeType
 from apme_engine.engine.models import RuleTag as Tag
 from apme_engine.engine.models import Severity, YAMLDict
-from apme_engine.validators.native.rules.graph_rule_base import GraphRule, GraphRuleResult
+from apme_engine.validators.native.rules.graph_rule_base import GraphRule, GraphRuleResult, is_templated
 
 _TASK_TYPES = frozenset({NodeType.TASK, NodeType.HANDLER})
 
@@ -19,18 +19,6 @@ _TASKFILE_MODULES = frozenset(
         "import_tasks",
     }
 )
-
-
-def _is_templated(value: str) -> bool:
-    """Return True if the value contains Jinja2 template markers.
-
-    Args:
-        value: String to check for ``{{`` or ``{%`` markers.
-
-    Returns:
-        True when *value* contains Jinja2 template syntax.
-    """
-    return "{{" in value or "{%" in value
 
 
 @dataclass
@@ -102,7 +90,7 @@ class ParameterizedImportTaskfileGraphRule(GraphRule):
         if not isinstance(taskfile_ref, str):
             taskfile_ref = str(taskfile_ref) if taskfile_ref else ""
 
-        if not _is_templated(taskfile_ref):
+        if not is_templated(taskfile_ref):
             return GraphRuleResult(
                 verdict=False,
                 node_id=node_id,

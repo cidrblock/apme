@@ -538,7 +538,7 @@ class TestL043DeprecatedBareVarsGraphRule:
         Returns:
             None
         """
-        g, tid = _make_task(yaml_lines='msg: "{{ myvar | default(\'x\') }}"\n')
+        g, tid = _make_task(yaml_lines="msg: \"{{ myvar | default('x') }}\"\n")
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is False
