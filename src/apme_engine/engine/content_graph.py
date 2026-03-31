@@ -1120,7 +1120,11 @@ class GraphBuilder:
             become=_extract_become(task),
             when_expr=when_expr,
             tags=_as_str_list(options.get("tags")),
-            loop=options.get("loop") or options.get("with_items"),
+            loop=options.get("loop")
+            or next(
+                (options[k] for k in options if k.startswith("with_")),
+                None,
+            ),
             loop_control=loop_control,
             register=register,
             set_facts=_safe_dict(getattr(task, "set_facts", {})),
