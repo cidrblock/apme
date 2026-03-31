@@ -456,3 +456,91 @@ class TestContentGraphSerialization:
         assert isinstance(serialized, str)
         roundtripped = ContentGraph.from_dict(json.loads(serialized))
         assert roundtripped.node_count() == g.node_count()
+
+
+# ---------------------------------------------------------------------------
+# graph_report_to_violations converter
+# ---------------------------------------------------------------------------
+
+
+class TestGraphReportToViolations:
+    """Tests for ``graph_report_to_violations`` conversion."""
+
+    def test_verdict_true_becomes_violation(self) -> None:
+        """Verify results with verdict=True are included in violations."""
+        from apme_engine.engine.graph_scanner import (
+            GraphNodeResult,
+            GraphScanReport,
+            graph_report_to_violations,
+        )
+        from apme_engine.engine.models import RuleMetadata
+
+        node = ContentNode(
+            identity=NodeIdentity(path="site.yml/plays[0]/tasks[0]", node_type=NodeType.TASK),
+            file_path="site.yml",
+            line_start=5,
+        )
+        from apme_engine.validators.native.rules.graph_rule_base import GraphRuleResult
+
+        report = GraphScanReport(
+            node_results=[
+                GraphNodeResult(
+                    node_id="site.yml/plays[0]/tasks[0]",
+                    node=node,
+                    rule_results=[
+                        GraphRuleResult(
+                            rule=RuleMetadata(rule_id="L042", severity="warning", scope="task"),
+                            verdict=True,
+                            detail={"message": "too complex"},
+                            node_id="site.yml/plays[0]/tasks[0]",
+                            file=("site.yml", 5),
+                        ),
+                    ],
+                ),
+            ],
+        )
+        violations = graph_report_to_violations(report)
+        assert len(violations) == 1
+        assert violations[0]["rule_id"] == "L042"
+        assert violations[0]["message"] == "too complex"
+        assert violations[0]["file"] == "site.yml"
+        assert violations[0]["line"] == 5
+        assert violations[0]["source"] == "native"
+
+    def test_verdict_false_excluded(self) -> None:
+        """Verify results with verdict=False are excluded from violations."""
+        from apme_engine.engine.graph_scanner import (
+            GraphNodeResult,
+            GraphScanReport,
+            graph_report_to_violations,
+        )
+        from apme_engine.engine.models import RuleMetadata
+        from apme_engine.validators.native.rules.graph_rule_base import GraphRuleResult
+
+        node = ContentNode(
+            identity=NodeIdentity(path="t.yml/plays[0]/tasks[0]", node_type=NodeType.TASK),
+            file_path="t.yml",
+        )
+        report = GraphScanReport(
+            node_results=[
+                GraphNodeResult(
+                    node_id="t.yml/plays[0]/tasks[0]",
+                    node=node,
+                    rule_results=[
+                        GraphRuleResult(
+                            rule=RuleMetadata(rule_id="L042", severity="warning"),
+                            verdict=False,
+                            node_id="t.yml/plays[0]/tasks[0]",
+                        ),
+                    ],
+                ),
+            ],
+        )
+        violations = graph_report_to_violations(report)
+        assert violations == []
+
+    def test_empty_report(self) -> None:
+        """Verify empty report produces empty violations."""
+        from apme_engine.engine.graph_scanner import GraphScanReport, graph_report_to_violations
+
+        assert graph_report_to_violations(GraphScanReport()) == []
