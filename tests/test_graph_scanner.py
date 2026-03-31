@@ -293,7 +293,12 @@ class TestLoadGraphRules:
         assert rules == []
 
     def test_all_graph_rules_load_without_errors(self) -> None:
-        """All *_graph.py rule modules must load without import errors.
+        """All native rule modules must load without import errors.
+
+        ``load_classes_in_dir`` imports every ``.py`` file in the rules
+        directory (excluding ``_test.py``).  This is intentionally broader
+        than just ``*_graph.py`` files so that helper modules and shared
+        infrastructure are also validated.
 
         Regression test for Python 3.14 dataclass loading bug: load_classes_in_dir
         must register modules in sys.modules before exec_module so @dataclass
