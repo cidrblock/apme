@@ -70,7 +70,10 @@ class ListAllInboundSrcGraphRule(GraphRule):
             return None
 
         src_list: list[YAMLValue] = []
-        for desc_id in graph.descendants(node_id):
+        for desc_id in sorted(
+            graph.descendants(node_id),
+            key=lambda d: (n.file_path, n.line_start, d) if (n := graph.get_node(d)) else ("", 0, d),
+        ):
             desc = graph.get_node(desc_id)
             if desc is None or desc.node_type not in _TASK_TYPES:
                 continue
