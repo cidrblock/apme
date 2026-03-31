@@ -1,6 +1,7 @@
 """GraphRule L077: Roles should declare argument_specs for fail-fast validation."""
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import cast
 
 from apme_engine.engine.content_graph import ContentGraph, NodeType
@@ -62,8 +63,11 @@ class RoleArgSpecsGraphRule(GraphRule):
         if node is None:
             return None
 
-        argument_specs = node.role_metadata.get("argument_specs")
-        verdict = not bool(argument_specs)
+        has_arg_specs = bool(node.role_metadata.get("argument_specs"))
+        if not has_arg_specs and node.file_path:
+            meta_dir = Path(node.file_path) / "meta"
+            has_arg_specs = (meta_dir / "argument_specs.yml").is_file() or (meta_dir / "argument_specs.yaml").is_file()
+        verdict = not has_arg_specs
         if verdict:
             return GraphRuleResult(
                 verdict=True,
