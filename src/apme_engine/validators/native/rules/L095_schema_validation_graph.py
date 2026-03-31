@@ -13,36 +13,44 @@ from apme_engine.validators.native.rules.graph_rule_base import GraphRule, Graph
 
 _VALID_PLAY_KEYWORDS: frozenset[str] = frozenset(
     {
+        # Host & connection
         "hosts",
+        "connection",
+        "port",
+        "remote_user",
+        # Privilege escalation
+        "become",
+        "become_exe",
+        "become_flags",
+        "become_method",
+        "become_user",
+        # Fact gathering
+        "fact_path",
         "gather_facts",
         "gather_subset",
         "gather_timeout",
-        "fact_path",
-        "connection",
-        "become",
-        "become_user",
-        "become_method",
-        "become_flags",
-        "serial",
-        "strategy",
+        # Execution control
         "any_errors_fatal",
-        "environment",
-        "no_log",
-        "tags",
-        "when",
+        "check_mode",
+        "diff",
+        "force_handlers",
         "ignore_errors",
         "ignore_unreachable",
         "max_fail_percentage",
         "order",
-        "debugger",
-        "diff",
-        "check_mode",
-        "timeout",
-        "throttle",
         "run_once",
-        "port",
-        "remote_user",
-        "force_handlers",
+        "serial",
+        "strategy",
+        "throttle",
+        "timeout",
+        # Configuration
+        "debugger",
+        "environment",
+        "no_log",
+        "tags",
+        "when",
+        # Play structure (not consumed by load_play, lands in options)
+        "vars_prompt",
     }
 )
 

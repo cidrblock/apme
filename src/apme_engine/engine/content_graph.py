@@ -685,6 +685,8 @@ _CONTENT_NODE_SIMPLE_FIELDS: tuple[str, ...] = (
     "collection_metadata",
     "collection_meta_runtime",
     "collection_files",
+    "module_line_count",
+    "module_functions_without_return_type",
     "ari_key",
 )
 
@@ -981,7 +983,13 @@ class GraphBuilder:
             return nid
         self._visited.add(nid)
 
-        line_count, funcs_missing_return = _analyze_python_file(defined_in)
+        resolved_path = defined_in
+        if defined_in and not os.path.isabs(defined_in) and not os.path.isfile(defined_in) and self._scan_root:
+            candidate = os.path.join(self._scan_root, defined_in)
+            if os.path.isfile(candidate):
+                resolved_path = candidate
+
+        line_count, funcs_missing_return = _analyze_python_file(resolved_path)
 
         node = ContentNode(
             identity=identity,
