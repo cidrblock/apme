@@ -156,7 +156,7 @@ directly.
 ### Phase 2J+K — Remaining rules: sanity, aggregation, stubs (PR #150)
 
 Strategy: L056 and R401 are fully functional. Nine collection/plugin rules
-are ported as `match()=False` stubs for behavioural parity — they become
+are ported as `match()=False` stubs for behavioral parity — they become
 active once COLLECTION/PLUGIN node types are populated in the graph.
 
 | Rule | Name | Category | Notes |
