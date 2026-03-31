@@ -749,11 +749,16 @@ def load_classes_in_dir(
             if spec is None or spec.loader is None:
                 continue
             mod = module_from_spec(spec)
+            had_prev = short_module_name in sys.modules
+            prev_mod = sys.modules.get(short_module_name)
             sys.modules[short_module_name] = mod
             try:
                 spec.loader.exec_module(mod)
             finally:
-                sys.modules.pop(short_module_name, None)
+                if had_prev:
+                    sys.modules[short_module_name] = prev_mod  # type: ignore[assignment]
+                else:
+                    sys.modules.pop(short_module_name, None)
             for k in mod.__dict__:
                 cls = getattr(mod, k)
                 if not callable(cls):
