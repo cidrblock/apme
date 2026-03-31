@@ -244,10 +244,11 @@ def graph_report_to_violations(report: GraphScanReport) -> list[ViolationDict]:
                 file_path = node.file_path
                 line = node.line_start if node.line_start else None
 
+            msg = str(detail.get("message", "")) or (rule.description if rule else "")
             v: ViolationDict = {
                 "rule_id": rule.rule_id if rule else "",
                 "level": rule.severity if rule else "",
-                "message": str(detail.get("message", "")),
+                "message": msg,
                 "file": file_path,
                 "line": line,
                 "path": rr.node_id,

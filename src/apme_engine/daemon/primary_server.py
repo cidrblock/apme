@@ -588,7 +588,10 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
         if context_obj.scandata and hasattr(context_obj.scandata, "content_graph"):
             cg = context_obj.scandata.content_graph
             if cg is not None:
-                content_graph_data = json.dumps(cg.to_dict(), default=str).encode()
+                loop = asyncio.get_event_loop()
+                content_graph_data = await loop.run_in_executor(
+                    None, lambda: json.dumps(cg.to_dict(), default=str).encode()
+                )
                 logger.debug(
                     "ContentGraph serialized: %d bytes (req=%s)",
                     len(content_graph_data),

@@ -32,7 +32,7 @@ from apme_engine.engine.graph_scanner import (
 from apme_engine.engine.models import ViolationDict, YAMLDict
 from apme_engine.log_bridge import attach_collector
 from apme_engine.validators.base import ScanContext
-from apme_engine.validators.native import NativeRuleTiming, NativeRunResult, NativeValidator
+from apme_engine.validators.native import NativeRunResult, NativeValidator
 
 logger = logging.getLogger("apme.native")
 
@@ -63,12 +63,10 @@ class _GraphRunResult:
 
     Attributes:
         violations: Violation dicts produced by graph rules.
-        rule_timings: Per-rule timing (populated from GraphScanReport).
         report: Full scan report for diagnostics.
     """
 
     violations: list[ViolationDict] = field(default_factory=list)
-    rule_timings: list[NativeRuleTiming] = field(default_factory=list)
     report: GraphScanReport | None = None
 
 
@@ -81,15 +79,21 @@ def _default_rules_dir() -> str:
     return os.path.join(os.path.dirname(os.path.dirname(__file__)), "validators", "native", "rules")
 
 
-def _run_graph(content_graph: ContentGraph) -> _GraphRunResult:
-    """Blocking function: load GraphRules and scan a deserialized ContentGraph.
+def _run_graph(raw_graph_data: bytes) -> _GraphRunResult:
+    """Blocking function: deserialize ContentGraph, load GraphRules, and scan.
+
+    Deserialization happens here (not in the async handler) so that JSON
+    parsing and graph construction run in the executor thread rather than
+    blocking the gRPC event loop.
 
     Args:
-        content_graph: Deserialized ContentGraph from gRPC request.
+        raw_graph_data: Raw JSON bytes from ``ValidateRequest.content_graph_data``.
 
     Returns:
         _GraphRunResult with violations, timings, and the raw report.
     """
+    graph_dict = json.loads(raw_graph_data)
+    content_graph = ContentGraph.from_dict(graph_dict)
     rules_dir = _default_rules_dir()
     rules = load_graph_rules(rules_dir=rules_dir)
     report = graph_scan(content_graph, rules)
@@ -124,20 +128,20 @@ class NativeValidatorServicer(validate_pb2_grpc.ValidatorServicer):
                 graph_result: _GraphRunResult | None = None
                 if request.content_graph_data:
                     try:
-                        graph_dict = json.loads(request.content_graph_data)
-                        content_graph = ContentGraph.from_dict(graph_dict)
-                        logger.debug(
-                            "Native: ContentGraph deserialized (%d nodes, req=%s)",
-                            content_graph.node_count(),
-                            req_id,
-                        )
                         graph_result = await asyncio.get_event_loop().run_in_executor(
                             None,
                             _run_graph,
-                            content_graph,
+                            request.content_graph_data,
                         )
-                    except Exception as e:
-                        logger.warning("Native: graph path failed, falling back to legacy: %s (req=%s)", e, req_id)
+                        logger.debug(
+                            "Native: graph path done (%d violations, req=%s)",
+                            len(graph_result.violations),
+                            req_id,
+                        )
+                    except Exception:
+                        logger.warning(
+                            "Native: graph path failed, falling back to legacy (req=%s)", req_id, exc_info=True
+                        )
 
                 # --- Legacy path (fallback / dual-run comparison) ---
                 legacy_result: NativeRunResult | None = None
@@ -172,8 +176,8 @@ class NativeValidatorServicer(validate_pb2_grpc.ValidatorServicer):
                             hierarchy_payload,
                             scandata,
                         )
-                    except Exception as e:
-                        logger.warning("Native: legacy path failed: %s (req=%s)", e, req_id)
+                    except Exception:
+                        logger.warning("Native: legacy path failed (req=%s)", req_id, exc_info=True)
 
                 # --- Dual-run comparison logging ---
                 if graph_result is not None and legacy_result is not None:
