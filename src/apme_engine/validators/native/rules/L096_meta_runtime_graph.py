@@ -1,4 +1,4 @@
-"""GraphRule L096: meta/runtime.yml requires_ansible must be a valid version specifier."""
+"""GraphRule L096: meta/runtime.yml should declare requires_ansible."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ class MetaRuntimeGraphRule(GraphRule):
     """
 
     rule_id: str = "L096"
-    description: str = "meta/runtime.yml requires_ansible must be a valid version specifier"
+    description: str = "meta/runtime.yml should declare requires_ansible"
     enabled: bool = True
     name: str = "MetaRuntime"
     version: str = "v0.0.1"
@@ -72,7 +72,7 @@ class MetaRuntimeGraphRule(GraphRule):
                 file=(node.file_path, node.line_start),
             )
         detail: YAMLDict = {
-            "issue": "meta/runtime.yml metadata is missing requires_ansible",
+            "message": "meta/runtime.yml is missing requires_ansible",
             "missing_key": "requires_ansible",
         }
         return GraphRuleResult(

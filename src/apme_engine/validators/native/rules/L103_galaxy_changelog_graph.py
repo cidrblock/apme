@@ -90,7 +90,7 @@ class GalaxyChangelogGraphRule(GraphRule):
                 file=(node.file_path, node.line_start),
             )
         detail: YAMLDict = {
-            "issue": "No CHANGELOG* file found in collection file listing",
+            "message": "No CHANGELOG* file found at collection root",
             "expected_patterns": ["CHANGELOG*"],
         }
         return GraphRuleResult(

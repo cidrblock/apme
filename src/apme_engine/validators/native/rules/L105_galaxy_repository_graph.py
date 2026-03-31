@@ -98,7 +98,7 @@ class GalaxyRepositoryGraphRule(GraphRule):
                 file=(node.file_path, node.line_start),
             )
         detail: YAMLDict = {
-            "issue": "galaxy.yml metadata is missing a non-empty repository key",
+            "message": "galaxy.yml metadata is missing a non-empty repository key",
             "expected_key": "repository",
         }
         return GraphRuleResult(

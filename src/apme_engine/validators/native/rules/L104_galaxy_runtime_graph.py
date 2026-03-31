@@ -90,7 +90,7 @@ class GalaxyRuntimeGraphRule(GraphRule):
                 file=(node.file_path, node.line_start),
             )
         detail: YAMLDict = {
-            "issue": "meta/runtime.yml (or meta/runtime.yaml) not found in collection file listing",
+            "message": "meta/runtime.yml not found at collection root",
             "expected_paths": ["meta/runtime.yml", "meta/runtime.yaml"],
         }
         return GraphRuleResult(

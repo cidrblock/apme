@@ -92,7 +92,7 @@ class CollectionLicenseGraphRule(GraphRule):
                 file=(node.file_path, node.line_start),
             )
         detail: YAMLDict = {
-            "issue": "No LICENSE* or COPYING* file found in collection file listing",
+            "message": "No LICENSE* or COPYING* file found at collection root",
             "expected_patterns": ["LICENSE*", "COPYING*"],
         }
         return GraphRuleResult(
