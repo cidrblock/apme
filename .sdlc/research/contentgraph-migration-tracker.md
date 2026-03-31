@@ -9,12 +9,13 @@
 | Metric | Count |
 |--------|-------|
 | Total native rules | 96 |
-| Ported to GraphRule | 74 |
-| Skipped (N/A) | 4 |
-| Remaining | 18 |
-| Migration % | 77.1% |
+| Ported to GraphRule | 85 |
+| Skipped (N/A) | 9 |
+| Deferred (Phase 3) | 2 |
+| Remaining | 0 |
+| Migration % | 88.5% |
 
-## Ported Rules (74)
+## Ported Rules (85)
 
 ### Phase 2A — Scanner bootstrap + R108 (PR #138)
 
@@ -152,53 +153,53 @@ directly.
 | P003 | ModuleArgumentValueValidation | Annotation producer, severity NONE |
 | P004 | VariableValidation | Annotation producer, severity NONE |
 
+### Phase 2J+K — Remaining rules: sanity, aggregation, stubs (PR #TBD)
+
+Strategy: L056 and R401 are fully functional. Nine collection/plugin rules
+are ported as `match()=False` stubs for behavioural parity — they become
+active once COLLECTION/PLUGIN node types are populated in the graph.
+
+| Rule | Name | Category | Notes |
+|------|------|----------|-------|
+| L056 | Sanity | TASK_LOCAL | `file_path` regex against ignore patterns |
+| R401 | ListAllInboundSrc | CROSS_TASK | Walks PLAYBOOK descendants for inbound `src` values |
+| L087 | CollectionLicense | STUB | `match()=False` — awaits COLLECTION file listing |
+| L088 | CollectionReadme | STUB | `match()=False` — awaits COLLECTION file listing |
+| L089 | PluginTypeHints | STUB | `match()=False` — awaits plugin Python content |
+| L090 | PluginFileSize | STUB | `match()=False` — awaits plugin Python content |
+| L095 | SchemaValidation | STUB | `match()=False` — awaits play_data / metadata attrs |
+| L096 | MetaRuntime | STUB | `match()=False` — awaits COLLECTION metadata |
+| L103 | GalaxyChangelog | STUB | `match()=False` — awaits COLLECTION file listing |
+| L104 | GalaxyRuntime | STUB | `match()=False` — awaits COLLECTION file listing |
+| L105 | GalaxyRepository | STUB | `match()=False` — awaits COLLECTION metadata |
+
+### Phase 2J+K — Skipped (N/A)
+
+| Rule | Name | Reason |
+|------|------|--------|
+| R402 | ListAllUsedVariables | Severity NONE, aggregation of `variable_use` keys |
+| R404 | ShowVariables | Severity NONE, disabled debug rule |
+| R501 | DependencySuggestion | Severity NONE, needs `possible_candidates` from collection resolver |
+| L031 | FilePermissionRule | Disabled (`enabled=False`), no active implementation |
+| M029 | InventoryScriptMissingMeta | Disabled, no implementation |
+
 ---
 
-## Remaining Rules (18)
+## Deferred Rules (2) — Phase 3 Prerequisites
 
-### Needs variable tracking (`variable_use` / `variable_set`)
+These rules require the full variable resolution / provenance infrastructure
+(Phase 3 of ADR-044). They cannot be ported until `ContentNode` has
+`variable_use` and `variable_set` fields populated by the
+`VariableProvenanceResolver`.
 
-| Rule | Name | Severity | What it checks |
-|------|------|----------|----------------|
-| L039 | UndefinedVariable | LOW | Unknown variable types |
-| L050 | VarNaming | VERY_LOW | Variable name convention (lowercase/underscore) |
-| R402 | ListAllUsedVariables | NONE | Lists `variable_use` keys (aggregation rule) |
-| R404 | ShowVariables | NONE | Dumps `variable_set` (disabled, debug rule) |
+| Rule | Name | Severity | What it needs |
+|------|------|----------|---------------|
+| L039 | UndefinedVariable | LOW | `variable_use` with resolution status — needs resolver to mark unknown variables |
+| L050 | VarNaming | VERY_LOW | `variable_set` with variable names — needs resolver to enumerate defined variables |
 
-### Cross-task / aggregation
-
-| Rule | Name | Severity | What it checks |
-|------|------|----------|----------------|
-| R401 | ListAllInboundSrc | VERY_LOW | Lists inbound `src` across scan (end aggregation) |
-
-### Collection/plugin targets (no `COLLECTION` node type yet)
-
-These rules target collection-level or plugin-level files.
-Currently `match()` returns `False` because the graph has no
-collection/plugin nodes. Deferred until `ContentGraph` adds
-those node types. R501 is included here because `possible_candidates`
-comes from the collection resolver (same infrastructure).
-
-| Rule | Name | Severity | What it checks |
-|------|------|----------|----------------|
-| R501 | DependencySuggestion | NONE | Suggests collection (needs `possible_candidates` from resolver) |
-| L056 | Sanity | VERY_LOW | `defined_in` path matches ignore patterns |
-| L087 | CollectionLicense | LOW | Collection missing LICENSE/COPYING |
-| L088 | CollectionReadme | VERY_LOW | Collection README missing |
-| L089 | PluginTypeHints | VERY_LOW | Plugin `.py` missing return type hints |
-| L090 | PluginFileSize | VERY_LOW | Plugin `.py` entry file too large |
-| L095 | SchemaValidation | HIGH | Playbook/galaxy schema keys (always-false match) |
-| L096 | MetaRuntime | HIGH | `requires_ansible` in `meta/runtime.yml` |
-| L103 | GalaxyChangelog | LOW | Collection missing CHANGELOG |
-| L104 | GalaxyRuntime | MEDIUM | Collection missing `meta/runtime.yml` |
-| L105 | GalaxyRepository | LOW | `galaxy.yml` missing `repository` |
-
-### Disabled / stub
-
-| Rule | Name | Severity | What it checks |
-|------|------|----------|----------------|
-| L031 | FilePermissionRule | MEDIUM | Insecure file permissions (disabled, `enabled=False`) |
-| M029 | InventoryScriptMissingMeta | MEDIUM | Inventory script `_meta` (disabled, no implementation) |
+**Tracking**: These rules will be ported as part of Phase 3 work item
+"PropertyOrigin consumed by rules" when the variable provenance
+infrastructure lands.
 
 ---
 
@@ -209,11 +210,8 @@ comes from the collection resolver (same infrastructure).
 3. ~~**Phase 2G**: `module_options`-based rules (4 rules: L035, L046, R111, R112)~~ **DONE**
 4. ~~**Phase 2H**: `yaml_lines` extension + content rules (17 rules)~~ **DONE**
 5. ~~**Phase 2I**: Annotation rules via module_options (10 rules ported, 4 skipped)~~ **DONE**
-6. **Phase 2J**: Variable tracking rules (4 rules)
-7. **Phase 2K**: Collection/plugin targets + aggregation + R501 (12 rules)
-   — R501 moved here (needs `possible_candidates` from collection resolver,
-   same infrastructure as collection node types)
-8. **Skip**: M029, L031 (disabled stubs, no real implementation)
+6. ~~**Phase 2J+K**: Remaining rules — L056, R401, 9 stubs (11 ported, 5 skipped)~~ **DONE**
+7. **Phase 3**: L039, L050 (deferred — require variable provenance resolver)
 
 ## ContentNode Extension Checklist
 
@@ -256,15 +254,15 @@ Deliverables: `ContentGraph`, `GraphBuilder`, `GraphRule`, `NodeIdentity`,
 every edge type, `APME_USE_CONTENT_GRAPH` feature flag,
 `test_content_graph_shadow.py` structural equivalence.
 
-### Phase 2 — Rules + switchover: IN PROGRESS (74/96 = 77.1%, +4 skipped)
+### Phase 2 — Rules + switchover: NEAR-COMPLETE (85/96 = 88.5%, +9 skipped, 2 deferred)
 
 Rule porting follows the priority taxonomy from ADR-044:
 
-| Category | ADR-044 count | Ported | Skipped | Remaining | Status |
-|----------|---------------|--------|---------|-----------|--------|
+| Category | ADR-044 count | Ported | Skipped | Deferred | Status |
+|----------|---------------|--------|---------|----------|--------|
 | INHERITED_PROPERTY | ~10 | 9 | — | — | Done (Phases 2A-2B) |
 | SCOPE_AWARE | ~8 | 8 | — | — | Done (Phase 2C) |
-| TASK_LOCAL | ~78 | 50 | 4 | 18 | In progress (Phases 2D-2K) |
+| TASK_LOCAL | ~78 | 61 | 9 | 2 | Phase 2 complete; 2 deferred to Phase 3 |
 | ROLE_METADATA | (subset of task-local) | 7 | — | — | Done (Phase 2F) |
 
 End-of-Phase-2 gates (from ADR-044):
