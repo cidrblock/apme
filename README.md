@@ -179,7 +179,7 @@ the pod automatically.
 
 This tears down any existing `apme-pod`, injects cache paths and secrets
 into `pod.yaml` via `envsubst`, and starts all containers. Cache defaults
-to `~/.cache/apme` (override with `APME_CACHE_HOST_PATH`).
+to `${XDG_CACHE_HOME:-$HOME/.cache}/apme` (override with `APME_CACHE_HOST_PATH`).
 
 Wait for the pod to be healthy before running scans:
 

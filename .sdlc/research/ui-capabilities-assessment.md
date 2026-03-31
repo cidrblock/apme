@@ -23,7 +23,8 @@ these capabilities by consuming the same API surface.
 | Code highlighting | react-syntax-highlighter (Prism) | 16.x |
 | Archive download | JSZip | 3.10 |
 | Build | Vite | 6.x |
-| Testing | Vitest + Testing Library | 4.x |
+| Testing | Vitest | 4.1.x |
+| Testing (DOM) | Testing Library | 16.x |
 | Styling | PatternFly CSS + custom `theme.css` |
 | HTTP | Native `fetch` — no axios, no client cache library |
 | State | Local React state (`useState`/`useReducer`) — no Redux, no React Query |
@@ -152,7 +153,7 @@ and `getSessionTrend` exist in `api.ts` but are not called from DashboardPage.
 
 **Live operation flow** (WebSocket):
 1. User clicks Check or Remediate on Overview or Activity tab
-2. `useProjectOperation` connects via `WS /projects/{id}/ws/operate`
+2. `useProjectOperation` connects via `WS /api/v1/projects/{id}/ws/operate`
 3. Sends `start` message with operation type + options
 4. Receives streaming messages: `cloning`, `started`, `progress`, `tier1_complete`, `proposals`, `approval_ack`, `result`, `error`, `closed`
 5. UI renders `OperationProgressPanel` (phase log + progress bar)
@@ -338,6 +339,8 @@ and `getSessionTrend` exist in `api.ts` but are not called from DashboardPage.
 ## API Surface Consumed
 
 ### REST Endpoints
+
+All paths are relative to the `/api/v1` base path (set in `frontend/src/services/api.ts`).
 
 ```
 GET  /health
