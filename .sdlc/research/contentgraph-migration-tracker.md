@@ -1,6 +1,6 @@
 # ContentGraph Rule Migration Tracker
 
-**Status**: Phase 2 Complete — graph path is sole execution path; 111/113 rule doc tests passing
+**Status**: Phase 2 Complete — all stub rules activated; 111/113 rule doc tests passing
 **Related**: [ADR-044](/.sdlc/adrs/ADR-044-node-identity-progression-model.md) |
 [Research](/.sdlc/research/ari-to-contentgraph-migration.md)
 
@@ -10,8 +10,8 @@
 |--------|-------|
 | Total native rules | 96 |
 | Ported to GraphRule | 85 |
-| Active (including 6 newly activated collection rules) | 82 |
-| Stub (awaiting plugin/schema infrastructure) | 3 |
+| Active (all stubs activated) | 85 |
+| Stub (awaiting infrastructure) | 0 |
 | Skipped (N/A) | 9 |
 | Deferred (Phase 3) | 2 |
 | Remaining | 0 |
@@ -219,13 +219,18 @@ infrastructure lands.
 | L104 | GalaxyRuntime | `meta/runtime.yml` file exists | Active |
 | L105 | GalaxyRepository | `galaxy.yml` has `repository` key | Active |
 
-### Remaining stubs (3) — needs plugin/schema infrastructure
+### Activated (3) — stub rules activated with MODULE nodes + play schema
 
-| Rule | Name | What it checks | Prerequisite |
-|------|------|----------------|--------------|
-| L089 | PluginTypeHints | Plugin `.py` has return type hints | MODULE/PLUGIN nodes with Python source |
-| L090 | PluginFileSize | Plugin entry file is not too large | MODULE/PLUGIN nodes with file size |
-| L095 | SchemaValidation | YAML file matches expected schema keys | `play_data`/`metadata` attributes |
+`GraphBuilder._build_module()` now creates `MODULE` nodes with
+`module_line_count` and `module_functions_without_return_type` (computed
+via `ast.parse` of the plugin `.py` file). L095 uses existing `options`
+on PLAY nodes and `collection_metadata` on COLLECTION nodes.
+
+| Rule | Name | What it checks | Status |
+|------|------|----------------|--------|
+| L089 | PluginTypeHints | Plugin `.py` functions have return type hints | Active |
+| L090 | PluginFileSize | Plugin entry file ≤ 500 lines | Active |
+| L095 | SchemaValidation | Play has no unknown keys; galaxy.yml has required keys | Active |
 
 ---
 
@@ -258,7 +263,8 @@ Fields still needed for full migration:
   consuming `RiskAnnotation` objects. The annotation pipeline is bypassed.
 - [ ] `variable_use: list[VariableRef]` — variables referenced by this node
 - [ ] `variable_set: list[VariableRef]` — variables defined by this node
-- [ ] `COLLECTION` / `PLUGIN` node types in `NodeType` enum
+- [x] `COLLECTION` / `MODULE` node types in `NodeType` enum + `_SCANNABLE_TYPES`
+- [x] `module_line_count`, `module_functions_without_return_type` on `ContentNode`
 - [x] ~~`role_files: dict[str, str]`~~ — **NOT NEEDED as a field**: L077 now
   checks the filesystem directly for `meta/argument_specs.yml` (or `.yaml`)
   when `role_metadata` has no `argument_specs`. Parity achieved without

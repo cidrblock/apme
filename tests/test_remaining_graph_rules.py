@@ -1,7 +1,7 @@
 """Unit and integration tests for Phase 2J+K GraphRules.
 
 Covers L056, R401, collection metadata rules (L087, L088, L096, L103–L105),
-and remaining plugin/schema stub rules (L089, L090, L095).
+and plugin/schema rules (L089, L090, L095).
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ from apme_engine.engine.content_graph import (
 )
 from apme_engine.engine.graph_scanner import scan
 from apme_engine.engine.models import YAMLDict
-from apme_engine.validators.native.rules.graph_rule_base import GraphRule
 from apme_engine.validators.native.rules.L056_sanity_graph import SanityGraphRule
 from apme_engine.validators.native.rules.L087_collection_license_graph import CollectionLicenseGraphRule
 from apme_engine.validators.native.rules.L088_collection_readme_graph import CollectionReadmeGraphRule
@@ -694,62 +693,338 @@ class TestGalaxyRepositoryGraphRule:
 
 
 # ===========================================================================
-# Remaining plugin/schema stub rules — match always False for generic graphs
+# Helpers — MODULE nodes
 # ===========================================================================
 
 
-_STUB_RULES: list[tuple[str, type[GraphRule]]] = [
-    ("L089", PluginTypeHintsGraphRule),
-    ("L090", PluginFileSizeGraphRule),
-    ("L095", SchemaValidationGraphRule),
-]
+def _make_module(
+    *,
+    path: str = "plugins/modules/my_module.py",
+    file_path: str = "plugins/modules/my_module.py",
+    name: str = "ns.col.my_module",
+    module_line_count: int = 100,
+    module_functions_without_return_type: list[str] | None = None,
+) -> tuple[ContentGraph, str]:
+    """Build a graph with a single owned MODULE node.
+
+    Args:
+        path: Node identity path.
+        file_path: Source file path.
+        name: Module FQCN.
+        module_line_count: Line count of the plugin file.
+        module_functions_without_return_type: Functions missing return types.
+
+    Returns:
+        Tuple of ``(graph, module_node_id)``.
+    """
+    g = ContentGraph()
+    node = ContentNode(
+        identity=NodeIdentity(path=path, node_type=NodeType.MODULE),
+        file_path=file_path,
+        name=name,
+        module_line_count=module_line_count,
+        module_functions_without_return_type=list(module_functions_without_return_type or []),
+        scope=NodeScope.OWNED,
+    )
+    g.add_node(node)
+    return g, node.node_id
 
 
-class TestCollectionPluginStubRules:
-    """Verify remaining stub rules have match=False on generic playbook graphs."""
+# ===========================================================================
+# L089 — PluginTypeHints
+# ===========================================================================
 
-    @pytest.mark.parametrize("rule_id,rule_cls", _STUB_RULES)  # type: ignore[untyped-decorator]
-    def test_match_always_false(self, rule_id: str, rule_cls: type[GraphRule]) -> None:
-        """Stub rule ``match()`` returns False for task/playbook nodes.
+
+class TestPluginTypeHintsGraphRule:
+    """Tests for L089 PluginTypeHintsGraphRule."""
+
+    @pytest.fixture  # type: ignore[untyped-decorator]
+    def rule(self) -> PluginTypeHintsGraphRule:
+        """Create a rule instance.
+
+        Returns:
+            A PluginTypeHintsGraphRule.
+        """
+        return PluginTypeHintsGraphRule()
+
+    def test_match_requires_module_with_missing_hints(self, rule: PluginTypeHintsGraphRule) -> None:
+        """Match only MODULE nodes with functions missing return types.
 
         Args:
-            rule_id: Rule identifier string.
-            rule_cls: GraphRule subclass to instantiate.
+            rule: Rule instance under test.
         """
-        rule = rule_cls()
-        assert rule.rule_id == rule_id
+        g_ok, nid_ok = _make_module(module_functions_without_return_type=[])
+        assert not rule.match(g_ok, nid_ok)
 
-        g, task_nid = _make_task()
-        assert not rule.match(g, task_nid)
+        g_bad, nid_bad = _make_module(module_functions_without_return_type=["run"])
+        assert rule.match(g_bad, nid_bad)
 
-        pb_id = _playbook_node_id(g)
-        assert not rule.match(g, pb_id)
-
-    @pytest.mark.parametrize("rule_id,rule_cls", _STUB_RULES)  # type: ignore[untyped-decorator]
-    def test_process_returns_none(self, rule_id: str, rule_cls: type[GraphRule]) -> None:
-        """Stub rule ``process()`` returns None on a task node.
+    def test_task_not_matched(self, rule: PluginTypeHintsGraphRule) -> None:
+        """TASK nodes are not matched.
 
         Args:
-            rule_id: Rule identifier string.
-            rule_cls: GraphRule subclass to instantiate.
+            rule: Rule instance under test.
         """
-        rule = rule_cls()
-        g, task_nid = _make_task()
-        assert rule.process(g, task_nid) is None
+        g, nid = _make_task()
+        assert not rule.match(g, nid)
 
-    @pytest.mark.parametrize("rule_id,rule_cls", _STUB_RULES)  # type: ignore[untyped-decorator]
-    def test_scanner_produces_no_violations(self, rule_id: str, rule_cls: type[GraphRule]) -> None:
-        """Scanner produces zero violations for stub rules on a task-only graph.
+    def test_violation_missing_hints(self, rule: PluginTypeHintsGraphRule) -> None:
+        """Functions without return type hints → violation.
 
         Args:
-            rule_id: Rule identifier string.
-            rule_cls: GraphRule subclass to instantiate.
+            rule: Rule instance under test.
         """
-        rule = rule_cls()
-        g, _ = _make_task()
-        report = scan(g, [rule])
-        violations = [rr for nr in report.node_results for rr in nr.rule_results if rr.verdict]
-        assert len(violations) == 0
+        g, nid = _make_module(module_functions_without_return_type=["run", "execute"])
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is True
+        assert result.detail is not None
+        funcs = result.detail["functions"]
+        assert isinstance(funcs, list)
+        assert "run" in funcs
+        assert "execute" in funcs
+
+    def test_pass_all_hints_present(self, rule: PluginTypeHintsGraphRule) -> None:
+        """All functions have return type hints → pass (verdict False).
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_module(module_functions_without_return_type=[])
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is False
+
+
+# ===========================================================================
+# L090 — PluginFileSize
+# ===========================================================================
+
+
+class TestPluginFileSizeGraphRule:
+    """Tests for L090 PluginFileSizeGraphRule."""
+
+    @pytest.fixture  # type: ignore[untyped-decorator]
+    def rule(self) -> PluginFileSizeGraphRule:
+        """Create a rule instance.
+
+        Returns:
+            A PluginFileSizeGraphRule.
+        """
+        return PluginFileSizeGraphRule()
+
+    def test_match_requires_module_with_lines(self, rule: PluginFileSizeGraphRule) -> None:
+        """Match only MODULE nodes with positive line count.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g0, nid0 = _make_module(module_line_count=0)
+        assert not rule.match(g0, nid0)
+
+        g1, nid1 = _make_module(module_line_count=100)
+        assert rule.match(g1, nid1)
+
+    def test_violation_large_file(self, rule: PluginFileSizeGraphRule) -> None:
+        """File exceeding 500 lines → violation.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_module(module_line_count=750)
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is True
+        assert result.detail is not None
+        assert result.detail["line_count"] == 750
+
+    def test_pass_small_file(self, rule: PluginFileSizeGraphRule) -> None:
+        """File under 500 lines → pass.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_module(module_line_count=200)
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is False
+
+    def test_pass_at_threshold(self, rule: PluginFileSizeGraphRule) -> None:
+        """File at exactly 500 lines → pass.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_module(module_line_count=500)
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is False
+
+    def test_task_not_matched(self, rule: PluginFileSizeGraphRule) -> None:
+        """TASK nodes are not matched.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_task()
+        assert not rule.match(g, nid)
+
+
+# ===========================================================================
+# L095 — SchemaValidation
+# ===========================================================================
+
+
+def _make_play(
+    *,
+    options: YAMLDict | None = None,
+    file_path: str = "site.yml",
+    line_start: int = 1,
+) -> tuple[ContentGraph, str]:
+    """Build a graph with a PLAYBOOK → PLAY, returning the play node id.
+
+    Args:
+        options: Play options dict.
+        file_path: Source file path.
+        line_start: Starting line number.
+
+    Returns:
+        Tuple of ``(graph, play_node_id)``.
+    """
+    g = ContentGraph()
+    pb = ContentNode(
+        identity=NodeIdentity(path=file_path, node_type=NodeType.PLAYBOOK),
+        file_path=file_path,
+        scope=NodeScope.OWNED,
+    )
+    play = ContentNode(
+        identity=NodeIdentity(path=f"{file_path}/plays[0]", node_type=NodeType.PLAY),
+        file_path=file_path,
+        line_start=line_start,
+        options=dict(options or {}),
+        scope=NodeScope.OWNED,
+    )
+    g.add_node(pb)
+    g.add_node(play)
+    g.add_edge(pb.node_id, play.node_id, EdgeType.CONTAINS)
+    return g, play.node_id
+
+
+class TestSchemaValidationGraphRule:
+    """Tests for L095 SchemaValidationGraphRule."""
+
+    @pytest.fixture  # type: ignore[untyped-decorator]
+    def rule(self) -> SchemaValidationGraphRule:
+        """Create a rule instance.
+
+        Returns:
+            A SchemaValidationGraphRule.
+        """
+        return SchemaValidationGraphRule()
+
+    def test_match_play_with_options(self, rule: SchemaValidationGraphRule) -> None:
+        """Match PLAY nodes with non-empty options.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g0, nid0 = _make_play(options={})
+        assert not rule.match(g0, nid0)
+
+        g1, nid1 = _make_play(options={"hosts": "all"})
+        assert rule.match(g1, nid1)
+
+    def test_match_collection_with_metadata(self, rule: SchemaValidationGraphRule) -> None:
+        """Match COLLECTION nodes with non-empty metadata.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g0, nid0 = _make_collection(collection_metadata={})
+        assert not rule.match(g0, nid0)
+
+        g1, nid1 = _make_collection(collection_metadata={"namespace": "ns"})
+        assert rule.match(g1, nid1)
+
+    def test_task_not_matched(self, rule: SchemaValidationGraphRule) -> None:
+        """TASK nodes are not matched.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_task()
+        assert not rule.match(g, nid)
+
+    def test_play_pass_known_keywords(self, rule: SchemaValidationGraphRule) -> None:
+        """All recognized play keywords → pass.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_play(options={"hosts": "all", "gather_facts": False, "serial": 1})
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is False
+
+    def test_play_violation_unknown_key(self, rule: SchemaValidationGraphRule) -> None:
+        """Unknown play keyword → violation.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_play(options={"hosts": "all", "bogus_key": True})
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is True
+        assert result.detail is not None
+        unknown = result.detail["unknown_keys"]
+        assert isinstance(unknown, list)
+        assert "bogus_key" in unknown
+
+    def test_collection_pass_all_required(self, rule: SchemaValidationGraphRule) -> None:
+        """galaxy.yml with all required keys → pass.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_collection(
+            collection_metadata={"namespace": "ns", "name": "col", "version": "1.0.0"},
+        )
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is False
+
+    def test_collection_violation_missing_namespace(self, rule: SchemaValidationGraphRule) -> None:
+        """galaxy.yml missing namespace → violation.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_collection(
+            collection_metadata={"name": "col", "version": "1.0.0"},
+        )
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is True
+        assert result.detail is not None
+        missing = result.detail["missing_keys"]
+        assert isinstance(missing, list)
+        assert "namespace" in missing
+
+    def test_collection_manifest_json(self, rule: SchemaValidationGraphRule) -> None:
+        """MANIFEST.json with all required keys under collection_info → pass.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_collection(
+            collection_metadata={
+                "collection_info": {"namespace": "ns", "name": "col", "version": "1.0.0"},
+            },
+        )
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is False
 
 
 # ===========================================================================

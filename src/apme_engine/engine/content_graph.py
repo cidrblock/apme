@@ -28,6 +28,7 @@ from .models import YAMLDict, YAMLValue
 if TYPE_CHECKING:
     from .models import (
         Collection,
+        Module,
         ObjectList,
         Play,
         Playbook,
@@ -218,6 +219,9 @@ class ContentNode:
         collection_metadata: Parsed ``galaxy.yml`` contents for COLLECTION nodes.
         collection_meta_runtime: Parsed ``meta/runtime.yml`` for COLLECTION nodes.
         collection_files: File paths within the collection root.
+        module_line_count: Line count of the plugin ``.py`` file (MODULE nodes).
+        module_functions_without_return_type: Function names lacking ``-> type``
+            return annotations (MODULE nodes).
         ari_key: Legacy ARI object key for cross-checks.
         annotations: Annotator payloads (risk, module hints, etc.).
         scope: Owned vs referenced content classification.
@@ -271,6 +275,10 @@ class ContentNode:
     collection_metadata: YAMLDict = field(default_factory=dict)
     collection_meta_runtime: YAMLDict = field(default_factory=dict)
     collection_files: list[str] = field(default_factory=list)
+
+    # Module / plugin metadata (MODULE nodes)
+    module_line_count: int = 0
+    module_functions_without_return_type: list[str] = field(default_factory=list)
 
     # ARI cross-reference (populated during build for validation)
     ari_key: str = ""
@@ -931,6 +939,57 @@ class GraphBuilder:
             collection_meta_runtime=meta_runtime,
             collection_files=collection_files,
             ari_key=coll.key,
+            scope=scope,
+        )
+        self._graph.add_node(node)
+
+        for mod_or_key in getattr(coll, "modules", []) or []:
+            from .models import Module
+
+            mod: Module | None = None
+            if isinstance(mod_or_key, Module):
+                mod = mod_or_key
+            elif isinstance(mod_or_key, str):
+                resolved = self._resolve_key(mod_or_key, Module)
+                mod = cast("Module", resolved) if resolved else None
+            if mod is not None:
+                mod_nid = self._build_module(mod, scope)
+                self._graph.add_edge(nid, mod_nid, EdgeType.CONTAINS)
+
+        return nid
+
+    def _build_module(self, mod: Module, scope: NodeScope) -> str:
+        """Build a MODULE graph node from an ARI Module object.
+
+        Reads the plugin ``.py`` file (if accessible) to populate
+        ``module_line_count`` and ``module_functions_without_return_type``
+        for L089/L090 rules.
+
+        Args:
+            mod: Parsed module ARI object.
+            scope: Ownership scope for the created node.
+
+        Returns:
+            Module node id.
+        """
+        mod_name = getattr(mod, "fqcn", "") or getattr(mod, "name", "") or ""
+        defined_in = getattr(mod, "defined_in", "") or ""
+        identity = NodeIdentity(path=defined_in or mod_name, node_type=NodeType.MODULE)
+        nid = identity.path
+
+        if nid in self._visited:
+            return nid
+        self._visited.add(nid)
+
+        line_count, funcs_missing_return = _analyze_python_file(defined_in)
+
+        node = ContentNode(
+            identity=identity,
+            file_path=defined_in,
+            name=mod_name or None,
+            module_line_count=line_count,
+            module_functions_without_return_type=funcs_missing_return,
+            ari_key=mod.key,
             scope=scope,
         )
         self._graph.add_node(node)
@@ -1754,6 +1813,44 @@ def _load_all_definitions(definitions: dict[str, object]) -> dict[str, ObjectLis
 # ---------------------------------------------------------------------------
 # Utility functions
 # ---------------------------------------------------------------------------
+
+
+def _analyze_python_file(path: str) -> tuple[int, list[str]]:
+    """Read a Python file and extract line count + functions missing return types.
+
+    Uses ``ast.parse`` for reliable function-signature analysis.  Returns
+    ``(0, [])`` when the file is unreadable or unparseable.
+
+    Args:
+        path: Filesystem path to a ``.py`` file.
+
+    Returns:
+        Tuple of ``(line_count, functions_without_return_type)``.
+    """
+    import ast
+
+    if not path or not os.path.isfile(path):
+        return 0, []
+
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            source = fh.read()
+    except OSError:
+        return 0, []
+
+    line_count = len(source.splitlines())
+
+    try:
+        tree = ast.parse(source, filename=path)
+    except SyntaxError:
+        return line_count, []
+
+    missing: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.returns is None:
+            missing.append(node.name)
+
+    return line_count, missing
 
 
 def _normalize_collection_files(files_raw: object) -> list[str]:

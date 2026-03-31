@@ -136,6 +136,7 @@ _SCANNABLE_TYPES = frozenset(
         NodeType.TASKFILE,
         NodeType.PLAYBOOK,
         NodeType.COLLECTION,
+        NodeType.MODULE,
     }
 )
 
