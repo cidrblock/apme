@@ -309,8 +309,10 @@ class ContentGraph:
         """Serialize the graph to a JSON-compatible dict.
 
         Produces a deterministic representation suitable for transmission
-        over gRPC as JSON bytes.  Nodes carry their full ``ContentNode``
-        snapshot; edges carry typed attributes.
+        over gRPC as JSON bytes.  Nodes carry all serializable
+        ``ContentNode`` fields (``annotations`` is excluded because its
+        elements are not guaranteed to be JSON-safe).  Edges carry typed
+        attributes and are sorted by ``(source, target)`` for stability.
 
         Returns:
             Dict with ``nodes`` and ``edges`` lists plus metadata.
@@ -329,6 +331,7 @@ class ContentGraph:
             }
             edge.update(data)
             edges.append(edge)
+        edges.sort(key=lambda e: (str(e["source"]), str(e["target"])))
 
         return {
             "version": 1,
@@ -347,26 +350,34 @@ class ContentGraph:
             A new ``ContentGraph`` with identical topology and node data.
 
         Raises:
-            ValueError: If the dict version is unsupported.
+            ValueError: If the dict version is unsupported or the payload
+                is malformed (missing keys, unexpected types).
         """
-        version = d.get("version", 0)
-        if version != 1:
-            msg = f"Unsupported ContentGraph serialization version: {version}"
-            raise ValueError(msg)
+        try:
+            version = d.get("version", 0)
+            if version != 1:
+                msg = f"Unsupported ContentGraph serialization version: {version}"
+                raise ValueError(msg)
 
-        graph = cls()
-        for raw_node in cast(list[dict[str, object]], d["nodes"]):
-            nid = str(raw_node["id"])
-            node = _node_from_dict(cast(dict[str, object], raw_node["data"]))
-            graph.g.add_node(nid, node=node)
-            if node.ari_key:
-                graph._nodes_by_ari_key[node.ari_key] = nid
+            graph = cls()
+            for raw_node in cast(list[dict[str, object]], d["nodes"]):
+                nid = str(raw_node["id"])
+                node = _node_from_dict(cast(dict[str, object], raw_node["data"]))
+                graph.g.add_node(nid, node=node)
+                if node.ari_key:
+                    graph._nodes_by_ari_key[node.ari_key] = nid
 
-        for raw_edge in cast(list[dict[str, object]], d["edges"]):
-            src = str(raw_edge["source"])
-            tgt = str(raw_edge["target"])
-            attrs = {k: v for k, v in raw_edge.items() if k not in ("source", "target")}
-            graph.g.add_edge(src, tgt, **attrs)
+            for raw_edge in cast(list[dict[str, object]], d["edges"]):
+                src = str(raw_edge["source"])
+                tgt = str(raw_edge["target"])
+                attrs = {k: v for k, v in raw_edge.items() if k not in ("source", "target")}
+                graph.g.add_edge(src, tgt, **attrs)
+
+        except ValueError:
+            raise
+        except (KeyError, TypeError, AttributeError) as exc:
+            msg = f"Malformed ContentGraph payload: {exc}"
+            raise ValueError(msg) from exc
 
         return graph
 

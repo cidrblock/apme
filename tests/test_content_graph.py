@@ -400,6 +400,8 @@ class TestContentGraphSerialization:
         assert rn.module == "ansible.builtin.copy"
         assert rn.resolved_module_name == "ansible.builtin.copy"
         assert rn.module_options == {"src": "/app", "dest": "/srv"}
+        assert rn.options == {"when": "deploy_enabled"}
+        assert rn.variables == {"app_version": "1.0"}
         assert rn.become == {"become": True, "become_user": "root"}
         assert rn.when_expr == "deploy_enabled"
         assert rn.tags == ["deploy", "app"]
@@ -436,6 +438,13 @@ class TestContentGraphSerialization:
         """Verify unsupported version raises ValueError."""
         with pytest.raises(ValueError, match="Unsupported"):
             ContentGraph.from_dict({"version": 99, "nodes": [], "edges": []})
+
+    def test_malformed_payload_raises_valueerror(self) -> None:
+        """Verify malformed payloads raise ValueError, not KeyError/TypeError."""
+        with pytest.raises(ValueError, match="Malformed"):
+            ContentGraph.from_dict({"version": 1})
+        with pytest.raises(ValueError, match="Malformed"):
+            ContentGraph.from_dict({"version": 1, "nodes": [{"bad": True}], "edges": []})
 
     def test_json_serializable(self) -> None:
         """Verify to_dict output is JSON-serializable."""
