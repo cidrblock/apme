@@ -10,6 +10,8 @@
 |--------|-------|
 | Total native rules | 96 |
 | Ported to GraphRule | 85 |
+| Active (including 6 newly activated collection rules) | 82 |
+| Stub (awaiting plugin/schema infrastructure) | 3 |
 | Skipped (N/A) | 9 |
 | Deferred (Phase 3) | 2 |
 | Remaining | 0 |
@@ -201,54 +203,29 @@ These rules require the full variable resolution / provenance infrastructure
 "PropertyOrigin consumed by rules" when the variable provenance
 infrastructure lands.
 
-## Stub Rules (9) — Activation Checklist
+## Stub Rules — Activation Status
 
-These GraphRules exist but `match()` always returns `False`. Each group
-activates when its prerequisite `ContentNode` / `NodeType` extension lands.
+### Activated (6) — PR #162
 
-### Needs COLLECTION node with file listing
+`GraphBuilder._build_collection()` now creates `COLLECTION` nodes with
+`collection_metadata`, `collection_meta_runtime`, and `collection_files`.
 
-When `GraphBuilder` creates `COLLECTION` nodes and populates a file
-listing (e.g., `collection_files: list[str]`), these rules can inspect
-the listing for expected files.
+| Rule | Name | What it checks | Status |
+|------|------|----------------|--------|
+| L087 | CollectionLicense | LICENSE or COPYING file exists | Active |
+| L088 | CollectionReadme | README file exists | Active |
+| L096 | MetaRuntime | `requires_ansible` in meta/runtime.yml | Active |
+| L103 | GalaxyChangelog | CHANGELOG file exists | Active |
+| L104 | GalaxyRuntime | `meta/runtime.yml` file exists | Active |
+| L105 | GalaxyRepository | `galaxy.yml` has `repository` key | Active |
 
-| Rule | Name | What it checks |
-|------|------|----------------|
-| L087 | CollectionLicense | LICENSE or COPYING file exists |
-| L088 | CollectionReadme | README file exists |
-| L103 | GalaxyChangelog | CHANGELOG file exists |
-| L104 | GalaxyRuntime | `meta/runtime.yml` file exists |
+### Remaining stubs (3) — needs plugin/schema infrastructure
 
-### Needs COLLECTION node with parsed metadata
-
-When `GraphBuilder` populates `galaxy.yml` / `meta/runtime.yml` content
-on COLLECTION nodes (e.g., via `collection_metadata: dict`), these rules
-can validate the metadata.
-
-| Rule | Name | What it checks |
-|------|------|----------------|
-| L096 | MetaRuntime | `requires_ansible` is a valid version specifier |
-| L105 | GalaxyRepository | `galaxy.yml` has a `repository` key |
-
-### Needs plugin/module node with Python content
-
-When `GraphBuilder` creates MODULE / PLUGIN nodes and exposes Python
-source content (e.g., `source_content: str` or `source_lines: int`),
-these rules can analyze the Python code.
-
-| Rule | Name | What it checks |
-|------|------|----------------|
-| L089 | PluginTypeHints | Plugin `.py` has return type hints |
-| L090 | PluginFileSize | Plugin entry file is not too large |
-
-### Needs play/collection schema data
-
-When `ContentNode` exposes `play_data` and/or structured `metadata`
-attributes, this rule can validate schema structure.
-
-| Rule | Name | What it checks |
-|------|------|----------------|
-| L095 | SchemaValidation | YAML file matches expected schema keys |
+| Rule | Name | What it checks | Prerequisite |
+|------|------|----------------|--------------|
+| L089 | PluginTypeHints | Plugin `.py` has return type hints | MODULE/PLUGIN nodes with Python source |
+| L090 | PluginFileSize | Plugin entry file is not too large | MODULE/PLUGIN nodes with file size |
+| L095 | SchemaValidation | YAML file matches expected schema keys | `play_data`/`metadata` attributes |
 
 ---
 
