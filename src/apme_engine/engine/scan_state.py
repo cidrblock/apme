@@ -581,10 +581,14 @@ class SingleScan:
 
         Returns:
             Dict with scan_id, hierarchy (trees with nodes), and metadata.
+
+        Raises:
+            ValueError: If ContentGraph has not been built yet.
         """
         from .graph_opa_payload import build_hierarchy_from_graph
 
-        assert self.content_graph is not None, "ContentGraph must be built before hierarchy payload"
+        if self.content_graph is None:
+            raise ValueError(f"ContentGraph must be built before hierarchy payload (scan: {self.type}/{self.name})")
         self.hierarchy_payload = build_hierarchy_from_graph(
             self.content_graph,
             scan_type=self.type,

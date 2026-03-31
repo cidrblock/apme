@@ -7,8 +7,6 @@ now runs ``GraphRule`` instances via ``graph_scanner.scan()`` exclusively.
 
 import os
 
-RULES_REQUIRING_ANSIBLE: tuple[str, ...] = ("P001", "P002", "P003", "P004")
-
 
 def _default_rules_dir() -> str:
     """Return default path to native rules directory.
