@@ -1,6 +1,6 @@
 # ContentGraph Rule Migration Tracker
 
-**Status**: In Progress
+**Status**: Phase 2 Rule Porting Complete (2 deferred to Phase 3)
 **Related**: [ADR-044](/.sdlc/adrs/ADR-044-node-identity-progression-model.md) |
 [Research](/.sdlc/research/ari-to-contentgraph-migration.md)
 
@@ -64,7 +64,7 @@
 | L084 | SubtaskPrefix | TASK_LOCAL |
 | L092 | LoopVarInName | TASK_LOCAL |
 
-### Phase 2E — TASK_LOCAL batch 2 (PR #TBD)
+### Phase 2E — TASK_LOCAL batch 2 (PR #145)
 
 | Rule | Name | Category |
 |------|------|----------|
@@ -153,7 +153,7 @@ directly.
 | P003 | ModuleArgumentValueValidation | Annotation producer, severity NONE |
 | P004 | VariableValidation | Annotation producer, severity NONE |
 
-### Phase 2J+K — Remaining rules: sanity, aggregation, stubs (PR #TBD)
+### Phase 2J+K — Remaining rules: sanity, aggregation, stubs (PR #150)
 
 Strategy: L056 and R401 are fully functional. Nine collection/plugin rules
 are ported as `match()=False` stubs for behavioural parity — they become
@@ -254,7 +254,7 @@ Deliverables: `ContentGraph`, `GraphBuilder`, `GraphRule`, `NodeIdentity`,
 every edge type, `APME_USE_CONTENT_GRAPH` feature flag,
 `test_content_graph_shadow.py` structural equivalence.
 
-### Phase 2 — Rules + switchover: NEAR-COMPLETE (85/96 = 88.5%, +9 skipped, 2 deferred)
+### Phase 2 — Rules + switchover: RULE PORTING COMPLETE (85 ported, 9 skipped, 2 deferred)
 
 Rule porting follows the priority taxonomy from ADR-044:
 
@@ -266,7 +266,7 @@ Rule porting follows the priority taxonomy from ADR-044:
 | ROLE_METADATA | (subset of task-local) | 7 | — | — | Done (Phase 2F) |
 
 End-of-Phase-2 gates (from ADR-044):
-- [ ] All 96 rules ported to `GraphRule`
+- [x] All 96 rules accounted for (85 ported, 9 skipped, 2 deferred to Phase 3)
 - [ ] Remove `TreeLoader`, `AnsibleRunContext`, `RunTarget`, `ObjectList`,
       `Context.add()`, old `build_hierarchy_payload()`
 - [ ] Remove `APME_USE_CONTENT_GRAPH` feature flag
