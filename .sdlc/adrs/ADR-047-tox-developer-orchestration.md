@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Implemented
 
 ## Date
 
@@ -39,7 +39,7 @@ A new contributor must discover 5+ tools and 10+ commands, documented inconsiste
 |-------------|-------------|----------|
 | `lint` | `prek run --all-files` | Quality gate |
 | `unit` | `pytest` with coverage | Test |
-| `integration` | `pytest -m integration` | Test |
+| `integration` | `pytest tests/integration/` | Test |
 | `ai` | `pytest` with AI extras | Test |
 | `ui` | `pytest -m ui` (Playwright) | Test |
 | `grpc` | `scripts/gen_grpc.sh` | Code generation |

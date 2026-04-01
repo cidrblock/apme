@@ -41,6 +41,7 @@ Decisions that are fully reflected in the codebase.
 | [ADR-033](ADR-033-centralized-log-bridge.md) | Centralized Log Bridge with gRPC Transport | 2026-03-22 |
 | [ADR-037](ADR-037-project-centric-ui-model.md) | Project-Centric UI Model with Session Abstraction | 2026-03-24 |
 | [ADR-039](ADR-039-unified-operation-stream.md) | Unified Operation Stream — Check and Remediate | 2026-03-24 |
+| [ADR-047](ADR-047-tox-developer-orchestration.md) | tox as Sole Developer Orchestration Tool | 2026-03-30 |
 
 ## Accepted
 
@@ -52,7 +53,6 @@ Decisions that have been accepted but are not yet fully implemented.
 | [ADR-016](ADR-016-single-branch-main.md) | Single-branch `main` Strategy | 2026-03 |
 | [ADR-040](ADR-040-scan-metadata-enrichment.md) | Scan Metadata Enrichment | 2026-03-25 |
 | [ADR-043](ADR-043-default-severity-assignment.md) | Default Severity Assignment for Rule Catalog | 2026-03-26 |
-| [ADR-047](ADR-047-tox-developer-orchestration.md) | tox as Sole Developer Orchestration Tool | 2026-03-30 |
 
 ## Proposed
 

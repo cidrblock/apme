@@ -158,8 +158,9 @@ local daemon that runs the Primary, Native, OPA, and Ansible validators plus the
 in-process (ADR-024):
 
 ```bash
-# Install tox (one-time)
+# Install tox + project (one-time)
 uv tool install tox --with tox-uv
+uv sync --extra dev --extra gateway
 
 # Start the local daemon (background process)
 apme daemon start

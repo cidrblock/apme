@@ -55,7 +55,7 @@ directly. Every task maps to a `tox -e <env>` command.
 | `tox -e unit` | `pytest` with `--cov-fail-under=36` | After any code change. |
 | `tox -e unit -- -k <pattern>` | Single test or test pattern | Debugging a specific test. |
 | `tox -e unit -- --no-cov` | Tests without coverage overhead | Quick iteration. |
-| `tox -e integration` | `pytest -m integration` (needs OPA binary) | After engine or validator changes. |
+| `tox -e integration` | `pytest tests/integration/` (needs OPA binary) | After engine or validator changes. |
 | `tox -e ai` | `pytest` with AI extras (abbenay) | After AI/remediation changes. |
 | `tox -e ui` | `pytest -m ui` (Playwright, needs running pod) | After Gateway or UI changes. |
 

@@ -196,8 +196,9 @@ local daemon that runs the Primary, Native, OPA, Ansible, and Galaxy Proxy servi
 as localhost gRPC servers (ADR-024). Gitleaks is excluded (requires the gitleaks binary).
 
 ```bash
-# Install tox (one-time)
+# Install tox + project (one-time)
 uv tool install tox --with tox-uv
+uv sync --extra dev --extra gateway
 
 # Start the local daemon
 apme daemon start

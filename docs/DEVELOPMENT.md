@@ -21,6 +21,9 @@ uv tool install tox --with tox-uv
 # prek — git hooks (runs automatically on commit)
 uv tool install prek
 prek install
+
+# Install the project (makes `apme` CLI available locally)
+uv sync --extra dev --extra gateway
 ```
 
 ### Verify setup
@@ -46,7 +49,7 @@ tox is the single entry point for all developer tasks. Every CI check has a corr
 |-------------|-------------|----------|
 | `tox -e lint` | `prek run --all-files` (ruff, mypy, pydoclint, uv-lock) | Quality gate |
 | `tox -e unit` | `pytest` with coverage (`--cov-fail-under=36`) | Test |
-| `tox -e integration` | `pytest -m integration` (requires OPA binary) | Test |
+| `tox -e integration` | `pytest tests/integration/` (requires OPA binary) | Test |
 | `tox -e ai` | `pytest` with AI extras (abbenay) | Test |
 | `tox -e ui` | `pytest -m ui` (Playwright, requires running gateway + UI) | Test |
 | `tox -e grpc` | `scripts/gen_grpc.sh` | Code generation |
@@ -424,7 +427,7 @@ tox -e cli -- health-check       # health check all services
 tox -e pm                            # build, start, wait, open browser
 ```
 
-The underlying scripts in `containers/podman/` are still directly callable if preferred. See `containers/podman/README.md` for troubleshooting.
+The underlying scripts in `containers/podman/` remain directly callable for debugging and low-level troubleshooting, but tox is the expected interface for routine work. See `containers/podman/README.md` for troubleshooting details.
 
 ## YAML formatter
 
