@@ -19,7 +19,7 @@ CLI_NAME="apme-cli-$$"
 trap 'podman rm -f "$CLI_NAME" >/dev/null 2>&1 || true' EXIT
 # Default to "scan ." when no args provided (any arg overrides Dockerfile CMD)
 if [ $# -eq 0 ]; then
-  set -- scan .
+  set -- check .
 fi
 rc=0
 podman run \

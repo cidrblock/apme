@@ -68,6 +68,7 @@ Decisions under consideration — not yet accepted or implemented.
 | [ADR-044](ADR-044-node-identity-progression-model.md) | Node Identity and Progression Model | 2026-03-27 |
 | [ADR-045](ADR-045-galaxy-auth-delegation.md) | Delegate Galaxy Authentication to ansible-galaxy, Galaxy Config as Scan Metadata | 2026-03-28 |
 | [ADR-046](ADR-046-ai-assisted-report-generation.md) | AI-Assisted Report Generation | 2026-03-30 |
+| [ADR-047](ADR-047-tox-developer-orchestration.md) | tox as Sole Developer Orchestration Tool | 2026-03-30 |
 
 ## Superseded
 
@@ -81,7 +82,7 @@ Decisions replaced by newer ADRs.
 ## Creating New ADRs
 
 1. Copy the template from `../templates/adr.md`
-2. Use the next available number (currently ADR-047)
+2. Use the next available number (currently ADR-048)
 3. Include:
    - Status (Proposed → Accepted → Implemented)
    - Date
