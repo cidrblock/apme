@@ -205,8 +205,8 @@ def load_repository(
         yaml_label_list=yaml_label_list,
         load_children=load_children,
     )
-    # in case the target project is a role
-    if os.path.exists(os.path.join(repo_path, "tasks")):
+    # in case the target project is a standalone role (no playbooks found)
+    if not repoObj.playbooks and os.path.exists(os.path.join(repo_path, "tasks")):
         role_name = os.path.basename(repo_path)
         role = load_role(
             path=repo_path,
