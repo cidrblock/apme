@@ -162,7 +162,7 @@ function textWidth(str, fontSize) {{
   return str.length * fontSize * 0.58 + 16;
 }}
 
-// ── Collect and sort edges by position so dagre sees siblings in order ──
+// ── Collect edges for cross-cutting overlay and group boxes ──────
 const containsChildren = {{}};
 const edgeData = [];
 const nodeSet = new Set(graphData.nodes.map(n => n.id));
@@ -184,7 +184,7 @@ Object.values(containsChildren).forEach(arr => arr.sort((a, b) => a.pos - b.pos)
 const nodeMap = {{}};
 graphData.nodes.forEach(n => {{
   const d = n.data;
-  const nt = (d.identity && d.identity.node_type) || "task";
+  const nt = d.node_type || "task";
   const name = d.name || n.id.split("/").pop() || n.id;
   const label = name.length > 40 ? name.slice(0, 38) + "\u2026" : name;
   const modLabel = (d.module || "").length > 35 ? d.module.slice(0, 33) + "\u2026" : (d.module || "");
@@ -206,43 +206,12 @@ graphData.nodes.forEach(n => {{
   g.setNode(n.id, {{ width: w, height: h }});
 }});
 
-// ── Execution chain edges for dagre layout ───────────────────────
-// Blocks thread their children before continuing to the next sibling.
-// Include/import targets are inserted inline in the execution flow.
-function lastExitNode(nodeId) {{
-  const ch = containsChildren[nodeId];
-  if (!ch || ch.length === 0) return nodeId;
-  return lastExitNode(ch[ch.length - 1].target);
-}}
-
-const includeTargets = {{}};
-edgeData.forEach(e => {{
-  if (e.type === "include" || e.type === "import") {{
-    if (!includeTargets[e.source]) includeTargets[e.source] = [];
-    includeTargets[e.source].push(e.target);
-  }}
-}});
-
-function chainFrom(nodeId) {{
-  let exit = lastExitNode(nodeId);
-  const targets = includeTargets[nodeId] || [];
-  targets.forEach(t => {{
-    g.setEdge(exit, t, {{ minlen: 1 }}, "inc_" + exit + "_" + t);
-    exit = lastExitNode(t);
-  }});
-  return exit;
-}}
-
-Object.entries(containsChildren).forEach(([parentId, children]) => {{
-  if (children.length > 0) {{
-    g.setEdge(parentId, children[0].target, {{ minlen: 1 }}, "chain_entry_" + parentId);
-  }}
-  for (let i = 0; i < children.length - 1; i++) {{
-    const exitNode = chainFrom(children[i].target);
-    g.setEdge(exitNode, children[i + 1].target,
-      {{ minlen: 1 }}, "chain_" + children[i].target);
-  }}
-  if (children.length > 0) chainFrom(children[children.length - 1].target);
+// ── Execution chain from pre-computed edges ──────────────────────
+const execEdges = (graphData.execution_edges || []).filter(
+  e => nodeSet.has(e.source) && nodeSet.has(e.target)
+);
+execEdges.forEach((e, i) => {{
+  g.setEdge(e.source, e.target, {{ minlen: 1 }}, "exec_" + i);
 }});
 
 dagre.layout(g);
@@ -306,24 +275,8 @@ function drawEdge(group, srcId, tgtId, cls) {{
     .attr("marker-end", "url(#arr-" + cls.split(" ")[0] + ")");
 }}
 
-// ── Flow edges ───────────────────────────────────────────────────
-function flowFrom(nodeId) {{
-  let exit = lastExitNode(nodeId);
-  (includeTargets[nodeId] || []).forEach(t => {{
-    drawEdge(flowGroup, exit, t, "flow");
-    exit = lastExitNode(t);
-  }});
-  return exit;
-}}
-
-Object.entries(containsChildren).forEach(([parentId, children]) => {{
-  if (children.length > 0) drawEdge(flowGroup, parentId, children[0].target, "flow");
-  for (let i = 0; i < children.length - 1; i++) {{
-    const exitNode = flowFrom(children[i].target);
-    drawEdge(flowGroup, exitNode, children[i + 1].target, "flow");
-  }}
-  if (children.length > 0) flowFrom(children[children.length - 1].target);
-}});
+// ── Flow edges (from pre-computed execution_edges) ───────────────
+execEdges.forEach(e => drawEdge(flowGroup, e.source, e.target, "flow"));
 
 // ── Cross-cutting edges (dependency, notify, etc.) ───────────────
 const xEdgeGroup = container.append("g");

@@ -350,6 +350,7 @@ class ContentGraph:
             "version": 1,
             "nodes": nodes,
             "edges": edges,
+            "execution_edges": self.execution_edges(),
         }
 
     @classmethod
@@ -642,6 +643,60 @@ class ContentGraph:
         """
         return bool(nx.is_directed_acyclic_graph(self.g))
 
+    # -- Execution-order view -----------------------------------------------
+
+    def execution_edges(self) -> list[dict[str, str]]:
+        """Compute the execution-order edge list for the graph.
+
+        Walks the containment hierarchy in position order and threads
+        execution through blocks (their last descendant must complete
+        before the next sibling starts) and include/import targets
+        (inserted inline in the flow).
+
+        Returns:
+            List of ``{"source": src_id, "target": tgt_id}`` dicts
+            representing the execution chain in top-to-bottom order.
+        """
+        contains_children: dict[str, list[tuple[str, int]]] = {}
+        include_targets: dict[str, list[str]] = {}
+
+        for src, tgt, data in self.g.edges(data=True):
+            etype = data.get("edge_type", "")
+            pos = data.get("position", 0)
+            if etype == EdgeType.CONTAINS.value:
+                contains_children.setdefault(src, []).append((tgt, pos))
+            elif etype in (EdgeType.INCLUDE.value, EdgeType.IMPORT.value):
+                include_targets.setdefault(src, []).append(tgt)
+
+        for children in contains_children.values():
+            children.sort(key=lambda t: t[1])
+
+        def last_exit(node_id: str) -> str:
+            ch = contains_children.get(node_id)
+            if not ch:
+                return node_id
+            return last_exit(ch[-1][0])
+
+        def chain_from(node_id: str) -> str:
+            exit_node = last_exit(node_id)
+            for target in include_targets.get(node_id, []):
+                edges.append({"source": exit_node, "target": target})
+                exit_node = last_exit(target)
+            return exit_node
+
+        edges: list[dict[str, str]] = []
+
+        for parent_id, children in contains_children.items():
+            if not children:
+                continue
+            edges.append({"source": parent_id, "target": children[0][0]})
+            for i in range(len(children) - 1):
+                exit_node = chain_from(children[i][0])
+                edges.append({"source": exit_node, "target": children[i + 1][0]})
+            chain_from(children[-1][0])
+
+        return edges
+
 
 # ---------------------------------------------------------------------------
 # Node serialization helpers (ADR-044 Phase 2)
@@ -695,13 +750,16 @@ def _node_to_dict(node: ContentNode) -> dict[str, object]:
         node: ContentNode to serialize.
 
     Returns:
-        Dict with identity, scope, and all content fields.
+        Dict with identity, scope, and all content fields.  ``node_type``
+        is promoted to a top-level convenience field alongside the full
+        ``identity`` dict.
     """
     d: dict[str, object] = {
         "identity": {
             "path": node.identity.path,
             "node_type": node.identity.node_type.value,
         },
+        "node_type": node.identity.node_type.value,
         "scope": node.scope.value,
     }
     for fname in _CONTENT_NODE_SIMPLE_FIELDS:
