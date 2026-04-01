@@ -682,7 +682,10 @@ class ContentGraph:
 
         Returns:
             List of ``{"source": src_id, "target": tgt_id}`` dicts
-            representing the execution chain in top-to-bottom order.
+            representing execution flow transitions.  The list order
+            is deterministic (parents sorted lexicographically) but is
+            not itself a global topological ordering — each edge
+            encodes a local flow dependency.
         """
         children_by_parent: dict[str, list[tuple[str, int]]] = {}
 

@@ -129,8 +129,6 @@ HTML_TEMPLATE = """\
     <div class="li"><div class="sw" style="background:#8b949e"></div>VarsFile</div>
     <h3 style="margin-top:8px">Edges</h3>
     <div class="li"><svg width="28" height="8"><line x1="0" y1="4" x2="28" y2="4" stroke="#8b949e" stroke-width="1.6"/></svg>flow (exec order)</div>
-    <div class="li"><svg width="28" height="8"><line x1="0" y1="4" x2="28" y2="4" stroke="#58a6ff" stroke-width="1.2" stroke-dasharray="6 3"/></svg>import</div>
-    <div class="li"><svg width="28" height="8"><line x1="0" y1="4" x2="28" y2="4" stroke="#d2a8ff" stroke-width="1.2" stroke-dasharray="4 4"/></svg>include</div>
     <div class="li"><svg width="28" height="8"><line x1="0" y1="4" x2="28" y2="4" stroke="#f0883e" stroke-width="1.8"/></svg>dependency</div>
     <div class="li"><svg width="28" height="8"><line x1="0" y1="4" x2="28" y2="4" stroke="#f778ba" stroke-width="1.2" stroke-dasharray="8 3"/></svg>data_flow</div>
     <div class="li"><svg width="28" height="8"><line x1="0" y1="4" x2="28" y2="4" stroke="#3fb950" stroke-width="1.2" stroke-dasharray="2 4"/></svg>notify</div>
