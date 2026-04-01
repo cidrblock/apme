@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Date
 
@@ -53,7 +53,7 @@ A new contributor must discover 5+ tools and 10+ commands, documented inconsiste
 
 - **prek (ADR-014)**: Remains the git hook runner. `tox -e lint` delegates to `prek run --all-files`. The single source of truth for hook configuration stays in `.pre-commit-config.yaml`.
 - **Shell scripts**: Pod lifecycle scripts stay as-is under `containers/podman/`. tox environments are thin wrappers via `allowlist_externals = bash`. The scripts remain directly callable, but tox is the documented primary path.
-- **CI (ADR-015)**: GitHub Actions workflows call `uvx --with tox-uv tox -e <env>` instead of bespoke `uv sync` + `uv run pytest` sequences. Local and CI run identical commands.
+- **CI (ADR-015)**: Test workflows call `uvx --with tox-uv tox -e <env>` instead of bespoke `uv sync` + `uv run pytest` sequences. The `prek.yml` lint workflow continues to use `j178/prek-action` directly for its built-in caching; `tox -e lint` is the local equivalent. Every CI check has a corresponding tox environment.
 
 ## Rationale
 

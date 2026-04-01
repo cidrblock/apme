@@ -38,7 +38,7 @@ tox -e unit
 
 ## tox — Developer Orchestration
 
-tox is the single entry point for all developer tasks. Every CI step is a tox environment you can run locally.
+tox is the single entry point for all developer tasks. Every CI check has a corresponding tox environment you can run locally.
 
 ### Environment reference
 
