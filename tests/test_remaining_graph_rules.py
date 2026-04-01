@@ -38,7 +38,6 @@ from apme_engine.validators.native.rules.R401_list_all_inbound_src_graph import 
 def _make_task(
     *,
     module: str = "debug",
-    resolved_module: str = "",
     module_options: YAMLDict | None = None,
     file_path: str = "site.yml",
     line_start: int = 10,
@@ -47,8 +46,7 @@ def _make_task(
     """Build a minimal playbook -> play -> task graph.
 
     Args:
-        module: Declared module name.
-        resolved_module: Resolved FQCN.
+        module: Module name as authored in YAML (short or FQCN).
         module_options: Module argument mapping.
         file_path: Source file path.
         line_start: Starting line number.
@@ -72,7 +70,7 @@ def _make_task(
         identity=NodeIdentity(path=path, node_type=NodeType.TASK),
         file_path=file_path,
         line_start=line_start,
-        module=resolved_module or module,
+        module=module,
         module_options=module_options or {},
         scope=NodeScope.OWNED,
     )
@@ -282,7 +280,7 @@ class TestR401ListAllInboundSrcGraphRule:
         Args:
             rule: Rule instance under test.
         """
-        g, _ = _make_task(module="debug", resolved_module="ansible.builtin.debug")
+        g, _ = _make_task(module="ansible.builtin.debug")
         pb_id = _playbook_node_id(g)
         assert rule.match(g, pb_id)
         result = rule.process(g, pb_id)
@@ -295,7 +293,7 @@ class TestR401ListAllInboundSrcGraphRule:
         Args:
             rule: Rule instance under test.
         """
-        g, nid = _make_task(module="get_url", resolved_module="ansible.builtin.get_url")
+        g, nid = _make_task(module="ansible.builtin.get_url")
         assert not rule.match(g, nid)
 
 
@@ -1041,8 +1039,7 @@ class TestPhase2JKScanner:
     def test_r401_via_scanner(self) -> None:
         """R401 fires for playbook with inbound tasks."""
         g, _ = _make_task(
-            module="get_url",
-            resolved_module="ansible.builtin.get_url",
+            module="ansible.builtin.get_url",
             module_options={"url": "https://example.com/x", "dest": "/tmp/"},
         )
         report = scan(g, [ListAllInboundSrcGraphRule()])

@@ -19,7 +19,6 @@ from apme_engine.validators.native.rules.R112_parameterized_import_taskfile_grap
 def _make_task(
     *,
     module: str = "debug",
-    resolved_module: str = "",
     module_options: YAMLDict | None = None,
     name: str | None = None,
     file_path: str = "site.yml",
@@ -29,8 +28,7 @@ def _make_task(
     """Build a minimal playbook -> play -> task graph.
 
     Args:
-        module: Declared module name on the task.
-        resolved_module: Resolved FQCN for the module.
+        module: Module name as authored in YAML (short or FQCN).
         module_options: Module argument mapping.
         name: Optional task name.
         file_path: Source file path for the task.
@@ -56,7 +54,7 @@ def _make_task(
         file_path=file_path,
         line_start=line_start,
         name=name,
-        module=resolved_module or module,
+        module=module,
         module_options=module_options or {},
         scope=NodeScope.OWNED,
     )
@@ -91,7 +89,7 @@ class TestL035UnnecessarySetFactGraphRule:
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(module="set_fact", resolved_module="ansible.builtin.set_fact")
+        g, tid = _make_task(module="ansible.builtin.set_fact")
         assert rule.match(g, tid) is True
 
     def test_no_match_debug(self, rule: UnnecessarySetFactGraphRule) -> None:
@@ -100,7 +98,7 @@ class TestL035UnnecessarySetFactGraphRule:
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(module="debug", resolved_module="ansible.builtin.debug")
+        g, tid = _make_task(module="ansible.builtin.debug")
         assert rule.match(g, tid) is False
 
     def test_violation_random_in_value(self, rule: UnnecessarySetFactGraphRule) -> None:
@@ -110,7 +108,7 @@ class TestL035UnnecessarySetFactGraphRule:
             rule: Rule instance under test.
         """
         mo: YAMLDict = {"my_password": "{{ lookup('password', '/dev/null') | random }}"}
-        g, tid = _make_task(module="set_fact", resolved_module="ansible.builtin.set_fact", module_options=mo)
+        g, tid = _make_task(module="ansible.builtin.set_fact", module_options=mo)
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is True
@@ -124,7 +122,7 @@ class TestL035UnnecessarySetFactGraphRule:
             rule: Rule instance under test.
         """
         mo: YAMLDict = {"my_var": "hello"}
-        g, tid = _make_task(module="set_fact", resolved_module="ansible.builtin.set_fact", module_options=mo)
+        g, tid = _make_task(module="ansible.builtin.set_fact", module_options=mo)
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is False
@@ -140,7 +138,7 @@ class TestL035UnnecessarySetFactGraphRule:
             "clean": "static_value",
             "rand_b": "{{ range(10) | random }}",
         }
-        g, tid = _make_task(module="set_fact", resolved_module="ansible.builtin.set_fact", module_options=mo)
+        g, tid = _make_task(module="ansible.builtin.set_fact", module_options=mo)
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is True
@@ -156,7 +154,7 @@ class TestL035UnnecessarySetFactGraphRule:
             rule: Rule instance under test.
         """
         mo: YAMLDict = {"count": 42, "flag": True}
-        g, tid = _make_task(module="set_fact", resolved_module="ansible.builtin.set_fact", module_options=mo)
+        g, tid = _make_task(module="ansible.builtin.set_fact", module_options=mo)
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is False
@@ -167,7 +165,7 @@ class TestL035UnnecessarySetFactGraphRule:
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(module="set_fact", resolved_module="")
+        g, tid = _make_task(module="set_fact")
         assert rule.match(g, tid) is True
 
 
@@ -194,7 +192,7 @@ class TestL046NoFreeFormGraphRule:
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(module="stat", resolved_module="ansible.builtin.stat")
+        g, tid = _make_task(module="ansible.builtin.stat")
         assert rule.match(g, tid) is True
 
     def test_no_match_play_node(self, rule: NoFreeFormGraphRule) -> None:
@@ -219,7 +217,7 @@ class TestL046NoFreeFormGraphRule:
             rule: Rule instance under test.
         """
         mo: YAMLDict = {"_raw_params": "path=/tmp mode=0755"}
-        g, tid = _make_task(module="stat", resolved_module="ansible.builtin.stat", module_options=mo)
+        g, tid = _make_task(module="ansible.builtin.stat", module_options=mo)
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is True
@@ -233,7 +231,7 @@ class TestL046NoFreeFormGraphRule:
             rule: Rule instance under test.
         """
         mo: YAMLDict = {"_raw_params": "echo hello"}
-        g, tid = _make_task(module="command", resolved_module="ansible.builtin.command", module_options=mo)
+        g, tid = _make_task(module="ansible.builtin.command", module_options=mo)
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is True
@@ -245,7 +243,7 @@ class TestL046NoFreeFormGraphRule:
             rule: Rule instance under test.
         """
         mo: YAMLDict = {"path": "/tmp", "mode": "0755"}
-        g, tid = _make_task(module="stat", resolved_module="ansible.builtin.stat", module_options=mo)
+        g, tid = _make_task(module="ansible.builtin.stat", module_options=mo)
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is False
@@ -257,7 +255,7 @@ class TestL046NoFreeFormGraphRule:
             rule: Rule instance under test.
         """
         mo: YAMLDict = {"_raw_params": "  "}
-        g, tid = _make_task(module="stat", resolved_module="ansible.builtin.stat", module_options=mo)
+        g, tid = _make_task(module="ansible.builtin.stat", module_options=mo)
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is False
@@ -269,7 +267,7 @@ class TestL046NoFreeFormGraphRule:
             rule: Rule instance under test.
         """
         mo: YAMLDict = {"src": "/etc/hosts", "dest": "/tmp/hosts"}
-        g, tid = _make_task(module="copy", resolved_module="ansible.builtin.copy", module_options=mo)
+        g, tid = _make_task(module="ansible.builtin.copy", module_options=mo)
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is False
@@ -281,7 +279,7 @@ class TestL046NoFreeFormGraphRule:
             rule: Rule instance under test.
         """
         mo: YAMLDict = {"_raw_params": "ls -la /tmp"}
-        g, tid = _make_task(module="shell", resolved_module="ansible.builtin.shell", module_options=mo)
+        g, tid = _make_task(module="ansible.builtin.shell", module_options=mo)
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is True
@@ -310,7 +308,7 @@ class TestR111ParameterizedImportRoleGraphRule:
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(module="include_role", resolved_module="ansible.builtin.include_role")
+        g, tid = _make_task(module="ansible.builtin.include_role")
         assert rule.match(g, tid) is True
 
     def test_match_import_role(self, rule: ParameterizedImportRoleGraphRule) -> None:
@@ -319,7 +317,7 @@ class TestR111ParameterizedImportRoleGraphRule:
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(module="import_role", resolved_module="ansible.builtin.import_role")
+        g, tid = _make_task(module="ansible.builtin.import_role")
         assert rule.match(g, tid) is True
 
     def test_no_match_include_tasks(self, rule: ParameterizedImportRoleGraphRule) -> None:
@@ -328,7 +326,7 @@ class TestR111ParameterizedImportRoleGraphRule:
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(module="include_tasks", resolved_module="ansible.builtin.include_tasks")
+        g, tid = _make_task(module="ansible.builtin.include_tasks")
         assert rule.match(g, tid) is False
 
     def test_no_match_debug(self, rule: ParameterizedImportRoleGraphRule) -> None:
@@ -337,7 +335,7 @@ class TestR111ParameterizedImportRoleGraphRule:
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(module="debug", resolved_module="ansible.builtin.debug")
+        g, tid = _make_task(module="ansible.builtin.debug")
         assert rule.match(g, tid) is False
 
     def test_violation_templated_role_name(self, rule: ParameterizedImportRoleGraphRule) -> None:
@@ -347,7 +345,7 @@ class TestR111ParameterizedImportRoleGraphRule:
             rule: Rule instance under test.
         """
         mo: YAMLDict = {"name": "{{ role_name }}"}
-        g, tid = _make_task(module="include_role", resolved_module="ansible.builtin.include_role", module_options=mo)
+        g, tid = _make_task(module="ansible.builtin.include_role", module_options=mo)
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is True
@@ -361,7 +359,7 @@ class TestR111ParameterizedImportRoleGraphRule:
             rule: Rule instance under test.
         """
         mo: YAMLDict = {"name": "my_static_role"}
-        g, tid = _make_task(module="include_role", resolved_module="ansible.builtin.include_role", module_options=mo)
+        g, tid = _make_task(module="ansible.builtin.include_role", module_options=mo)
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is False
@@ -373,7 +371,7 @@ class TestR111ParameterizedImportRoleGraphRule:
             rule: Rule instance under test.
         """
         mo: YAMLDict = {}
-        g, tid = _make_task(module="include_role", resolved_module="ansible.builtin.include_role", module_options=mo)
+        g, tid = _make_task(module="ansible.builtin.include_role", module_options=mo)
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is False
@@ -385,7 +383,7 @@ class TestR111ParameterizedImportRoleGraphRule:
             rule: Rule instance under test.
         """
         mo: YAMLDict = {"name": "{% if env == 'prod' %}secure_role{% else %}basic_role{% endif %}"}
-        g, tid = _make_task(module="import_role", resolved_module="ansible.builtin.import_role", module_options=mo)
+        g, tid = _make_task(module="ansible.builtin.import_role", module_options=mo)
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is True
@@ -397,7 +395,7 @@ class TestR111ParameterizedImportRoleGraphRule:
             rule: Rule instance under test.
         """
         mo: YAMLDict = {"name": "{{ dynamic_role }}"}
-        g, tid = _make_task(module="import_role", resolved_module="ansible.builtin.import_role", module_options=mo)
+        g, tid = _make_task(module="ansible.builtin.import_role", module_options=mo)
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is True
@@ -426,7 +424,7 @@ class TestR112ParameterizedImportTaskfileGraphRule:
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(module="include_tasks", resolved_module="ansible.builtin.include_tasks")
+        g, tid = _make_task(module="ansible.builtin.include_tasks")
         assert rule.match(g, tid) is True
 
     def test_match_import_tasks(self, rule: ParameterizedImportTaskfileGraphRule) -> None:
@@ -435,7 +433,7 @@ class TestR112ParameterizedImportTaskfileGraphRule:
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(module="import_tasks", resolved_module="ansible.builtin.import_tasks")
+        g, tid = _make_task(module="ansible.builtin.import_tasks")
         assert rule.match(g, tid) is True
 
     def test_no_match_include_role(self, rule: ParameterizedImportTaskfileGraphRule) -> None:
@@ -444,7 +442,7 @@ class TestR112ParameterizedImportTaskfileGraphRule:
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(module="include_role", resolved_module="ansible.builtin.include_role")
+        g, tid = _make_task(module="ansible.builtin.include_role")
         assert rule.match(g, tid) is False
 
     def test_violation_templated_file(self, rule: ParameterizedImportTaskfileGraphRule) -> None:
@@ -454,7 +452,7 @@ class TestR112ParameterizedImportTaskfileGraphRule:
             rule: Rule instance under test.
         """
         mo: YAMLDict = {"file": "{{ task_file }}.yml"}
-        g, tid = _make_task(module="include_tasks", resolved_module="ansible.builtin.include_tasks", module_options=mo)
+        g, tid = _make_task(module="ansible.builtin.include_tasks", module_options=mo)
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is True
@@ -468,7 +466,7 @@ class TestR112ParameterizedImportTaskfileGraphRule:
             rule: Rule instance under test.
         """
         mo: YAMLDict = {"_raw_params": "{{ dynamic_tasks }}.yml"}
-        g, tid = _make_task(module="import_tasks", resolved_module="ansible.builtin.import_tasks", module_options=mo)
+        g, tid = _make_task(module="ansible.builtin.import_tasks", module_options=mo)
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is True
@@ -482,7 +480,7 @@ class TestR112ParameterizedImportTaskfileGraphRule:
             rule: Rule instance under test.
         """
         mo: YAMLDict = {"file": "install.yml"}
-        g, tid = _make_task(module="include_tasks", resolved_module="ansible.builtin.include_tasks", module_options=mo)
+        g, tid = _make_task(module="ansible.builtin.include_tasks", module_options=mo)
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is False
@@ -494,7 +492,7 @@ class TestR112ParameterizedImportTaskfileGraphRule:
             rule: Rule instance under test.
         """
         mo: YAMLDict = {"_raw_params": "tasks/setup.yml"}
-        g, tid = _make_task(module="import_tasks", resolved_module="ansible.builtin.import_tasks", module_options=mo)
+        g, tid = _make_task(module="ansible.builtin.import_tasks", module_options=mo)
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is False
@@ -506,7 +504,7 @@ class TestR112ParameterizedImportTaskfileGraphRule:
             rule: Rule instance under test.
         """
         mo: YAMLDict = {}
-        g, tid = _make_task(module="include_tasks", resolved_module="ansible.builtin.include_tasks", module_options=mo)
+        g, tid = _make_task(module="ansible.builtin.include_tasks", module_options=mo)
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is False
@@ -518,7 +516,7 @@ class TestR112ParameterizedImportTaskfileGraphRule:
             rule: Rule instance under test.
         """
         mo: YAMLDict = {"file": "{{ templated }}.yml", "_raw_params": "static.yml"}
-        g, tid = _make_task(module="include_tasks", resolved_module="ansible.builtin.include_tasks", module_options=mo)
+        g, tid = _make_task(module="ansible.builtin.include_tasks", module_options=mo)
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is True
@@ -532,7 +530,7 @@ class TestR112ParameterizedImportTaskfileGraphRule:
             rule: Rule instance under test.
         """
         mo: YAMLDict = {"file": "{% if env %}prod.yml{% else %}dev.yml{% endif %}"}
-        g, tid = _make_task(module="import_tasks", resolved_module="ansible.builtin.import_tasks", module_options=mo)
+        g, tid = _make_task(module="ansible.builtin.import_tasks", module_options=mo)
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is True
@@ -549,7 +547,7 @@ class TestPhase2GScannerIntegration:
     def test_scan_set_fact_random(self) -> None:
         """Scanner picks up L035 violations."""
         mo: YAMLDict = {"my_rand": "{{ 100 | random }}"}
-        g, _tid = _make_task(module="set_fact", resolved_module="ansible.builtin.set_fact", module_options=mo)
+        g, _tid = _make_task(module="ansible.builtin.set_fact", module_options=mo)
         rules: list[GraphRule] = [UnnecessarySetFactGraphRule()]
         report = scan(g, rules)
         violations = [rr for nr in report.node_results for rr in nr.rule_results if rr.verdict]
@@ -560,7 +558,7 @@ class TestPhase2GScannerIntegration:
     def test_scan_free_form(self) -> None:
         """Scanner picks up L046 violations."""
         mo: YAMLDict = {"_raw_params": "path=/tmp mode=0755"}
-        g, _tid = _make_task(module="file", resolved_module="ansible.builtin.file", module_options=mo)
+        g, _tid = _make_task(module="ansible.builtin.file", module_options=mo)
         rules: list[GraphRule] = [NoFreeFormGraphRule()]
         report = scan(g, rules)
         violations = [rr for nr in report.node_results for rr in nr.rule_results if rr.verdict]
@@ -571,7 +569,7 @@ class TestPhase2GScannerIntegration:
     def test_scan_parameterized_role(self) -> None:
         """Scanner picks up R111 violations."""
         mo: YAMLDict = {"name": "{{ role_var }}"}
-        g, _tid = _make_task(module="include_role", resolved_module="ansible.builtin.include_role", module_options=mo)
+        g, _tid = _make_task(module="ansible.builtin.include_role", module_options=mo)
         rules: list[GraphRule] = [ParameterizedImportRoleGraphRule()]
         report = scan(g, rules)
         violations = [rr for nr in report.node_results for rr in nr.rule_results if rr.verdict]
@@ -582,7 +580,7 @@ class TestPhase2GScannerIntegration:
     def test_scan_parameterized_taskfile(self) -> None:
         """Scanner picks up R112 violations."""
         mo: YAMLDict = {"file": "{{ task_var }}.yml"}
-        g, _tid = _make_task(module="include_tasks", resolved_module="ansible.builtin.include_tasks", module_options=mo)
+        g, _tid = _make_task(module="ansible.builtin.include_tasks", module_options=mo)
         rules: list[GraphRule] = [ParameterizedImportTaskfileGraphRule()]
         report = scan(g, rules)
         violations = [rr for nr in report.node_results for rr in nr.rule_results if rr.verdict]

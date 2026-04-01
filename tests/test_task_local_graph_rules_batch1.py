@@ -23,7 +23,6 @@ from apme_engine.validators.native.rules.L092_loop_var_in_name_graph import Loop
 def _make_task(
     *,
     module: str = "debug",
-    resolved_module: str = "",
     module_options: YAMLDict | None = None,
     name: str | None = None,
     file_path: str = "site.yml",
@@ -35,8 +34,7 @@ def _make_task(
     """Build a minimal playbook→play→task graph.
 
     Args:
-        module: Declared module name on the task.
-        resolved_module: Resolved FQCN for the module.
+        module: Module name as authored in YAML (short or FQCN).
         module_options: Module argument mapping.
         name: Optional task name.
         file_path: Source file path for the task.
@@ -64,7 +62,7 @@ def _make_task(
         file_path=file_path,
         line_start=line_start,
         name=name,
-        module=resolved_module or module,
+        module=module,
         module_options=module_options or {},
         tags=tags or [],
         when_expr=when_expr,
@@ -240,7 +238,7 @@ class TestL036UnnecessaryIncludeVarsGraphRule:
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(resolved_module="ansible.builtin.include_vars")
+        g, tid = _make_task(module="ansible.builtin.include_vars")
         assert rule.match(g, tid)
 
     def test_no_match_debug(self, rule: UnnecessaryIncludeVarsGraphRule) -> None:
@@ -249,7 +247,7 @@ class TestL036UnnecessaryIncludeVarsGraphRule:
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(module="debug", resolved_module="ansible.builtin.debug")
+        g, tid = _make_task(module="ansible.builtin.debug")
         assert not rule.match(g, tid)
 
     def test_violation_no_tags_no_when(self, rule: UnnecessaryIncludeVarsGraphRule) -> None:
@@ -258,7 +256,7 @@ class TestL036UnnecessaryIncludeVarsGraphRule:
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(resolved_module="ansible.builtin.include_vars")
+        g, tid = _make_task(module="ansible.builtin.include_vars")
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is True
@@ -269,7 +267,7 @@ class TestL036UnnecessaryIncludeVarsGraphRule:
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(resolved_module="ansible.builtin.include_vars", tags=["setup"])
+        g, tid = _make_task(module="ansible.builtin.include_vars", tags=["setup"])
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is False
@@ -280,7 +278,7 @@ class TestL036UnnecessaryIncludeVarsGraphRule:
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(resolved_module="ansible.builtin.include_vars", when_expr="condition")
+        g, tid = _make_task(module="ansible.builtin.include_vars", when_expr="condition")
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is False
@@ -304,7 +302,7 @@ class TestL044AvoidImplicitGraphRule:
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(resolved_module="ansible.builtin.file", module_options={})
+        g, tid = _make_task(module="ansible.builtin.file", module_options={})
         assert rule.match(g, tid)
         result = rule.process(g, tid)
         assert result is not None
@@ -321,7 +319,7 @@ class TestL044AvoidImplicitGraphRule:
             rule: Rule instance under test.
         """
         g, tid = _make_task(
-            resolved_module="ansible.builtin.file",
+            module="ansible.builtin.file",
             module_options={"state": "present"},
         )
         result = rule.process(g, tid)
@@ -334,7 +332,7 @@ class TestL044AvoidImplicitGraphRule:
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(resolved_module="ansible.builtin.debug")
+        g, tid = _make_task(module="ansible.builtin.debug")
         assert not rule.match(g, tid)
 
 
@@ -357,7 +355,7 @@ class TestL048NoSameOwnerGraphRule:
             rule: Rule instance under test.
         """
         g, tid = _make_task(
-            resolved_module="ansible.builtin.copy",
+            module="ansible.builtin.copy",
             module_options={"remote_src": True},
         )
         assert rule.match(g, tid)
@@ -368,7 +366,7 @@ class TestL048NoSameOwnerGraphRule:
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(resolved_module="ansible.builtin.copy", module_options={})
+        g, tid = _make_task(module="ansible.builtin.copy", module_options={})
         assert not rule.match(g, tid)
 
     def test_violation_no_owner(self, rule: NoSameOwnerGraphRule) -> None:
@@ -378,7 +376,7 @@ class TestL048NoSameOwnerGraphRule:
             rule: Rule instance under test.
         """
         g, tid = _make_task(
-            resolved_module="ansible.builtin.copy",
+            module="ansible.builtin.copy",
             module_options={"remote_src": True},
         )
         result = rule.process(g, tid)
@@ -392,7 +390,7 @@ class TestL048NoSameOwnerGraphRule:
             rule: Rule instance under test.
         """
         g, tid = _make_task(
-            resolved_module="ansible.builtin.copy",
+            module="ansible.builtin.copy",
             module_options={"remote_src": True, "owner": "root"},
         )
         result = rule.process(g, tid)
@@ -511,7 +509,7 @@ class TestL082TemplateJ2ExtGraphRule:
             rule: Rule instance under test.
         """
         g, tid = _make_task(
-            resolved_module="ansible.builtin.template",
+            module="ansible.builtin.template",
             module_options={"src": "config.cfg"},
         )
         assert rule.match(g, tid)
@@ -526,7 +524,7 @@ class TestL082TemplateJ2ExtGraphRule:
             rule: Rule instance under test.
         """
         g, tid = _make_task(
-            resolved_module="ansible.builtin.template",
+            module="ansible.builtin.template",
             module_options={"src": "config.j2"},
         )
         result = rule.process(g, tid)
@@ -540,7 +538,7 @@ class TestL082TemplateJ2ExtGraphRule:
             rule: Rule instance under test.
         """
         g, tid = _make_task(
-            resolved_module="ansible.builtin.template",
+            module="ansible.builtin.template",
             module_options={"src": "{{ var }}"},
         )
         result = rule.process(g, tid)
@@ -689,7 +687,7 @@ class TestTaskLocalGraphScanIntegration:
         Returns:
             None; asserts scan report contains an L044 violation.
         """
-        g, _ = _make_task(resolved_module="ansible.builtin.file", module_options={})
+        g, _ = _make_task(module="ansible.builtin.file", module_options={})
         rules: list[GraphRule] = [AvoidImplicitGraphRule()]
         report = scan(g, rules)
         assert report.node_results

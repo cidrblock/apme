@@ -36,19 +36,17 @@ def _build_playbook_play_task(
     task_options: YAMLDict | None = None,
     task_register: str | None = None,
     task_set_facts: YAMLDict | None = None,
-    task_resolved_module: str = "",
     task_name: str | None = None,
 ) -> tuple[ContentGraph, str, str]:
     """Build a graph: playbook -> play -> task.
 
     Args:
         play_vars: Variables on the play node.
-        task_module: Module name for the task.
+        task_module: Module name as authored in YAML (short or FQCN).
         task_module_options: Module options dict.
         task_options: Task options dict.
         task_register: Register variable name.
         task_set_facts: Facts set by the task.
-        task_resolved_module: Resolved FQCN for the module.
         task_name: Optional task name.
 
     Returns:
@@ -76,7 +74,7 @@ def _build_playbook_play_task(
         file_path="site.yml",
         line_start=10,
         name=task_name,
-        module=task_resolved_module or task_module,
+        module=task_module,
         module_options=effective_module_opts,
         options=task_options or {},
         register=task_register,
@@ -124,8 +122,7 @@ class TestL032GraphRule:
             rule: Rule instance under test.
         """
         g, _, task_id = _build_playbook_play_task(
-            task_module="set_fact",
-            task_resolved_module="ansible.builtin.set_fact",
+            task_module="ansible.builtin.set_fact",
         )
         assert rule.match(g, task_id)
 
@@ -177,8 +174,7 @@ class TestL032GraphRule:
         """
         g, _, task_id = _build_playbook_play_task(
             play_vars={"my_var": "original"},
-            task_module="set_fact",
-            task_resolved_module="ansible.builtin.set_fact",
+            task_module="ansible.builtin.set_fact",
             task_set_facts={"my_var": "new_value"},
         )
         result = rule.process(g, task_id)
@@ -239,8 +235,7 @@ class TestL034GraphRule:
             rule: Rule instance under test.
         """
         g, _, task_id = _build_playbook_play_task(
-            task_module="set_fact",
-            task_resolved_module="ansible.builtin.set_fact",
+            task_module="ansible.builtin.set_fact",
             task_set_facts={"my_var": "new"},
         )
         result = rule.process(g, task_id)
@@ -425,8 +420,7 @@ class TestL093GraphRule:
             rule: Rule instance under test.
         """
         g, _, task_id = _build_playbook_play_task(
-            task_module="set_fact",
-            task_resolved_module="ansible.builtin.set_fact",
+            task_module="ansible.builtin.set_fact",
             task_module_options={"port": 8080},
         )
         assert not rule.match(g, task_id)
