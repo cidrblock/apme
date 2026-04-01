@@ -477,8 +477,9 @@ class SingleScan:
     def build_content_graph(self) -> None:
         """Build ContentGraph from definitions (ADR-044).
 
-        Constructs the graph and populates ``extra_requirements`` and
-        ``resolve_failures`` from the builder's resolution bookkeeping.
+        Constructs the graph and copies ``resolve_failures`` from the
+        builder's resolution bookkeeping.  ``extra_requirements`` is
+        carried forward but currently always empty (reserved for future use).
         Failure is fatal — the scan cannot proceed without a ContentGraph.
         """
         builder = GraphBuilder(

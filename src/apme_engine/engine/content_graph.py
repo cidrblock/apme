@@ -757,8 +757,9 @@ class GraphBuilder:
     """Constructs a ``ContentGraph`` from ARI definitions.
 
     Consumes ``root_definitions`` and ``ext_definitions`` dicts produced
-    by the ARI parser.  After ``.build()`` completes, ``extra_requirements``
-    and ``resolve_failures`` are populated with resolution bookkeeping.
+    by the ARI parser.  After ``.build()`` completes, ``resolve_failures``
+    is populated with resolution bookkeeping.  ``extra_requirements`` is
+    reserved for future use and currently remains empty.
     """
 
     def __init__(
