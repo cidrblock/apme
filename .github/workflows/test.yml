@@ -74,7 +74,7 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
-      - name: Install Playwright browsers
+      - name: Install Playwright (browser + system deps)
         if: steps.pw-cache.outputs.cache-hit != 'true'
         run: uv run playwright install --with-deps chromium
       - name: Build and serve UI
