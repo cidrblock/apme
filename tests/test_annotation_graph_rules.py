@@ -99,8 +99,7 @@ def _make_task(
         file_path=file_path,
         line_start=line_start,
         name=name,
-        module=module,
-        resolved_module_name=resolved_module,
+        module=resolved_module or module,
         module_options=module_options or {},
         scope=NodeScope.OWNED,
     )
@@ -153,8 +152,7 @@ def _make_two_tasks(
         identity=NodeIdentity(path="site.yml/plays[0]/tasks[0]", node_type=NodeType.TASK),
         file_path="site.yml",
         line_start=task1_line,
-        module=task1_module,
-        resolved_module_name=task1_resolved,
+        module=task1_resolved or task1_module,
         module_options=task1_options or {},
         scope=NodeScope.OWNED,
     )
@@ -162,8 +160,7 @@ def _make_two_tasks(
         identity=NodeIdentity(path="site.yml/plays[0]/tasks[1]", node_type=NodeType.TASK),
         file_path="site.yml",
         line_start=task2_line,
-        module=task2_module,
-        resolved_module_name=task2_resolved,
+        module=task2_resolved or task2_module,
         module_options=task2_options or {},
         scope=NodeScope.OWNED,
     )
@@ -191,15 +188,15 @@ class TestModuleRiskMapping:
         assert p is not None
         assert p.risk_type == "cmd_exec"
 
-    def test_short_name_fallback(self) -> None:
-        """Short name ``shell`` resolves via alias."""
-        p = get_risk_profile("", "shell")
+    def test_short_name_resolves(self) -> None:
+        """Bare short name ``shell`` resolves via short-name alias."""
+        p = get_risk_profile("shell")
         assert p is not None
         assert p.risk_type == "cmd_exec"
 
     def test_unknown_module(self) -> None:
         """Unknown module returns None."""
-        assert get_risk_profile("unknown.module", "unknown") is None
+        assert get_risk_profile("unknown.module") is None
 
     def test_resolve_field_direct(self) -> None:
         """Direct field mapping returns the value."""
@@ -309,6 +306,7 @@ class TestR101CommandExecGraphRule:
         """
         g, nid = _make_task(
             module="shell",
+            resolved_module="ansible.builtin.shell",
             module_options={"_raw_params": "{{ cmd }}"},
         )
         assert rule.match(g, nid)
@@ -1135,8 +1133,7 @@ class TestR103DownloadExecGraphRule:
             identity=NodeIdentity(path="site.yml/plays[0]/tasks[0]/block[0]", node_type=NodeType.TASK),
             file_path="site.yml",
             line_start=5,
-            module="get_url",
-            resolved_module_name="ansible.builtin.get_url",
+            module="ansible.builtin.get_url",
             module_options={"url": "{{ evil_url }}", "dest": "/tmp/run.sh"},
             scope=NodeScope.OWNED,
         )
@@ -1144,8 +1141,7 @@ class TestR103DownloadExecGraphRule:
             identity=NodeIdentity(path="site.yml/plays[0]/tasks[0]/block[1]", node_type=NodeType.TASK),
             file_path="site.yml",
             line_start=10,
-            module="shell",
-            resolved_module_name="ansible.builtin.shell",
+            module="ansible.builtin.shell",
             module_options={"_raw_params": "/tmp/run.sh"},
             scope=NodeScope.OWNED,
         )

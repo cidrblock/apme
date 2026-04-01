@@ -65,8 +65,7 @@ def _make_task(
         file_path=file_path,
         line_start=line_start,
         name=name,
-        module=module,
-        resolved_module_name=resolved_module,
+        module=resolved_module or module,
         module_options=module_options or {},
         set_facts=set_facts or {},
         options=options or {},
@@ -708,7 +707,7 @@ class TestBatch2ScannerIntegration:
     def test_scan_unresolved_module(self) -> None:
         """Scanner picks up L037 violations."""
         g, _tid = _make_task(module="unknown_module", resolved_module="")
-        rules: list[GraphRule] = [UnresolvedModuleGraphRule()]
+        rules: list[GraphRule] = [UnresolvedModuleGraphRule(enabled=True)]
         report = scan(g, rules)
         violations = [rr for nr in report.node_results for rr in nr.rule_results if rr.verdict]
         assert len(violations) == 1

@@ -716,7 +716,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
             engine_annotate_ms=ediag.annotate_ms,
             engine_total_ms=ediag.total_ms,
             files_scanned=ediag.files_scanned,
-            trees_built=ediag.trees_built,
+            graph_nodes_built=ediag.graph_nodes_built,
             total_violations=len(violations),
             validators=validator_diagnostics,
             fan_out_ms=fan_out_ms,

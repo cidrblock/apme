@@ -72,8 +72,7 @@ def _make_task(
         identity=NodeIdentity(path=path, node_type=NodeType.TASK),
         file_path=file_path,
         line_start=line_start,
-        module=module,
-        resolved_module_name=resolved_module,
+        module=resolved_module or module,
         module_options=module_options or {},
         scope=NodeScope.OWNED,
     )
@@ -235,8 +234,7 @@ class TestR401ListAllInboundSrcGraphRule:
             identity=NodeIdentity(path="site.yml/plays[0]/tasks[0]", node_type=NodeType.TASK),
             file_path="site.yml",
             line_start=5,
-            module="get_url",
-            resolved_module_name="ansible.builtin.get_url",
+            module="ansible.builtin.get_url",
             module_options={"url": "https://example.com/a.tar.gz", "dest": "/tmp/"},
             scope=NodeScope.OWNED,
         )
@@ -244,8 +242,7 @@ class TestR401ListAllInboundSrcGraphRule:
             identity=NodeIdentity(path="site.yml/plays[0]/tasks[1]", node_type=NodeType.TASK),
             file_path="site.yml",
             line_start=10,
-            module="git",
-            resolved_module_name="ansible.builtin.git",
+            module="ansible.builtin.git",
             module_options={"repo": "https://github.com/org/repo.git", "dest": "/opt/code"},
             scope=NodeScope.OWNED,
         )
@@ -253,8 +250,7 @@ class TestR401ListAllInboundSrcGraphRule:
             identity=NodeIdentity(path="site.yml/plays[0]/tasks[2]", node_type=NodeType.TASK),
             file_path="site.yml",
             line_start=15,
-            module="debug",
-            resolved_module_name="ansible.builtin.debug",
+            module="ansible.builtin.debug",
             module_options={"msg": "hello"},
             scope=NodeScope.OWNED,
         )

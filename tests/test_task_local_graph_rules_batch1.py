@@ -64,8 +64,7 @@ def _make_task(
         file_path=file_path,
         line_start=line_start,
         name=name,
-        module=module,
-        resolved_module_name=resolved_module,
+        module=resolved_module or module,
         module_options=module_options or {},
         tags=tags or [],
         when_expr=when_expr,
@@ -137,46 +136,45 @@ class TestL026NonFQCNUseGraphRule:
         return NonFQCNUseGraphRule()
 
     def test_match_short_module_resolves_to_collection(self, rule: NonFQCNUseGraphRule) -> None:
-        """Short module name differing from non-builtin FQCN matches.
+        """Short module name (no dot) matches.
 
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(module="copy", resolved_module="community.general.copy")
+        g, tid = _make_task(module="copy")
         assert rule.match(g, tid)
 
     def test_no_match_builtin_resolved(self, rule: NonFQCNUseGraphRule) -> None:
-        """Builtin FQCN does not match.
+        """Declared FQCN (builtin) does not match.
 
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(module="debug", resolved_module="ansible.builtin.debug")
+        g, tid = _make_task(module="ansible.builtin.debug")
         assert not rule.match(g, tid)
 
     def test_no_match_already_fqcn(self, rule: NonFQCNUseGraphRule) -> None:
-        """Declared name same as resolved FQCN does not match.
+        """Declared FQCN form does not match.
 
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(module="ansible.builtin.copy", resolved_module="ansible.builtin.copy")
+        g, tid = _make_task(module="ansible.builtin.copy")
         assert not rule.match(g, tid)
 
     def test_violation_detail(self, rule: NonFQCNUseGraphRule) -> None:
-        """Violation includes module and fqcn in detail.
+        """Violation includes module in detail.
 
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(module="copy", resolved_module="community.general.copy")
+        g, tid = _make_task(module="copy")
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is True
         assert result.detail is not None
         d: YAMLDict = result.detail
         assert d["module"] == "copy"
-        assert d["fqcn"] == "community.general.copy"
 
 
 class TestL030NonBuiltinUseGraphRule:
@@ -192,21 +190,21 @@ class TestL030NonBuiltinUseGraphRule:
         return NonBuiltinUseGraphRule()
 
     def test_match_collection_module(self, rule: NonBuiltinUseGraphRule) -> None:
-        """Resolved non-builtin FQCN matches.
+        """Declared non-builtin FQCN on module matches.
 
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(resolved_module="community.general.copy")
+        g, tid = _make_task(module="community.general.copy")
         assert rule.match(g, tid)
 
     def test_no_match_builtin(self, rule: NonBuiltinUseGraphRule) -> None:
-        """Resolved ansible.builtin does not match.
+        """Declared ansible.builtin FQCN does not match.
 
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(resolved_module="ansible.builtin.debug")
+        g, tid = _make_task(module="ansible.builtin.debug")
         assert not rule.match(g, tid)
 
     def test_violation_detail_has_fqcn(self, rule: NonBuiltinUseGraphRule) -> None:
@@ -215,7 +213,7 @@ class TestL030NonBuiltinUseGraphRule:
         Args:
             rule: Rule instance under test.
         """
-        g, tid = _make_task(resolved_module="community.general.copy")
+        g, tid = _make_task(module="community.general.copy")
         result = rule.process(g, tid)
         assert result is not None
         assert result.verdict is True
@@ -667,12 +665,12 @@ class TestTaskLocalGraphScanIntegration:
     """Integration tests for ``scan`` with selected graph rules."""
 
     def test_scan_non_fqcn_violation(self) -> None:
-        """L026 fires for short module resolving to a collection FQCN.
+        """L026 fires for short module name (not FQCN).
 
         Returns:
             None; asserts scan report contains an L026 violation.
         """
-        g, _ = _make_task(module="copy", resolved_module="community.general.copy")
+        g, _ = _make_task(module="copy")
         rules: list[GraphRule] = [NonFQCNUseGraphRule()]
         report = scan(g, rules)
         assert report.node_results

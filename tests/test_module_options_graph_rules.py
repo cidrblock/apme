@@ -56,8 +56,7 @@ def _make_task(
         file_path=file_path,
         line_start=line_start,
         name=name,
-        module=module,
-        resolved_module_name=resolved_module,
+        module=resolved_module or module,
         module_options=module_options or {},
         scope=NodeScope.OWNED,
     )
