@@ -593,7 +593,7 @@ class ContentGraph:
         return result
 
     def descendants(self, node_id: str) -> set[str]:
-        """Return all descendant node IDs (transitive children).
+        """Return all descendant node IDs (transitive children via any edge).
 
         Args:
             node_id: Root of the descendant subgraph.
@@ -604,6 +604,31 @@ class ContentGraph:
         if node_id not in self.g:
             return set()
         return cast(set[str], nx.descendants(self.g, node_id))
+
+    def structural_descendants(self, node_id: str) -> set[str]:
+        """Return descendant node IDs reachable via CONTAINS edges only.
+
+        Unlike :meth:`descendants`, this traverses only structural
+        (CONTAINS) edges, excluding DATA_FLOW, NOTIFY, INCLUDE, etc.
+
+        Args:
+            node_id: Root of the structural subtree.
+
+        Returns:
+            All structurally reachable node ids (excluding *node_id*
+            itself), or an empty set if ``node_id`` is absent.
+        """
+        if node_id not in self.g:
+            return set()
+        result: set[str] = set()
+        stack = [node_id]
+        while stack:
+            current = stack.pop()
+            for target, _attrs in self.edges_from(current, EdgeType.CONTAINS):
+                if target not in result:
+                    result.add(target)
+                    stack.append(target)
+        return result
 
     def subgraph(self, root_id: str) -> ContentGraph:
         """Return a new ContentGraph containing root_id and all descendants.

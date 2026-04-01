@@ -93,17 +93,29 @@ class InlineEnvVarGraphRule(GraphRule):
         if node is None:
             return None
 
+        scope_label = {
+            NodeType.PLAY: "play",
+            NodeType.BLOCK: "block",
+            NodeType.HANDLER: "handler",
+        }.get(node.node_type, "task")
+
         detail: YAMLDict = {
-            "message": "task uses inline environment; consider env file or variables",
+            "message": f"{scope_label} defines inline environment; consider env file or variables",
             "environment": dict(node.environment) if node.environment else {},
+            "scope": scope_label,
         }
 
         if node.node_type in (NodeType.PLAY, NodeType.BLOCK):
-            child_count = sum(
-                1
-                for desc_id in graph.descendants(node_id)
-                if (desc := graph.get_node(desc_id)) is not None and desc.node_type in (NodeType.TASK, NodeType.HANDLER)
-            )
+            child_count = 0
+            for desc_id in graph.structural_descendants(node_id):
+                desc = graph.get_node(desc_id)
+                if desc is None:
+                    continue
+                if desc.node_type not in (NodeType.TASK, NodeType.HANDLER):
+                    continue
+                if _environment_truthy(desc.environment):
+                    continue
+                child_count += 1
             if child_count > 0:
                 detail["affected_children"] = child_count
 

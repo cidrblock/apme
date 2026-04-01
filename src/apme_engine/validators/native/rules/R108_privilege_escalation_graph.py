@@ -60,7 +60,7 @@ class PrivilegeEscalationGraphRule(GraphRule):
     version: str = "v0.0.3"
     severity: str = Severity.HIGH
     tags: tuple[str, ...] = (Tag.SYSTEM,)
-    scope: str = RuleScope.PLAY
+    scope: str = RuleScope.TASK
 
     def match(self, graph: ContentGraph, node_id: str) -> bool:
         """Match nodes that **locally define** ``become: true``.
@@ -105,13 +105,25 @@ class PrivilegeEscalationGraphRule(GraphRule):
             detail.update(node.become)
 
         if node.node_type in (NodeType.PLAY, NodeType.BLOCK):
-            child_count = sum(
-                1
-                for desc_id in graph.descendants(node_id)
-                if (desc := graph.get_node(desc_id)) is not None and desc.node_type in (NodeType.TASK, NodeType.HANDLER)
-            )
+            child_count = 0
+            for desc_id in graph.structural_descendants(node_id):
+                desc = graph.get_node(desc_id)
+                if desc is None:
+                    continue
+                if desc.node_type not in (NodeType.TASK, NodeType.HANDLER):
+                    continue
+                if desc.become is not None:
+                    continue
+                child_count += 1
             if child_count > 0:
                 detail["affected_children"] = child_count
+
+        scope_label = {
+            NodeType.PLAY: "play",
+            NodeType.BLOCK: "block",
+            NodeType.HANDLER: "handler",
+        }.get(node.node_type, "task")
+        detail["scope"] = scope_label
 
         return GraphRuleResult(
             verdict=True,
