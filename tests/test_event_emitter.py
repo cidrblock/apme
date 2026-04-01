@@ -69,6 +69,17 @@ class FakeSink:
         """
         self.fix_events.append(event)
 
+    async def register_rules(self, request: object) -> None:
+        """No-op rule registration.
+
+        Args:
+            request: Registration payload (unused).
+
+        Returns:
+            None.
+        """
+        return None
+
 
 class FailingSink:
     """Sink that always raises on emission."""
@@ -89,6 +100,17 @@ class FailingSink:
             RuntimeError: Always raised.
         """
         raise RuntimeError("boom")
+
+    async def register_rules(self, request: object) -> None:
+        """No-op rule registration.
+
+        Args:
+            request: Registration payload (unused).
+
+        Returns:
+            None.
+        """
+        return None
 
 
 @pytest.fixture(autouse=True)  # type: ignore[untyped-decorator]
