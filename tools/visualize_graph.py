@@ -320,17 +320,15 @@ Object.values(nodeMap).forEach(n => {{
   }}
 
   grp.on("mouseover", ev => {{
-    let h = `<span class="f">type:</span> <span class="v">${{n.type}}</span>`;
-    if (n.fullName) h += ` &middot; <span class="v">${{n.fullName}}</span>`;
+    const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    let h = `<span class="f">type:</span> <span class="v">${{esc(n.type)}}</span>`;
+    if (n.fullName) h += ` &middot; <span class="v">${{esc(n.fullName)}}</span>`;
     h += `<br>`;
-    if (n.module) h += `<span class="f">module:</span> <span class="v mod">${{n.module}}</span><br>`;
-    if (n.file) h += `<span class="f">file:</span> <span class="v">${{n.file}}</span>`;
+    if (n.module) h += `<span class="f">module:</span> <span class="v mod">${{esc(n.module)}}</span><br>`;
+    if (n.file) h += `<span class="f">file:</span> <span class="v">${{esc(n.file)}}</span>`;
     if (n.line) h += `:<span class="v">${{n.line}}</span>`;
     if (n.file) h += `<br>`;
-    if (n.yaml) {{
-      const esc = n.yaml.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-      h += `<pre>${{esc}}</pre>`;
-    }}
+    if (n.yaml) h += `<pre>${{esc(n.yaml)}}</pre>`;
     tooltip.html(h).style("display", "block");
   }}).on("mousemove", ev => {{
     tooltip.style("left", (ev.clientX + 14) + "px").style("top", (ev.clientY - 14) + "px");
@@ -498,7 +496,8 @@ def main() -> None:
     graph = builder.build()
 
     graph_dict = graph.to_dict()
-    graph_json = json.dumps(graph_dict, default=str)
+    # Prevent </script> in YAML content from breaking out of the script tag.
+    graph_json = json.dumps(graph_dict, default=str).replace("</", "<\\/")
 
     title = Path(playbook_path).name
     html = HTML_TEMPLATE.format(
@@ -510,7 +509,7 @@ def main() -> None:
     )
 
     out = Path(args.output)
-    out.write_text(html)
+    out.write_text(html, encoding="utf-8")
     print(f"\nGraph: {graph.node_count()} nodes, {graph.edge_count()} edges, DAG: {graph.is_acyclic()}")
     print(f"Written to: {out.resolve()}")
     print(f"Open:       xdg-open {out}")

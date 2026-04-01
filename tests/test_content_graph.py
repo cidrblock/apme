@@ -615,10 +615,10 @@ class TestContentGraphSerialization:
         """Verify node_type is available as a top-level convenience field."""
         g = _make_graph()
         d = g.to_dict()
-        for raw_node in d["nodes"]:
-            data = raw_node["data"]
+        for raw_node in cast(list[dict[str, object]], d["nodes"]):
+            data = cast(dict[str, object], raw_node["data"])
             assert "node_type" in data
-            assert data["node_type"] == data["identity"]["node_type"]
+            assert data["node_type"] == cast(dict[str, str], data["identity"])["node_type"]
 
     def test_to_dict_includes_execution_edges(self) -> None:
         """Verify to_dict output includes execution_edges key."""
