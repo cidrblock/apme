@@ -16,6 +16,7 @@ from apme_engine.engine.content_graph import (
     NodeScope,
     NodeType,
 )
+from apme_engine.engine.models import BecomeInfo, YAMLDict
 
 # ---------------------------------------------------------------------------
 # NodeIdentity
@@ -611,6 +612,177 @@ class TestContentGraphSerialization:
         roundtripped = ContentGraph.from_dict(json.loads(serialized))
         assert roundtripped.node_count() == g.node_count()
 
+    def test_node_type_top_level_field(self) -> None:
+        """Verify node_type is available as a top-level convenience field."""
+        g = _make_graph()
+        d = g.to_dict()
+        for raw_node in cast(list[dict[str, object]], d["nodes"]):
+            data = cast(dict[str, object], raw_node["data"])
+            assert "node_type" in data
+            assert data["node_type"] == cast(dict[str, str], data["identity"])["node_type"]
+
+    def test_to_dict_includes_execution_edges(self) -> None:
+        """Verify to_dict output includes execution_edges key."""
+        g = _make_graph()
+        d = g.to_dict()
+        assert "execution_edges" in d
+        assert isinstance(d["execution_edges"], list)
+
+
+# ---------------------------------------------------------------------------
+# Execution edges
+# ---------------------------------------------------------------------------
+
+
+class TestExecutionEdges:
+    """Tests for ``ContentGraph.execution_edges()``."""
+
+    def test_linear_chain(self) -> None:
+        """Verify a playbook→play→task0→task1 produces sequential edges."""
+        g = _make_graph()
+        edges = g.execution_edges()
+        sources_targets = [(e["source"], e["target"]) for e in edges]
+
+        assert ("site.yml", "site.yml/plays[0]") in sources_targets
+        assert ("site.yml/plays[0]", "site.yml/plays[0]/tasks[0]") in sources_targets
+        assert ("site.yml/plays[0]/tasks[0]", "site.yml/plays[0]/tasks[1]") in sources_targets
+
+    def test_empty_graph(self) -> None:
+        """Verify an empty graph returns no execution edges."""
+        g = ContentGraph()
+        assert g.execution_edges() == []
+
+    def test_single_node(self) -> None:
+        """Verify a graph with one node returns no execution edges."""
+        g = ContentGraph()
+        g.add_node(ContentNode(identity=NodeIdentity(path="x.yml", node_type=NodeType.PLAYBOOK)))
+        assert g.execution_edges() == []
+
+    def test_block_threading(self) -> None:
+        """Verify execution threads through a block's last child before continuing."""
+        g = ContentGraph()
+        play = ContentNode(identity=NodeIdentity(path="p/plays[0]", node_type=NodeType.PLAY))
+        block = ContentNode(identity=NodeIdentity(path="p/plays[0]/tasks[0]", node_type=NodeType.BLOCK))
+        bt0 = ContentNode(identity=NodeIdentity(path="p/plays[0]/tasks[0]/block[0]", node_type=NodeType.TASK))
+        bt1 = ContentNode(identity=NodeIdentity(path="p/plays[0]/tasks[0]/block[1]", node_type=NodeType.TASK))
+        after = ContentNode(identity=NodeIdentity(path="p/plays[0]/tasks[1]", node_type=NodeType.TASK))
+        for n in (play, block, bt0, bt1, after):
+            g.add_node(n)
+        g.add_edge("p/plays[0]", "p/plays[0]/tasks[0]", EdgeType.CONTAINS, position=0)
+        g.add_edge("p/plays[0]", "p/plays[0]/tasks[1]", EdgeType.CONTAINS, position=1)
+        g.add_edge("p/plays[0]/tasks[0]", "p/plays[0]/tasks[0]/block[0]", EdgeType.CONTAINS, position=0)
+        g.add_edge("p/plays[0]/tasks[0]", "p/plays[0]/tasks[0]/block[1]", EdgeType.CONTAINS, position=1)
+
+        edges = g.execution_edges()
+        st = [(e["source"], e["target"]) for e in edges]
+
+        assert ("p/plays[0]", "p/plays[0]/tasks[0]") in st
+        assert ("p/plays[0]/tasks[0]", "p/plays[0]/tasks[0]/block[0]") in st
+        assert ("p/plays[0]/tasks[0]/block[0]", "p/plays[0]/tasks[0]/block[1]") in st
+        # Block's last child → next sibling (not block → next sibling)
+        assert ("p/plays[0]/tasks[0]/block[1]", "p/plays[0]/tasks[1]") in st
+
+    def test_include_inlining(self) -> None:
+        """Verify include targets are threaded inline in the execution flow."""
+        g = ContentGraph()
+        play = ContentNode(identity=NodeIdentity(path="p/plays[0]", node_type=NodeType.PLAY))
+        inc_task = ContentNode(identity=NodeIdentity(path="p/plays[0]/tasks[0]", node_type=NodeType.TASK))
+        target = ContentNode(identity=NodeIdentity(path="included.yml", node_type=NodeType.TASKFILE))
+        after = ContentNode(identity=NodeIdentity(path="p/plays[0]/tasks[1]", node_type=NodeType.TASK))
+        for n in (play, inc_task, target, after):
+            g.add_node(n)
+        g.add_edge("p/plays[0]", "p/plays[0]/tasks[0]", EdgeType.CONTAINS, position=0)
+        g.add_edge("p/plays[0]", "p/plays[0]/tasks[1]", EdgeType.CONTAINS, position=1)
+        g.add_edge("p/plays[0]/tasks[0]", "included.yml", EdgeType.INCLUDE)
+
+        edges = g.execution_edges()
+        st = [(e["source"], e["target"]) for e in edges]
+
+        assert ("p/plays[0]/tasks[0]", "included.yml") in st
+        assert ("included.yml", "p/plays[0]/tasks[1]") in st
+
+    def test_import_playbook_threaded_inline(self) -> None:
+        """Verify import_playbook entries are threaded at their position among plays."""
+        g = ContentGraph()
+        pb = ContentNode(identity=NodeIdentity(path="site.yml", node_type=NodeType.PLAYBOOK))
+        imported = ContentNode(identity=NodeIdentity(path="web.yml", node_type=NodeType.PLAYBOOK))
+        play = ContentNode(identity=NodeIdentity(path="site.yml/plays[1]", node_type=NodeType.PLAY))
+        for n in (pb, imported, play):
+            g.add_node(n)
+        g.add_edge("site.yml", "web.yml", EdgeType.IMPORT, position=0)
+        g.add_edge("site.yml", "site.yml/plays[1]", EdgeType.CONTAINS, position=1)
+
+        edges = g.execution_edges()
+        st = [(e["source"], e["target"]) for e in edges]
+
+        assert ("site.yml", "web.yml") in st
+        assert ("web.yml", "site.yml/plays[1]") in st
+
+    def test_import_playbook_only(self) -> None:
+        """Verify a playbook with only import_playbook entries produces edges."""
+        g = ContentGraph()
+        pb = ContentNode(identity=NodeIdentity(path="site.yml", node_type=NodeType.PLAYBOOK))
+        web = ContentNode(identity=NodeIdentity(path="web.yml", node_type=NodeType.PLAYBOOK))
+        db = ContentNode(identity=NodeIdentity(path="db.yml", node_type=NodeType.PLAYBOOK))
+        for n in (pb, web, db):
+            g.add_node(n)
+        g.add_edge("site.yml", "web.yml", EdgeType.IMPORT, position=0)
+        g.add_edge("site.yml", "db.yml", EdgeType.IMPORT, position=1)
+
+        edges = g.execution_edges()
+        st = [(e["source"], e["target"]) for e in edges]
+
+        assert ("site.yml", "web.yml") in st
+        assert ("web.yml", "db.yml") in st
+
+    def test_rescue_always_excluded_from_flow(self) -> None:
+        """Verify rescue/always children are excluded from mainline execution flow."""
+        g = ContentGraph()
+        block = ContentNode(identity=NodeIdentity(path="b", node_type=NodeType.BLOCK))
+        bt0 = ContentNode(identity=NodeIdentity(path="b/block[0]", node_type=NodeType.TASK))
+        bt1 = ContentNode(identity=NodeIdentity(path="b/block[1]", node_type=NodeType.TASK))
+        rt0 = ContentNode(identity=NodeIdentity(path="b/rescue[0]", node_type=NodeType.TASK))
+        at0 = ContentNode(identity=NodeIdentity(path="b/always[0]", node_type=NodeType.TASK))
+        for n in (block, bt0, bt1, rt0, at0):
+            g.add_node(n)
+        g.add_edge("b", "b/block[0]", EdgeType.CONTAINS, position=0)
+        g.add_edge("b", "b/block[1]", EdgeType.CONTAINS, position=1)
+        g.add_edge("b", "b/rescue[0]", EdgeType.CONTAINS, position=0)
+        g.add_edge("b", "b/rescue[0]", EdgeType.RESCUE, position=0)
+        g.add_edge("b", "b/always[0]", EdgeType.CONTAINS, position=0)
+        g.add_edge("b", "b/always[0]", EdgeType.ALWAYS, position=0)
+
+        edges = g.execution_edges()
+        st = [(e["source"], e["target"]) for e in edges]
+
+        assert ("b", "b/block[0]") in st
+        assert ("b/block[0]", "b/block[1]") in st
+        # Rescue/always must NOT appear in the mainline flow
+        targets = [t for _, t in st]
+        assert "b/rescue[0]" not in targets
+        assert "b/always[0]" not in targets
+
+    def test_edge_order_matches_position(self) -> None:
+        """Verify execution edges follow position ordering, not insertion order."""
+        g = ContentGraph()
+        parent = ContentNode(identity=NodeIdentity(path="p", node_type=NodeType.PLAY))
+        c0 = ContentNode(identity=NodeIdentity(path="p/t0", node_type=NodeType.TASK))
+        c1 = ContentNode(identity=NodeIdentity(path="p/t1", node_type=NodeType.TASK))
+        c2 = ContentNode(identity=NodeIdentity(path="p/t2", node_type=NodeType.TASK))
+        for n in (parent, c0, c1, c2):
+            g.add_node(n)
+        # Add in reverse position order
+        g.add_edge("p", "p/t2", EdgeType.CONTAINS, position=2)
+        g.add_edge("p", "p/t0", EdgeType.CONTAINS, position=0)
+        g.add_edge("p", "p/t1", EdgeType.CONTAINS, position=1)
+
+        edges = g.execution_edges()
+        st = [(e["source"], e["target"]) for e in edges]
+
+        assert ("p", "p/t0") in st
+        assert ("p/t0", "p/t1") in st
+        assert ("p/t1", "p/t2") in st
+
 
 # ---------------------------------------------------------------------------
 # graph_report_to_violations converter
@@ -804,3 +976,98 @@ class TestGraphBuilderBlockNodes:
         block_nodes = list(block_graph.nodes(NodeType.BLOCK))
         named_blocks = [b for b in block_nodes if b.name]
         assert len(named_blocks) >= 1, "Expected at least one named block node"
+
+
+# ---------------------------------------------------------------------------
+# Play property extraction (_build_play)
+# ---------------------------------------------------------------------------
+
+
+def _build_play_node(
+    play_options: dict[str, object] | None = None,
+    become: BecomeInfo | None = None,
+) -> ContentNode:
+    """Build a PLAY ContentNode from a Play with given options and become.
+
+    Args:
+        play_options: Options dict for the play (environment, no_log, etc.).
+        become: BecomeInfo (or None) for the play.
+
+    Returns:
+        The PLAY ContentNode produced by GraphBuilder.
+    """
+    from apme_engine.engine.models import ObjectList, Play, Playbook
+
+    opts: YAMLDict = cast(YAMLDict, play_options) if play_options else {}
+    play = Play(
+        key="play test_pb.yml#play[0]",
+        defined_in="test_pb.yml",
+        tasks=[],
+        options=opts,
+        become=become,
+    )
+    pb = Playbook(
+        key="playbook test_pb.yml",
+        defined_in="test_pb.yml",
+        plays=[play],
+    )
+    root_defs: dict[str, object] = {
+        "definitions": {
+            "playbooks": ObjectList(items=[pb]),
+        },
+        "mappings": None,
+    }
+    builder = GraphBuilder(root_defs, {})
+    graph = builder.build()
+    play_nodes = list(graph.nodes(NodeType.PLAY))
+    assert len(play_nodes) == 1
+    return play_nodes[0]
+
+
+class TestPlayPropertyExtraction:
+    """Verify _build_play extracts inheritable properties onto PLAY ContentNode."""
+
+    def test_become_extraction(self) -> None:
+        """Play with ``become`` sets ``node.become``."""
+        node = _build_play_node(become=BecomeInfo(enabled=True, user="root"))
+        assert node.become is not None
+        assert node.become.get("enabled") is True
+
+    def test_environment_extraction(self) -> None:
+        """Play with ``environment:`` dict populates ``node.environment``."""
+        node = _build_play_node({"environment": {"FOO": "bar"}})
+        assert node.environment == {"FOO": "bar"}
+
+    def test_no_log_extraction(self) -> None:
+        """Play with ``no_log: true`` sets ``node.no_log``."""
+        node = _build_play_node({"no_log": True})
+        assert node.no_log is True
+
+    def test_ignore_errors_extraction(self) -> None:
+        """Play with ``ignore_errors: true`` sets ``node.ignore_errors``."""
+        node = _build_play_node({"ignore_errors": True})
+        assert node.ignore_errors is True
+
+    def test_tags_extraction(self) -> None:
+        """Play with ``tags:`` list sets ``node.tags``."""
+        node = _build_play_node({"tags": ["deploy", "config"]})
+        assert node.tags == ["deploy", "config"]
+
+    def test_when_extraction_string(self) -> None:
+        """Play with ``when:`` string populates ``node.when_expr``."""
+        node = _build_play_node({"when": "inventory_hostname in groups['web']"})
+        assert node.when_expr == "inventory_hostname in groups['web']"
+
+    def test_when_extraction_list(self) -> None:
+        """Play with ``when:`` list populates ``node.when_expr``."""
+        node = _build_play_node({"when": ["a == 1", "b == 2"]})
+        assert node.when_expr == ["a == 1", "b == 2"]
+
+    def test_absent_properties_are_none(self) -> None:
+        """Play without inheritable properties leaves them None/empty."""
+        node = _build_play_node({})
+        assert node.environment is None
+        assert node.no_log is None
+        assert node.ignore_errors is None
+        assert node.tags in (None, [])
+        assert node.when_expr is None

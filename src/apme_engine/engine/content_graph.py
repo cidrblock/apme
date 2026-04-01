@@ -350,6 +350,7 @@ class ContentGraph:
             "version": 1,
             "nodes": nodes,
             "edges": edges,
+            "execution_edges": self.execution_edges(),
         }
 
     @classmethod
@@ -593,7 +594,7 @@ class ContentGraph:
         return result
 
     def descendants(self, node_id: str) -> set[str]:
-        """Return all descendant node IDs (transitive children).
+        """Return all descendant node IDs (transitive children via any edge).
 
         Args:
             node_id: Root of the descendant subgraph.
@@ -604,6 +605,31 @@ class ContentGraph:
         if node_id not in self.g:
             return set()
         return cast(set[str], nx.descendants(self.g, node_id))
+
+    def structural_descendants(self, node_id: str) -> set[str]:
+        """Return descendant node IDs reachable via CONTAINS edges only.
+
+        Unlike :meth:`descendants`, this traverses only structural
+        (CONTAINS) edges, excluding DATA_FLOW, NOTIFY, INCLUDE, etc.
+
+        Args:
+            node_id: Root of the structural subtree.
+
+        Returns:
+            All structurally reachable node ids (excluding *node_id*
+            itself), or an empty set if ``node_id`` is absent.
+        """
+        if node_id not in self.g:
+            return set()
+        result: set[str] = set()
+        stack = [node_id]
+        while stack:
+            current = stack.pop()
+            for target, _attrs in self.edges_from(current, EdgeType.CONTAINS):
+                if target not in result:
+                    result.add(target)
+                    stack.append(target)
+        return result
 
     def subgraph(self, root_id: str) -> ContentGraph:
         """Return a new ContentGraph containing root_id and all descendants.
@@ -641,6 +667,74 @@ class ContentGraph:
             ``True`` if no directed cycles exist.
         """
         return bool(nx.is_directed_acyclic_graph(self.g))
+
+    # -- Execution-order view -----------------------------------------------
+
+    def execution_edges(self) -> list[dict[str, str]]:
+        """Compute the execution-order edge list for the graph.
+
+        All positional edges (CONTAINS, INCLUDE, IMPORT) are treated
+        uniformly as parent-to-child relationships for execution flow.
+        This ensures ``import_playbook`` entries are threaded inline at
+        their declared position alongside regular plays, and
+        ``include_tasks``/``import_tasks`` targets appear as children of
+        the including task node.
+
+        Returns:
+            List of ``{"source": src_id, "target": tgt_id}`` dicts
+            representing execution flow transitions.  The list order
+            is deterministic (parents sorted lexicographically) but is
+            not itself a global topological ordering — each edge
+            encodes a local flow dependency.
+        """
+        children_by_parent: dict[str, list[tuple[str, int]]] = {}
+
+        # Rescue/always children are wired with both a CONTAINS edge and
+        # a RESCUE/ALWAYS edge.  Collect those pairs so we can exclude
+        # the CONTAINS edge from the mainline execution chain.
+        rescue_always_pairs: set[tuple[str, str]] = set()
+        for src, tgt, data in self.g.edges(data=True):
+            if data.get("edge_type") in (EdgeType.RESCUE.value, EdgeType.ALWAYS.value):
+                rescue_always_pairs.add((src, tgt))
+
+        for src, tgt, data in self.g.edges(data=True):
+            etype = data.get("edge_type", "")
+            if etype in (
+                EdgeType.CONTAINS.value,
+                EdgeType.INCLUDE.value,
+                EdgeType.IMPORT.value,
+            ):
+                if etype == EdgeType.CONTAINS.value and (src, tgt) in rescue_always_pairs:
+                    continue
+                pos = data.get("position", 0)
+                children_by_parent.setdefault(src, []).append((tgt, pos))
+
+        for children in children_by_parent.values():
+            children.sort(key=lambda t: t[1])
+
+        def last_exit(node_id: str, visited: set[str] | None = None) -> str:
+            if visited is None:
+                visited = set()
+            if node_id in visited:
+                return node_id
+            visited.add(node_id)
+            ch = children_by_parent.get(node_id)
+            if not ch:
+                return node_id
+            return last_exit(ch[-1][0], visited)
+
+        edges: list[dict[str, str]] = []
+
+        for parent_id in sorted(children_by_parent):
+            children = children_by_parent[parent_id]
+            if not children:
+                continue
+            edges.append({"source": parent_id, "target": children[0][0]})
+            for i in range(len(children) - 1):
+                exit_node = last_exit(children[i][0])
+                edges.append({"source": exit_node, "target": children[i + 1][0]})
+
+        return edges
 
 
 # ---------------------------------------------------------------------------
@@ -695,13 +789,16 @@ def _node_to_dict(node: ContentNode) -> dict[str, object]:
         node: ContentNode to serialize.
 
     Returns:
-        Dict with identity, scope, and all content fields.
+        Dict with identity, scope, and all content fields.  ``node_type``
+        is promoted to a top-level convenience field alongside the full
+        ``identity`` dict.
     """
     d: dict[str, object] = {
         "identity": {
             "path": node.identity.path,
             "node_type": node.identity.node_type.value,
         },
+        "node_type": node.identity.node_type.value,
         "scope": node.scope.value,
     }
     for fname in _CONTENT_NODE_SIMPLE_FIELDS:
@@ -1116,6 +1213,27 @@ class GraphBuilder:
         nid = identity.path
 
         line_start, line_end = _extract_lines(play)
+
+        play_options = _safe_dict(getattr(play, "options", {}))
+
+        when_raw = play_options.get("when")
+        when_expr: str | list[str] | None
+        if isinstance(when_raw, str):
+            when_expr = when_raw
+        elif isinstance(when_raw, list):
+            when_expr = [str(x) for x in when_raw]
+        else:
+            when_expr = None
+
+        environment_raw = play_options.get("environment")
+        environment: YAMLDict | None = environment_raw if isinstance(environment_raw, dict) else None
+
+        no_log_raw = play_options.get("no_log")
+        no_log = no_log_raw if isinstance(no_log_raw, bool) else None
+
+        ignore_errors_raw = play_options.get("ignore_errors")
+        ignore_errors = ignore_errors_raw if isinstance(ignore_errors_raw, bool) else None
+
         node = ContentNode(
             identity=identity,
             file_path=file_path,
@@ -1123,8 +1241,13 @@ class GraphBuilder:
             line_end=line_end,
             name=getattr(play, "name", None),
             variables=_safe_dict(getattr(play, "variables", {})),
-            options=_safe_dict(getattr(play, "options", {})),
+            options=play_options,
             become=_extract_become(play),
+            when_expr=when_expr,
+            tags=_as_str_list(play_options.get("tags")),
+            environment=environment,
+            no_log=no_log,
+            ignore_errors=ignore_errors,
             ari_key=play.key,
             scope=scope,
         )
