@@ -1116,6 +1116,27 @@ class GraphBuilder:
         nid = identity.path
 
         line_start, line_end = _extract_lines(play)
+
+        play_options = _safe_dict(getattr(play, "options", {}))
+
+        when_raw = play_options.get("when")
+        when_expr: str | list[str] | None
+        if isinstance(when_raw, str):
+            when_expr = when_raw
+        elif isinstance(when_raw, list):
+            when_expr = [str(x) for x in when_raw]
+        else:
+            when_expr = None
+
+        environment_raw = play_options.get("environment")
+        environment: YAMLDict | None = environment_raw if isinstance(environment_raw, dict) else None
+
+        no_log_raw = play_options.get("no_log")
+        no_log = no_log_raw if isinstance(no_log_raw, bool) else None
+
+        ignore_errors_raw = play_options.get("ignore_errors")
+        ignore_errors = ignore_errors_raw if isinstance(ignore_errors_raw, bool) else None
+
         node = ContentNode(
             identity=identity,
             file_path=file_path,
@@ -1123,8 +1144,13 @@ class GraphBuilder:
             line_end=line_end,
             name=getattr(play, "name", None),
             variables=_safe_dict(getattr(play, "variables", {})),
-            options=_safe_dict(getattr(play, "options", {})),
+            options=play_options,
             become=_extract_become(play),
+            when_expr=when_expr,
+            tags=_as_str_list(play_options.get("tags")),
+            environment=environment,
+            no_log=no_log,
+            ignore_errors=ignore_errors,
             ari_key=play.key,
             scope=scope,
         )
