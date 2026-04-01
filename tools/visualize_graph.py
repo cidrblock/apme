@@ -22,6 +22,7 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import sys
 from pathlib import Path
@@ -499,8 +500,8 @@ def main() -> None:
     # Prevent </script> in YAML content from breaking out of the script tag.
     graph_json = json.dumps(graph_dict, default=str).replace("</", "<\\/")
 
-    title = Path(playbook_path).name
-    html = HTML_TEMPLATE.format(
+    title = html.escape(Path(playbook_path).name)
+    html_out = HTML_TEMPLATE.format(
         title=title,
         graph_json=graph_json,
         node_count=graph.node_count(),
@@ -509,7 +510,7 @@ def main() -> None:
     )
 
     out = Path(args.output)
-    out.write_text(html, encoding="utf-8")
+    out.write_text(html_out, encoding="utf-8")
     print(f"\nGraph: {graph.node_count()} nodes, {graph.edge_count()} edges, DAG: {graph.is_acyclic()}")
     print(f"Written to: {out.resolve()}")
     print(f"Open:       xdg-open {out}")

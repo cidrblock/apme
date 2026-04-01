@@ -701,6 +701,40 @@ class TestExecutionEdges:
         assert ("p/plays[0]/tasks[0]", "included.yml") in st
         assert ("included.yml", "p/plays[0]/tasks[1]") in st
 
+    def test_import_playbook_threaded_inline(self) -> None:
+        """Verify import_playbook entries are threaded at their position among plays."""
+        g = ContentGraph()
+        pb = ContentNode(identity=NodeIdentity(path="site.yml", node_type=NodeType.PLAYBOOK))
+        imported = ContentNode(identity=NodeIdentity(path="web.yml", node_type=NodeType.PLAYBOOK))
+        play = ContentNode(identity=NodeIdentity(path="site.yml/plays[1]", node_type=NodeType.PLAY))
+        for n in (pb, imported, play):
+            g.add_node(n)
+        g.add_edge("site.yml", "web.yml", EdgeType.IMPORT, position=0)
+        g.add_edge("site.yml", "site.yml/plays[1]", EdgeType.CONTAINS, position=1)
+
+        edges = g.execution_edges()
+        st = [(e["source"], e["target"]) for e in edges]
+
+        assert ("site.yml", "web.yml") in st
+        assert ("web.yml", "site.yml/plays[1]") in st
+
+    def test_import_playbook_only(self) -> None:
+        """Verify a playbook with only import_playbook entries produces edges."""
+        g = ContentGraph()
+        pb = ContentNode(identity=NodeIdentity(path="site.yml", node_type=NodeType.PLAYBOOK))
+        web = ContentNode(identity=NodeIdentity(path="web.yml", node_type=NodeType.PLAYBOOK))
+        db = ContentNode(identity=NodeIdentity(path="db.yml", node_type=NodeType.PLAYBOOK))
+        for n in (pb, web, db):
+            g.add_node(n)
+        g.add_edge("site.yml", "web.yml", EdgeType.IMPORT, position=0)
+        g.add_edge("site.yml", "db.yml", EdgeType.IMPORT, position=1)
+
+        edges = g.execution_edges()
+        st = [(e["source"], e["target"]) for e in edges]
+
+        assert ("site.yml", "web.yml") in st
+        assert ("web.yml", "db.yml") in st
+
     def test_edge_order_matches_position(self) -> None:
         """Verify execution edges follow position ordering, not insertion order."""
         g = ContentGraph()

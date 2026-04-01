@@ -673,30 +673,31 @@ class ContentGraph:
     def execution_edges(self) -> list[dict[str, str]]:
         """Compute the execution-order edge list for the graph.
 
-        Walks the containment hierarchy in position order and threads
-        execution through blocks (their last descendant must complete
-        before the next sibling starts) and include/import targets
-        (inserted inline in the flow).
+        All positional edges (CONTAINS, INCLUDE, IMPORT) are treated
+        uniformly as parent-to-child relationships for execution flow.
+        This ensures ``import_playbook`` entries are threaded inline at
+        their declared position alongside regular plays, and
+        ``include_tasks``/``import_tasks`` targets appear as children of
+        the including task node.
 
         Returns:
             List of ``{"source": src_id, "target": tgt_id}`` dicts
             representing the execution chain in top-to-bottom order.
         """
-        contains_children: dict[str, list[tuple[str, int]]] = {}
-        include_targets: dict[str, list[tuple[str, int]]] = {}
+        children_by_parent: dict[str, list[tuple[str, int]]] = {}
 
         for src, tgt, data in self.g.edges(data=True):
             etype = data.get("edge_type", "")
-            pos = data.get("position", 0)
-            if etype == EdgeType.CONTAINS.value:
-                contains_children.setdefault(src, []).append((tgt, pos))
-            elif etype in (EdgeType.INCLUDE.value, EdgeType.IMPORT.value):
-                include_targets.setdefault(src, []).append((tgt, pos))
+            if etype in (
+                EdgeType.CONTAINS.value,
+                EdgeType.INCLUDE.value,
+                EdgeType.IMPORT.value,
+            ):
+                pos = data.get("position", 0)
+                children_by_parent.setdefault(src, []).append((tgt, pos))
 
-        for children in contains_children.values():
+        for children in children_by_parent.values():
             children.sort(key=lambda t: t[1])
-        for targets in include_targets.values():
-            targets.sort(key=lambda t: t[1])
 
         def last_exit(node_id: str, visited: set[str] | None = None) -> str:
             if visited is None:
@@ -704,29 +705,21 @@ class ContentGraph:
             if node_id in visited:
                 return node_id
             visited.add(node_id)
-            ch = contains_children.get(node_id)
+            ch = children_by_parent.get(node_id)
             if not ch:
                 return node_id
             return last_exit(ch[-1][0], visited)
 
-        def chain_from(node_id: str) -> str:
-            exit_node = last_exit(node_id)
-            for target, _pos in include_targets.get(node_id, []):
-                edges.append({"source": exit_node, "target": target})
-                exit_node = last_exit(target)
-            return exit_node
-
         edges: list[dict[str, str]] = []
 
-        for parent_id in sorted(contains_children):
-            children = contains_children[parent_id]
+        for parent_id in sorted(children_by_parent):
+            children = children_by_parent[parent_id]
             if not children:
                 continue
             edges.append({"source": parent_id, "target": children[0][0]})
             for i in range(len(children) - 1):
-                exit_node = chain_from(children[i][0])
+                exit_node = last_exit(children[i][0])
                 edges.append({"source": exit_node, "target": children[i + 1][0]})
-            chain_from(children[-1][0])
 
         return edges
 
