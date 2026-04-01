@@ -27,6 +27,11 @@ import sys
 from pathlib import Path
 from typing import cast
 
+# Ensure the local src/ tree is importable (not a stale pip install).
+_src = str(Path(__file__).resolve().parent.parent / "src")
+if _src not in sys.path:
+    sys.path.insert(0, _src)
+
 HTML_TEMPLATE = """\
 <!DOCTYPE html>
 <html lang="en">
@@ -465,8 +470,14 @@ def main() -> None:
     fixture = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "terrible-playbook"
 
     if args.playbook:
-        playbook_path = args.playbook
-        project_root = args.project_root or str(Path(playbook_path).parent)
+        pb = Path(args.playbook)
+        if pb.is_dir():
+            project_root = args.project_root or str(pb)
+            site = pb / "site.yml"
+            playbook_path = str(site) if site.exists() else str(pb)
+        else:
+            playbook_path = str(pb)
+            project_root = args.project_root or str(pb.parent)
     else:
         playbook_path = str(fixture / "site.yml")
         project_root = str(fixture)
