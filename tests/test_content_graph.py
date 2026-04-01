@@ -735,6 +735,33 @@ class TestExecutionEdges:
         assert ("site.yml", "web.yml") in st
         assert ("web.yml", "db.yml") in st
 
+    def test_rescue_always_excluded_from_flow(self) -> None:
+        """Verify rescue/always children are excluded from mainline execution flow."""
+        g = ContentGraph()
+        block = ContentNode(identity=NodeIdentity(path="b", node_type=NodeType.BLOCK))
+        bt0 = ContentNode(identity=NodeIdentity(path="b/block[0]", node_type=NodeType.TASK))
+        bt1 = ContentNode(identity=NodeIdentity(path="b/block[1]", node_type=NodeType.TASK))
+        rt0 = ContentNode(identity=NodeIdentity(path="b/rescue[0]", node_type=NodeType.TASK))
+        at0 = ContentNode(identity=NodeIdentity(path="b/always[0]", node_type=NodeType.TASK))
+        for n in (block, bt0, bt1, rt0, at0):
+            g.add_node(n)
+        g.add_edge("b", "b/block[0]", EdgeType.CONTAINS, position=0)
+        g.add_edge("b", "b/block[1]", EdgeType.CONTAINS, position=1)
+        g.add_edge("b", "b/rescue[0]", EdgeType.CONTAINS, position=0)
+        g.add_edge("b", "b/rescue[0]", EdgeType.RESCUE, position=0)
+        g.add_edge("b", "b/always[0]", EdgeType.CONTAINS, position=0)
+        g.add_edge("b", "b/always[0]", EdgeType.ALWAYS, position=0)
+
+        edges = g.execution_edges()
+        st = [(e["source"], e["target"]) for e in edges]
+
+        assert ("b", "b/block[0]") in st
+        assert ("b/block[0]", "b/block[1]") in st
+        # Rescue/always must NOT appear in the mainline flow
+        targets = [t for _, t in st]
+        assert "b/rescue[0]" not in targets
+        assert "b/always[0]" not in targets
+
     def test_edge_order_matches_position(self) -> None:
         """Verify execution edges follow position ordering, not insertion order."""
         g = ContentGraph()

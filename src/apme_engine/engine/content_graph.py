@@ -689,6 +689,14 @@ class ContentGraph:
         """
         children_by_parent: dict[str, list[tuple[str, int]]] = {}
 
+        # Rescue/always children are wired with both a CONTAINS edge and
+        # a RESCUE/ALWAYS edge.  Collect those pairs so we can exclude
+        # the CONTAINS edge from the mainline execution chain.
+        rescue_always_pairs: set[tuple[str, str]] = set()
+        for src, tgt, data in self.g.edges(data=True):
+            if data.get("edge_type") in (EdgeType.RESCUE.value, EdgeType.ALWAYS.value):
+                rescue_always_pairs.add((src, tgt))
+
         for src, tgt, data in self.g.edges(data=True):
             etype = data.get("edge_type", "")
             if etype in (
@@ -696,6 +704,8 @@ class ContentGraph:
                 EdgeType.INCLUDE.value,
                 EdgeType.IMPORT.value,
             ):
+                if etype == EdgeType.CONTAINS.value and (src, tgt) in rescue_always_pairs:
+                    continue
                 pos = data.get("position", 0)
                 children_by_parent.setdefault(src, []).append((tgt, pos))
 
