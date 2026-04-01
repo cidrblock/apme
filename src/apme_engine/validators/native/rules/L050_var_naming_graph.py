@@ -14,9 +14,7 @@ from apme_engine.validators.native.rules.graph_rule_base import (
 
 _VALID_VAR_NAME = re.compile(r"^[a-z_][a-z0-9_]*$")
 
-_SCOPED_TYPES = frozenset(
-    {NodeType.TASK, NodeType.HANDLER, NodeType.PLAY, NodeType.ROLE}
-)
+_SCOPED_TYPES = frozenset({NodeType.TASK, NodeType.HANDLER, NodeType.PLAY, NodeType.ROLE})
 
 _SET_FACT_MODULES = frozenset(
     {
@@ -139,10 +137,7 @@ class VarNamingGraphRule(GraphRule):
         detail: YAMLDict = cast(
             YAMLDict,
             {
-                "message": (
-                    f"Variable name(s) should be lowercase with underscores: "
-                    f"{', '.join(unique_names)}"
-                ),
+                "message": (f"Variable name(s) should be lowercase with underscores: {', '.join(unique_names)}"),
                 "bad_names": unique_names,
             },
         )

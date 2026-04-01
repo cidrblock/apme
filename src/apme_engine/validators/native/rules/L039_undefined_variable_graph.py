@@ -187,6 +187,8 @@ _MAGIC_VARS: frozenset[str] = frozenset(
         "ansible_loop",
         "ansible_loop_var",
         "ansible_index_var",
+        # Ansible built-in variable namespace
+        "vars",
         # Special Jinja / Ansible constants
         "omit",
         "undefined",
@@ -253,11 +255,7 @@ def _extract_bare_refs(texts: list[str]) -> set[str]:
         stripped = _QUOTED_STRING_RE.sub("", text)
         dotted_attrs = {m.group(1) for m in _DOTTED_ATTR_RE.finditer(stripped)}
         for ident in _BARE_IDENT_RE.findall(stripped):
-            if (
-                ident not in _JINJA_BUILTINS
-                and ident not in dotted_attrs
-                and not ident[0].isdigit()
-            ):
+            if ident not in _JINJA_BUILTINS and ident not in dotted_attrs and not ident[0].isdigit():
                 refs.add(ident)
     return refs
 
@@ -384,9 +382,7 @@ class UndefinedVariableGraphRule(GraphRule):
             )
 
         # Any ansible_* prefix is treated as a potential fact / connection var
-        non_magic = {
-            r for r in refs if r not in _MAGIC_VARS and not r.startswith("ansible_")
-        }
+        non_magic = {r for r in refs if r not in _MAGIC_VARS and not r.startswith("ansible_")}
         if not non_magic:
             return GraphRuleResult(
                 verdict=False,
@@ -408,9 +404,7 @@ class UndefinedVariableGraphRule(GraphRule):
         detail: YAMLDict = cast(
             YAMLDict,
             {
-                "message": (
-                    f"Possibly undefined variable(s): {', '.join(undefined)}"
-                ),
+                "message": (f"Possibly undefined variable(s): {', '.join(undefined)}"),
                 "undefined_vars": undefined,
             },
         )

@@ -61,9 +61,7 @@ def _make_graph(
         scope=NodeScope.OWNED,
     )
     task = ContentNode(
-        identity=NodeIdentity(
-            path="site.yml/plays[0]/tasks[0]", node_type=NodeType.TASK
-        ),
+        identity=NodeIdentity(path="site.yml/plays[0]/tasks[0]", node_type=NodeType.TASK),
         file_path="site.yml",
         line_start=10,
         module=task_module,
@@ -119,9 +117,7 @@ def _make_two_tasks(
         scope=NodeScope.OWNED,
     )
     t1 = ContentNode(
-        identity=NodeIdentity(
-            path="site.yml/plays[0]/tasks[0]", node_type=NodeType.TASK
-        ),
+        identity=NodeIdentity(path="site.yml/plays[0]/tasks[0]", node_type=NodeType.TASK),
         file_path="site.yml",
         line_start=5,
         module=t1_module,
@@ -130,9 +126,7 @@ def _make_two_tasks(
         scope=NodeScope.OWNED,
     )
     t2 = ContentNode(
-        identity=NodeIdentity(
-            path="site.yml/plays[0]/tasks[1]", node_type=NodeType.TASK
-        ),
+        identity=NodeIdentity(path="site.yml/plays[0]/tasks[1]", node_type=NodeType.TASK),
         file_path="site.yml",
         line_start=10,
         module="ansible.builtin.debug",

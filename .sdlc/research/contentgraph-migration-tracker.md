@@ -17,7 +17,7 @@
 | Remaining | 0 |
 | Migration % | 90.6% |
 
-## Ported Rules (85)
+## Ported Rules
 
 ### Phase 2A — Scanner bootstrap + R108 (PR #138)
 
@@ -191,8 +191,8 @@ active once COLLECTION/PLUGIN node types are populated in the graph.
 
 Both deferred rules are now ported. New ContentNode fields were **not needed**:
 L039 uses `VariableProvenanceResolver.resolve_variables()` + Jinja extraction;
-L050 reads existing `variables`, `set_facts`, `register`, `default_variables`,
-and `role_variables` fields directly.
+L050 reads existing `variables`, `module_options` (for set_fact keys),
+`register`, `default_variables`, and `role_variables` fields directly.
 
 | Rule | Name | Severity | Status |
 |------|------|----------|--------|
@@ -261,8 +261,9 @@ Fields still needed for full migration:
   extracts Jinja references on the fly via regex and resolves scope with
   `VariableProvenanceResolver.resolve_variables()`. No per-node storage needed.
 - [x] ~~`variable_set: list[VariableRef]`~~ — **NOT NEEDED as a field**: L050
-  reads existing `variables`, `set_facts`, `register`, `default_variables`,
-  and `role_variables` fields directly. Same pattern as L100/L101/L102.
+  reads existing `variables`, `module_options` (for set_fact keys),
+  `register`, `default_variables`, and `role_variables` fields directly.
+  Same pattern as L100/L101/L102.
 - [x] `COLLECTION` / `MODULE` node types in `NodeType` enum + `_SCANNABLE_TYPES`
 - [x] `module_line_count`, `module_functions_without_return_type` on `ContentNode`
 - [x] ~~`role_files: dict[str, str]`~~ — **NOT NEEDED as a field**: L077 now
