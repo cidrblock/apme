@@ -1,8 +1,9 @@
-"""Thin CLI for APME — pure gRPC presentation layer.
+"""Thin CLI for APME — presentation layer.
 
-The CLI only talks to the Primary service.  It handles local file I/O
-(read files, chunk for streaming, write patched bytes back) and output
-rendering.  All engine logic lives server-side.
+The CLI talks to the Primary service (gRPC) for engine operations and to
+the Gateway (REST) for read-heavy queries on persisted data (e.g. SBOM).
+It handles local file I/O (read files, chunk for streaming, write patched
+bytes back) and output rendering.  All engine logic lives server-side.
 """
 
 import sys
@@ -44,6 +45,10 @@ def main() -> None:
         from apme_engine.cli.health import run_health_check
 
         run_health_check(args)
+    elif cmd == "sbom":
+        from apme_engine.cli.sbom_cmd import run_sbom
+
+        run_sbom(args)
     else:
         parser.print_help()
         sys.exit(1)
