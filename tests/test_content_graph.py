@@ -705,83 +705,102 @@ class TestGraphReportToViolations:
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(scope="module")  # type: ignore[untyped-decorator]
+def block_graph() -> ContentGraph:
+    """Parse graph-patterns/site.yml and build a ContentGraph (cached per module).
+
+    Returns:
+        ContentGraph from the graph-patterns fixture.
+    """
+    from apme_engine.engine.scan_state import SingleScan
+    from apme_engine.runner import run_scan
+
+    fixture = Path(__file__).resolve().parent / "fixtures" / "graph-patterns"
+    context = run_scan(str(fixture / "site.yml"), str(fixture), include_scandata=True)
+    sd = context.scandata
+    assert isinstance(sd, SingleScan), "run_scan produced no scandata for graph-patterns fixture"
+    builder = GraphBuilder(
+        cast(dict[str, object], sd.root_definitions),
+        cast(dict[str, object], sd.ext_definitions),
+    )
+    return builder.build()
+
+
 class TestGraphBuilderBlockNodes:
     """Verify GraphBuilder produces BLOCK nodes, RESCUE and ALWAYS edges."""
 
-    @staticmethod
-    def _build_from_fixture() -> ContentGraph:
-        """Parse graph-patterns/site.yml through the ARI pipeline and build graph.
+    def test_block_nodes_exist(self, block_graph: ContentGraph) -> None:
+        """ContentGraph contains NodeType.BLOCK nodes for block wrappers.
 
-        Returns:
-            ContentGraph from the fixture.
+        Args:
+            block_graph: Cached ContentGraph from graph-patterns fixture.
         """
-        from apme_engine.engine.scan_state import SingleScan
-        from apme_engine.runner import run_scan
-
-        fixture = Path(__file__).resolve().parent / "fixtures" / "graph-patterns"
-        context = run_scan(str(fixture / "site.yml"), str(fixture), include_scandata=True)
-        sd = context.scandata
-        assert isinstance(sd, SingleScan), "run_scan produced no scandata for graph-patterns fixture"
-        builder = GraphBuilder(
-            cast(dict[str, object], sd.root_definitions),
-            cast(dict[str, object], sd.ext_definitions),
-        )
-        return builder.build()
-
-    def test_block_nodes_exist(self) -> None:
-        """ContentGraph contains NodeType.BLOCK nodes for block wrappers."""
-        graph = self._build_from_fixture()
-        block_nodes = list(graph.nodes(NodeType.BLOCK))
+        block_nodes = list(block_graph.nodes(NodeType.BLOCK))
         assert len(block_nodes) >= 2, (
             f"Expected at least 2 BLOCK nodes (migration + outer cert), got {len(block_nodes)}"
         )
 
-    def test_rescue_edges_exist(self) -> None:
-        """Block with rescue: produces RESCUE edges."""
-        graph = self._build_from_fixture()
+    def test_rescue_edges_exist(self, block_graph: ContentGraph) -> None:
+        """Block with rescue: produces RESCUE edges.
+
+        Args:
+            block_graph: Cached ContentGraph from graph-patterns fixture.
+        """
         all_rescue = []
-        for node in graph.nodes(NodeType.BLOCK):
-            rescue_edges = graph.edges_from(node.node_id, EdgeType.RESCUE)
+        for node in block_graph.nodes(NodeType.BLOCK):
+            rescue_edges = block_graph.edges_from(node.node_id, EdgeType.RESCUE)
             all_rescue.extend(rescue_edges)
         assert len(all_rescue) >= 2, f"Expected at least 2 RESCUE edges, got {len(all_rescue)}"
 
-    def test_always_edges_exist(self) -> None:
-        """Block with always: produces ALWAYS edges."""
-        graph = self._build_from_fixture()
+    def test_always_edges_exist(self, block_graph: ContentGraph) -> None:
+        """Block with always: produces ALWAYS edges.
+
+        Args:
+            block_graph: Cached ContentGraph from graph-patterns fixture.
+        """
         all_always = []
-        for node in graph.nodes(NodeType.BLOCK):
-            always_edges = graph.edges_from(node.node_id, EdgeType.ALWAYS)
+        for node in block_graph.nodes(NodeType.BLOCK):
+            always_edges = block_graph.edges_from(node.node_id, EdgeType.ALWAYS)
             all_always.extend(always_edges)
         assert len(all_always) >= 1, f"Expected at least 1 ALWAYS edge, got {len(all_always)}"
 
-    def test_block_children_are_contains_children_of_block(self) -> None:
-        """Block's children are CONTAINS children of the BLOCK, not the PLAY."""
-        graph = self._build_from_fixture()
-        block_nodes = list(graph.nodes(NodeType.BLOCK))
+    def test_block_children_are_contains_children_of_block(self, block_graph: ContentGraph) -> None:
+        """Block's children are CONTAINS children of the BLOCK, not the PLAY.
+
+        Args:
+            block_graph: Cached ContentGraph from graph-patterns fixture.
+        """
+        block_nodes = list(block_graph.nodes(NodeType.BLOCK))
         for block_node in block_nodes:
-            contains_children = graph.children(block_node.node_id)
+            contains_children = block_graph.children(block_node.node_id)
             assert len(contains_children) >= 1, f"Block {block_node.node_id} has no CONTAINS children"
             for child in contains_children:
                 assert child.node_type in (NodeType.TASK, NodeType.BLOCK), (
                     f"Block child {child.node_id} is {child.node_type}, expected TASK or BLOCK"
                 )
 
-    def test_nested_block_produces_nested_block_node(self) -> None:
-        """A block inside a block produces a nested BLOCK node."""
-        graph = self._build_from_fixture()
-        block_nodes = list(graph.nodes(NodeType.BLOCK))
+    def test_nested_block_produces_nested_block_node(self, block_graph: ContentGraph) -> None:
+        """A block inside a block produces a nested BLOCK node.
+
+        Args:
+            block_graph: Cached ContentGraph from graph-patterns fixture.
+        """
+        block_nodes = list(block_graph.nodes(NodeType.BLOCK))
         nested_found = False
         for block_node in block_nodes:
-            children = graph.children(block_node.node_id)
+            children = block_graph.children(block_node.node_id)
             for child in children:
                 if child.node_type == NodeType.BLOCK:
                     nested_found = True
                     break
         assert nested_found, "Expected at least one nested BLOCK node (inner cert block)"
 
-    def test_block_level_properties_on_block_node(self) -> None:
-        """Block-level name is on the BLOCK node."""
-        graph = self._build_from_fixture()
-        block_nodes = list(graph.nodes(NodeType.BLOCK))
+    def test_block_level_properties_on_block_node(self, block_graph: ContentGraph) -> None:
+        """Block-level name is on the BLOCK node.
+
+        Args:
+            block_graph: Cached ContentGraph from graph-patterns fixture.
+        """
+        block_nodes = list(block_graph.nodes(NodeType.BLOCK))
         named_blocks = [b for b in block_nodes if b.name]
         assert len(named_blocks) >= 1, "Expected at least one named block node"
