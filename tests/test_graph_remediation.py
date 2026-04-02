@@ -338,9 +338,7 @@ class TestGraphRemediationEngine:
         rules: list[GraphRule] = [_FQCNRule()]
         registry = _build_registry_with_fqcn()
 
-        engine = GraphRemediationEngine(
-            registry, graph, rules, progress_callback=on_progress
-        )
+        engine = GraphRemediationEngine(registry, graph, rules, progress_callback=on_progress)
         engine.remediate()
 
         assert any("fixable" in m.lower() or "converged" in m.lower() for m in messages)
@@ -374,9 +372,7 @@ class TestGraphRemediationEngine:
         registry = TransformRegistry()
         registry.register("T999", node=_noop_transform)
 
-        engine = GraphRemediationEngine(
-            registry, graph, [_InfiniteRule()], max_passes=3
-        )
+        engine = GraphRemediationEngine(registry, graph, [_InfiniteRule()], max_passes=3)
         report = engine.remediate()
 
         assert report.passes <= 3
@@ -467,9 +463,7 @@ class TestSpliceModifications:
         n1.record_state(1, "transformed")
 
         n2.record_state(0, "scanned", ("M001",))
-        n2.update_from_yaml(
-            "- name: Copy file\n  ansible.builtin.copy:\n    src: a.txt\n    dest: /tmp/a.txt\n"
-        )
+        n2.update_from_yaml("- name: Copy file\n  ansible.builtin.copy:\n    src: a.txt\n    dest: /tmp/a.txt\n")
         n2.record_state(1, "transformed")
 
         originals = {"/workspace/site.yml": self._ORIGINAL}
