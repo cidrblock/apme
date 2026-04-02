@@ -335,11 +335,12 @@ After Phase 2 (all rules ported), Phase 3 adds:
    (original → formatted → scanned → transformed → rescanned).
    - [x] **PR #194 (MERGED)**: NodeState data model — frozen dataclass,
      `record_state()`, `update_from_yaml()`, serialization, 35 tests
-   - [x] **PR #195 (IN REVIEW)**: Node-level transform contract — all 17
+   - [x] **PR #195 (MERGED)**: Node-level transform contract — all 17
      transforms migrated to `(CommentedMap, ViolationDict) -> bool`,
      `ContentGraph.apply_transform()`, dirty-node tracking, 46 tests
-   - [ ] **PR 3 (PLANNED)**: Graph-aware convergence loop — `rescan_dirty()`,
-     `GraphRemediationEngine`, `splice_modifications()`, primary server update
+   - [ ] **PR 3 (IN PROGRESS)**: Graph-aware convergence loop —
+     `rescan_dirty()`, `GraphRemediationEngine`, `splice_modifications()`,
+     17 unit tests; primary server integration deferred
 2. **PropertyOrigin consumed by rules**: Already-ported inherited-property
    rules (R108, L047, L045, etc.) use PropertyOrigin to attribute violations
    to the defining scope (play) rather than every inheriting child task.

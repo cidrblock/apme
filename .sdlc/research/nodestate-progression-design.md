@@ -208,7 +208,7 @@ for nodes above it in the same file.
 - Serialization in `to_dict()` / `from_dict()`
 - 35 unit tests (29 original + 6 from Copilot review)
 
-### PR 2: Node-level transform contract + migration — IN REVIEW (#195)
+### PR 2: Node-level transform contract + migration — MERGED (#195)
 
 - `NodeTransformFn = Callable[[CommentedMap, ViolationDict], bool]`
 - `TransformRegistry` gains `_node` dict, `register(node=...)`,
@@ -223,13 +223,19 @@ for nodes above it in the same file.
   backward compat (existing RemediationEngine unchanged)
 - 46 unit tests in test_node_state.py; 161 remediation tests pass
 
-### PR 3: Graph-aware convergence loop + primary server integration
+### PR 3: Graph-aware convergence loop — IN PROGRESS
 
-- `graph_scanner.rescan_dirty()` for incremental re-validation
-- `GraphRemediationEngine` with in-memory convergence
-- `splice_modifications()` utility for final file output
-- Update `_session_process` in primary server
-- Integration tests with full progression verification
+- [x] `graph_scanner.rescan_dirty()` — incremental re-validation of
+  dirty nodes only (skips full-graph scan; O(dirty nodes × rules))
+- [x] `GraphRemediationEngine` — in-memory convergence loop on
+  ContentGraph: scan → transform → rescan_dirty → repeat. No disk I/O.
+  Records NodeState progression at each phase. Oscillation detection.
+- [x] `splice_modifications()` — bottom-up line-range replacement to
+  produce FilePatch diffs from original files
+- [x] `_record_violations()` + `_count_modified_nodes()` helpers
+- [x] 17 unit tests: 4 rescan_dirty, 8 GraphRemediationEngine, 5 splice
+- [x] Lint clean (prek, mypy, pydoclint all pass)
+- [ ] Primary server integration (deferred — separate PR scope)
 
 ## Out of Scope
 
@@ -249,4 +255,5 @@ for nodes above it in the same file.
 |------|--------|--------|
 | 2026-03-30 | Bradley A. Thornton | Initial design from architecture discussion |
 | 2026-04-01 | Bradley A. Thornton | PR 1 merged (#194): NodeState data model |
-| 2026-04-02 | Bradley A. Thornton | PR 2 submitted (#195): Node-level transform contract |
+| 2026-04-02 | Bradley A. Thornton | PR 2 merged (#195): Node-level transform contract |
+| 2026-04-02 | Bradley A. Thornton | PR 3 in progress: Graph-aware convergence loop |
