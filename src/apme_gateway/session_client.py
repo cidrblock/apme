@@ -118,7 +118,7 @@ async def _load_scan_rule_configs() -> list[RuleConfig]:
         async with get_session() as db:
             rows = await list_rules_with_resolved_config(db)
     except Exception:
-        logger.debug("Skipping rule_configs for scan (DB unavailable or query failed)", exc_info=True)
+        logger.warning("Failed to load rule_configs for scan — proceeding without overrides", exc_info=True)
         return []
     return [
         RuleConfig(

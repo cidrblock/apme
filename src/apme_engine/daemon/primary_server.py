@@ -496,9 +496,9 @@ def _apply_rule_configs(
             if not rc.enabled:  # type: ignore[attr-defined]
                 continue
             if rc.severity:  # type: ignore[attr-defined]
-                from apme_engine.severity_defaults import Severity
+                from apme_engine.severity_defaults import severity_from_proto
 
-                v["severity"] = severity_to_label(Severity(rc.severity))  # type: ignore[attr-defined]
+                v["severity"] = severity_to_label(severity_from_proto(rc.severity))  # type: ignore[attr-defined]
             if rc.enforced:  # type: ignore[attr-defined]
                 v["_enforced"] = True
         filtered.append(v)

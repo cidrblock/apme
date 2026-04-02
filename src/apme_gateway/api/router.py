@@ -18,7 +18,7 @@ from typing import cast
 
 from fastapi import APIRouter, HTTPException, Query, WebSocket
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.websockets import WebSocketDisconnect  # type: ignore[import-not-found]
 
 from apme_engine.severity_defaults import severity_from_proto, severity_to_label
@@ -1376,12 +1376,12 @@ class RuleConfigPutBody(BaseModel):  # type: ignore[misc]
     Omitted fields are left unchanged on an existing override.
 
     Attributes:
-        severity_override: New severity enum int, or None to clear severity override.
+        severity_override: Severity enum int (0-6), or None to clear severity override.
         enabled_override: New enabled flag, or None to clear enabled override.
         enforced: Whether to enforce despite inline ignores; omit to leave unchanged.
     """
 
-    severity_override: int | None = None
+    severity_override: int | None = Field(default=None, ge=0, le=6)
     enabled_override: bool | None = None
     enforced: bool | None = None
 
