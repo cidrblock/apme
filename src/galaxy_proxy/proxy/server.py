@@ -395,6 +395,14 @@ def create_app(
             except FileNotFoundError:
                 break
         tarball_path = raw_tarball_path.resolve()
+
+        allowed_roots = (Path(tempfile.gettempdir()).resolve(), Path("/sessions").resolve())
+        if not any(tarball_path.is_relative_to(root) for root in allowed_roots):
+            raise HTTPException(
+                status_code=400,
+                detail="Path must be under a session or temp directory",
+            )
+
         if not tarball_path.is_dir():
             raise HTTPException(status_code=400, detail=f"Not a directory: {tarball_dir}")
 
