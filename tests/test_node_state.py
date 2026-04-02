@@ -512,6 +512,19 @@ class TestApplyTransform:
         graph.clear_dirty()
         assert graph.dirty_nodes == frozenset()
 
+    def test_no_document_marker(self) -> None:
+        """Serialized yaml_lines must not contain a '---' document marker."""
+
+        def add_tag(task, violation):  # type: ignore[no-untyped-def]
+            task["tags"] = ["test"]
+            return True
+
+        graph, nid = self._build_graph()
+        graph.apply_transform(nid, add_tag, {})
+        node = graph.get_node(nid)
+        assert node is not None
+        assert not node.yaml_lines.startswith("---")
+
     def test_nonexistent_node(self) -> None:
         """Applying to a missing node returns False."""
         graph = ContentGraph()

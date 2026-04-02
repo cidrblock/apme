@@ -17,7 +17,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, cast
 
 import networkx as nx  # type: ignore[import-untyped]
 
-from .models import YAMLDict, YAMLValue
+from .models import ViolationDict, YAMLDict, YAMLValue
 
 if TYPE_CHECKING:
     from .models import (
@@ -583,8 +583,8 @@ class ContentGraph:
     def apply_transform(
         self,
         node_id: str,
-        transform_fn: object,
-        violation: dict[str, object],
+        transform_fn: Callable[[object, ViolationDict], bool],
+        violation: ViolationDict,
     ) -> bool:
         """Apply a node-level transform via an ephemeral CommentedMap.
 
@@ -609,7 +609,14 @@ class ContentGraph:
         if node is None or not node.yaml_lines:
             return False
 
-        yaml = FormattedYAML(typ="rt", pure=True, version=(1, 1))
+        # Disable explicit_start so serialized fragments don't get a '---'
+        # marker prepended — yaml_lines are spliced back into parent files.
+        yaml = FormattedYAML(
+            typ="rt",
+            pure=True,
+            version=(1, 1),
+            config={"explicit_start": False},
+        )
         try:
             data = yaml.load(node.yaml_lines)
         except Exception:  # noqa: BLE001
@@ -626,7 +633,7 @@ class ContentGraph:
         if task is None:
             return False
 
-        applied = transform_fn(task, violation)  # type: ignore[operator]
+        applied = transform_fn(task, violation)
         if not applied:
             return False
 
