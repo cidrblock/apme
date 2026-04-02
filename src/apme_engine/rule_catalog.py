@@ -106,7 +106,8 @@ def _collect_native_rules() -> list[reporting_pb2.RuleDefinition]:
                     scope=_SCOPE_TO_PROTO.get(
                         gr.scope,
                         common_pb2.RULE_SCOPE_TASK,  # type: ignore[attr-defined]
-                    ) or 0,
+                    )
+                    or 0,
                     enabled=gr.enabled,
                 )
             )
@@ -152,7 +153,8 @@ def _collect_from_frontmatter(
                 scope=_SCOPE_TO_PROTO.get(
                     scope_str,
                     common_pb2.RULE_SCOPE_TASK,  # type: ignore[attr-defined]
-                ) or 0,
+                )
+                or 0,
                 enabled=True,
             )
         )

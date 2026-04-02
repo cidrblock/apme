@@ -1907,46 +1907,52 @@ async def serve(listen_address: str = "0.0.0.0:50051") -> grpc.aio.Server:
 
 
 async def _register_rule_catalog() -> None:
-    """Collect built-in rules and push catalog to the Gateway (ADR-041).
+    """Collect built-in rules, populate ``_known_rule_ids``, and push to Gateway.
 
-    Also populates the module-level ``_known_rule_ids`` for Phase 3
-    mismatch enforcement.
+    This is a **hard requirement** for Primary startup.  If catalog
+    collection fails or returns no rules, the Primary cannot perform
+    bidirectional audit (ADR-041) and must not serve scans.
 
-    Best-effort: failures are logged but never block server startup.
-    The authority flag is read from ``APME_RULE_AUTHORITY`` env var
-    (default ``true`` for single-pod deployments).
+    Gateway push is best-effort — the Primary is authoritative even
+    without a Gateway (CLI-only / daemon mode).  But the local catalog
+    *must* succeed so ``_known_rule_ids`` is populated.
+
+    Raises:
+        RuntimeError: If catalog collection fails or returns zero rules.
     """
     import os
     import platform
 
     global _known_rule_ids  # noqa: PLW0603
 
+    from apme_engine.rule_catalog import collect_all_rules
+
+    rules = collect_all_rules()
+    if not rules:
+        raise RuntimeError(
+            "Rule catalog collection returned zero rules. "
+            "The Primary cannot start without an authoritative catalog (ADR-041)."
+        )
+
+    _known_rule_ids = {r.rule_id for r in rules}
+    logger.info("Known rule IDs populated: %d rules", len(_known_rule_ids))
+
+    pod_id = os.environ.get("APME_POD_ID", "").strip() or platform.node()
+    is_authority = os.environ.get("APME_RULE_AUTHORITY", "true").strip().lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+
+    request = reporting_pb2.RegisterRulesRequest(
+        pod_id=pod_id,
+        is_authority=is_authority,
+        rules=rules,
+    )
     try:
-        from apme_engine.rule_catalog import collect_all_rules
-
-        rules = collect_all_rules()
-        if not rules:
-            logger.info("No rules collected; skipping registration")
-            return
-
-        _known_rule_ids = {r.rule_id for r in rules}
-        logger.info("Known rule IDs populated: %d rules", len(_known_rule_ids))
-
-        pod_id = os.environ.get("APME_POD_ID", "").strip() or platform.node()
-        is_authority = os.environ.get("APME_RULE_AUTHORITY", "true").strip().lower() in (
-            "true",
-            "1",
-            "yes",
-        )
-
-        request = reporting_pb2.RegisterRulesRequest(
-            pod_id=pod_id,
-            is_authority=is_authority,
-            rules=rules,
-        )
         await emit_register_rules(request)
     except Exception:
-        logger.warning("Rule catalog registration failed (best-effort)", exc_info=True)
+        logger.warning("Gateway push failed (best-effort); local catalog is authoritative", exc_info=True)
 
 
 def _validate_rule_configs(

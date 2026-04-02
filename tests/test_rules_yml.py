@@ -12,10 +12,20 @@ from apme_engine.severity_defaults import Severity
 
 
 def test_missing_file_returns_empty(tmp_path: Path) -> None:
+    """Missing ``.apme/rules.yml`` returns an empty config list.
+
+    Args:
+        tmp_path: Pytest temporary directory.
+    """
     assert load_rule_configs_from_project(tmp_path) == []
 
 
 def test_loads_rules(tmp_path: Path) -> None:
+    """Parses enabled/disabled rules with severity and enforced flags.
+
+    Args:
+        tmp_path: Pytest temporary directory.
+    """
     apme = tmp_path / ".apme"
     apme.mkdir()
     (apme / "rules.yml").write_text(
@@ -42,6 +52,12 @@ rules:
 
 
 def test_yaml_error_warns_empty(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Malformed YAML prints a warning and returns empty.
+
+    Args:
+        tmp_path: Pytest temporary directory.
+        capsys: Pytest capture fixture for stderr inspection.
+    """
     apme = tmp_path / ".apme"
     apme.mkdir()
     (apme / "rules.yml").write_text("{ not valid", encoding="utf-8")
@@ -52,6 +68,11 @@ def test_yaml_error_warns_empty(tmp_path: Path, capsys: pytest.CaptureFixture[st
 
 
 def test_rules_key_optional_returns_empty(tmp_path: Path) -> None:
+    """YAML without a ``rules`` key returns empty without error.
+
+    Args:
+        tmp_path: Pytest temporary directory.
+    """
     apme = tmp_path / ".apme"
     apme.mkdir()
     (apme / "rules.yml").write_text("other: 1\n", encoding="utf-8")
@@ -59,10 +80,16 @@ def test_rules_key_optional_returns_empty(tmp_path: Path) -> None:
 
 
 def test_rules_yml_path_constant() -> None:
-    assert RULES_YML_PATH == Path(".apme") / "rules.yml"
+    """``RULES_YML_PATH`` matches the expected ``.apme/rules.yml``."""
+    assert Path(".apme") / "rules.yml" == RULES_YML_PATH
 
 
 def test_yield_scan_chunks_includes_rule_configs_on_scan_options(tmp_path: Path) -> None:
+    """``yield_scan_chunks`` populates ``ScanOptions.rule_configs`` from parsed configs.
+
+    Args:
+        tmp_path: Pytest temporary directory.
+    """
     (tmp_path / "site.yml").write_text("---\n- hosts: localhost\n", encoding="utf-8")
     apme = tmp_path / ".apme"
     apme.mkdir()

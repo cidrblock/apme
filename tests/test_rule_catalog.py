@@ -78,9 +78,7 @@ def test_collect_gitleaks_rules_sec_placeholder_critical() -> None:
     assert len(defs) == 1, "gitleaks catalog must expose exactly one placeholder rule"
     r = defs[0]
     assert r.rule_id == "SEC:*", "gitleaks placeholder rule_id must be SEC:*"
-    assert r.default_severity == common_pb2.SEVERITY_CRITICAL, (
-        "gitleaks placeholder must use CRITICAL default severity"
-    )
+    assert r.default_severity == common_pb2.SEVERITY_CRITICAL, "gitleaks placeholder must use CRITICAL default severity"
     assert r.category == "secrets", "gitleaks rules must be categorized as secrets"
     assert r.source == "gitleaks", "gitleaks placeholder source must be gitleaks"
 
