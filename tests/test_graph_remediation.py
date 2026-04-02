@@ -322,6 +322,24 @@ class TestGraphRemediationEngine:
         assert node.progression[0].phase == "scanned"
         assert any(ns.phase == "transformed" for ns in node.progression)
 
+    def test_clean_state_after_rescan(self) -> None:
+        """Dirty nodes confirmed clean after rescan get an empty-violations scanned entry."""
+        graph = ContentGraph()
+        node = _make_node(module="apt")
+        graph.add_node(node)
+        rules: list[GraphRule] = [_FQCNRule()]
+        registry = _build_registry_with_fqcn()
+
+        engine = GraphRemediationEngine(registry, graph, rules)
+        engine.remediate()
+
+        scanned_states = [ns for ns in node.progression if ns.phase == "scanned"]
+        assert len(scanned_states) >= 2
+        # First scanned state has the violation
+        assert "M001" in scanned_states[0].violations
+        # Final scanned state confirms clean (empty violations)
+        assert scanned_states[-1].violations == ()
+
     def test_progress_callback(self) -> None:
         """Progress callback is invoked during remediation."""
         messages: list[str] = []
@@ -431,6 +449,7 @@ class TestSpliceModifications:
         assert "apt:" not in patch.patched.split("ansible.builtin.apt")[0].split("\n")[-1]
         assert patch.diff
         assert "-      apt:" in patch.diff or "- apt:" in patch.diff
+        assert "M001" in patch.rule_ids
 
     def test_multi_node_bottom_up(self) -> None:
         """Multiple nodes in the same file are spliced bottom-up."""

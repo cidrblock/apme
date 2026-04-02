@@ -142,6 +142,53 @@ _SCANNABLE_TYPES = frozenset(
 )
 
 
+def _evaluate_node(
+    graph: ContentGraph,
+    node: ContentNode,
+    enabled_rules: list[GraphRule],
+    report: GraphScanReport,
+) -> None:
+    """Run all rules against a single node and append results to ``report``.
+
+    Args:
+        graph: ContentGraph being scanned.
+        node: Node to evaluate.
+        enabled_rules: Pre-filtered list of enabled rules.
+        report: Report to accumulate results into (mutated in place).
+    """
+    report.nodes_scanned += 1
+    node_result = GraphNodeResult(node_id=node.node_id, node=node)
+
+    for rule in enabled_rules:
+        try:
+            matched = rule.match(graph, node.node_id)
+            if not matched:
+                continue
+            result = rule.process(graph, node.node_id)
+            if result is not None:
+                result.rule = rule.get_metadata()
+                node_result.rule_results.append(result)
+        except Exception as err:
+            logger.warning(
+                "Rule %s failed on %s: %s",
+                rule.rule_id,
+                node.node_id,
+                err,
+                exc_info=True,
+            )
+            node_result.rule_results.append(
+                GraphRuleResult(
+                    rule=rule.get_metadata(),
+                    verdict=False,
+                    node_id=node.node_id,
+                    error=f"Rule execution failed: {type(err).__name__}: {err}",
+                )
+            )
+
+    if node_result.rule_results:
+        report.node_results.append(node_result)
+
+
 def scan(
     graph: ContentGraph,
     rules: list[GraphRule],
@@ -173,38 +220,7 @@ def scan(
             continue
         if owned_only and node.scope != NodeScope.OWNED:
             continue
-
-        report.nodes_scanned += 1
-        node_result = GraphNodeResult(node_id=node.node_id, node=node)
-
-        for rule in enabled_rules:
-            try:
-                matched = rule.match(graph, node.node_id)
-                if not matched:
-                    continue
-                result = rule.process(graph, node.node_id)
-                if result is not None:
-                    result.rule = rule.get_metadata()
-                    node_result.rule_results.append(result)
-            except Exception as err:
-                logger.warning(
-                    "Rule %s failed on %s: %s",
-                    rule.rule_id,
-                    node.node_id,
-                    err,
-                    exc_info=True,
-                )
-                node_result.rule_results.append(
-                    GraphRuleResult(
-                        rule=rule.get_metadata(),
-                        verdict=False,
-                        node_id=node.node_id,
-                        error=f"Rule execution failed: {type(err).__name__}: {err}",
-                    )
-                )
-
-        if node_result.rule_results:
-            report.node_results.append(node_result)
+        _evaluate_node(graph, node, enabled_rules, report)
 
     report.elapsed_ms = round((time.monotonic() - start) * 1000, 3)
     return report
@@ -214,6 +230,8 @@ def rescan_dirty(
     graph: ContentGraph,
     rules: list[GraphRule],
     dirty_node_ids: frozenset[str],
+    *,
+    owned_only: bool = True,
 ) -> GraphScanReport:
     """Re-evaluate rules against only the specified (dirty) nodes.
 
@@ -226,6 +244,8 @@ def rescan_dirty(
         graph: ContentGraph (may have been mutated since last scan).
         rules: Pre-loaded GraphRule instances.
         dirty_node_ids: Node IDs to re-evaluate.
+        owned_only: If True (default), skip ``REFERENCED`` nodes
+            (consistent with ``scan()``).
 
     Returns:
         GraphScanReport scoped to the dirty nodes.
@@ -240,38 +260,9 @@ def rescan_dirty(
             continue
         if node.node_type not in _SCANNABLE_TYPES:
             continue
-
-        report.nodes_scanned += 1
-        node_result = GraphNodeResult(node_id=node.node_id, node=node)
-
-        for rule in enabled_rules:
-            try:
-                matched = rule.match(graph, node.node_id)
-                if not matched:
-                    continue
-                result = rule.process(graph, node.node_id)
-                if result is not None:
-                    result.rule = rule.get_metadata()
-                    node_result.rule_results.append(result)
-            except Exception as err:
-                logger.warning(
-                    "Rule %s failed on %s: %s",
-                    rule.rule_id,
-                    node.node_id,
-                    err,
-                    exc_info=True,
-                )
-                node_result.rule_results.append(
-                    GraphRuleResult(
-                        rule=rule.get_metadata(),
-                        verdict=False,
-                        node_id=node.node_id,
-                        error=f"Rule execution failed: {type(err).__name__}: {err}",
-                    )
-                )
-
-        if node_result.rule_results:
-            report.node_results.append(node_result)
+        if owned_only and node.scope != NodeScope.OWNED:
+            continue
+        _evaluate_node(graph, node, enabled_rules, report)
 
     report.elapsed_ms = round((time.monotonic() - start) * 1000, 3)
     return report

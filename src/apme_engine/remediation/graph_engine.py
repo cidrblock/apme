@@ -191,8 +191,15 @@ class GraphRemediationEngine:
             rescan_report = rescan_dirty(graph, self._rules, dirty)
             new_violations = graph_report_to_violations(rescan_report)
 
-            # Record post-rescan state
-            _record_violations(graph, new_violations, pass_number=pass_num, phase="scanned")
+            # Record post-rescan state (includes clean confirmation
+            # for dirty nodes that no longer have violations).
+            _record_violations(
+                graph,
+                new_violations,
+                pass_number=pass_num,
+                phase="scanned",
+                dirty_node_ids=dirty,
+            )
 
             graph.clear_dirty()
 
@@ -259,22 +266,27 @@ def splice_modifications(
     Returns:
         List of ``FilePatch`` objects for files that changed.
     """
-    modified_by_file: dict[str, list[tuple[int, int, str]]] = defaultdict(list)
+    _Edit = tuple[int, int, str, list[str]]
+    modified_by_file: dict[str, list[_Edit]] = defaultdict(list)
 
     for node in graph.nodes():
         if not node.progression or len(node.progression) < 2:
             continue
         if not node.file_path or not node.yaml_lines:
             continue
-        if node.line_start is None or node.line_end is None:
+        if node.line_start <= 0 or node.line_end <= 0:
             continue
         original_hash = node.progression[0].content_hash
         current_hash = node.progression[-1].content_hash
         if original_hash == current_hash:
             continue
 
+        # Collect rule IDs from the initial scanned state's violations —
+        # those are the rules whose violations this node resolved.
+        node_rule_ids = list(node.progression[0].violations) if node.progression[0].violations else []
+
         modified_by_file[node.file_path].append(
-            (node.line_start, node.line_end, node.yaml_lines),
+            (node.line_start, node.line_end, node.yaml_lines, node_rule_ids),
         )
 
     patches: list[FilePatch] = []
@@ -291,12 +303,14 @@ def splice_modifications(
         edits.sort(key=lambda e: e[0], reverse=True)
         rule_ids: list[str] = []
 
-        for line_start, line_end, yaml_text in edits:
+        for line_start, line_end, yaml_text, edit_rules in edits:
             new_lines = yaml_text.splitlines(keepends=True)
             if new_lines and not new_lines[-1].endswith("\n"):
                 new_lines[-1] += "\n"
-            # line_start is 1-based
+            # line_start/line_end are 1-based inclusive; Python slice
+            # [start-1:end] is equivalent because slice end is exclusive.
             lines[line_start - 1 : line_end] = new_lines
+            rule_ids.extend(edit_rules)
 
         patched = "".join(lines)
 
@@ -328,14 +342,22 @@ def _record_violations(
     *,
     pass_number: int,
     phase: str,
+    dirty_node_ids: frozenset[str] | None = None,
 ) -> None:
-    """Record a NodeState snapshot for each node that has violations.
+    """Record a NodeState snapshot for nodes with violations.
+
+    When ``dirty_node_ids`` is provided, also records a clean snapshot
+    (empty violations) for dirty nodes that are *absent* from
+    ``violations``.  This distinguishes "transformed but not yet
+    verified" from "rescanned and confirmed clean."
 
     Args:
         graph: ContentGraph with nodes to update.
         violations: Violation dicts (each must have ``path`` set to a node ID).
         pass_number: Convergence pass number.
         phase: Pipeline phase (``"scanned"``, ``"transformed"``).
+        dirty_node_ids: When set, dirty nodes absent from violations
+            get a clean ``(phase, violations=())`` entry.
     """
     by_node: dict[str, list[str]] = defaultdict(list)
     for v in violations:
@@ -348,6 +370,12 @@ def _record_violations(
         node = graph.get_node(node_id)
         if node is not None:
             node.record_state(pass_number, phase, violations=tuple(sorted(set(rule_ids))))
+
+    if dirty_node_ids is not None:
+        for nid in dirty_node_ids - set(by_node):
+            node = graph.get_node(nid)
+            if node is not None:
+                node.record_state(pass_number, phase, violations=())
 
 
 def _count_modified_nodes(graph: ContentGraph) -> int:
