@@ -1414,7 +1414,6 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                 _heartbeat=_heartbeat,
                 format_content=format_content,
                 format_diffs=format_diffs,
-                fix_opts=fix_opts,
             ):
                 yield event
         else:
@@ -1554,14 +1553,12 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
         _heartbeat: Callable[[], Awaitable[None]],
         format_content: Callable[..., object],
         format_diffs: Sequence[object],
-        fix_opts: object | None = None,
     ) -> AsyncIterator[SessionEvent]:
         """Graph-engine remediation path (behind APME_USE_GRAPH_ENGINE=1).
 
         Runs ``GraphRemediationEngine`` in-memory with async transforms,
         splices approved results to disk, then performs a final full-pipeline
-        scan.  Phase 2 applies AI transforms as graph-native mutations
-        that require human approval before splicing.
+        scan.
 
         Args:
             session: Active session state (mutated in place).
@@ -1578,7 +1575,6 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
             _heartbeat: Coroutine factory for periodic heartbeats.
             format_content: Formatter function for post-remediation pass.
             format_diffs: Accumulated format diffs from earlier step.
-            fix_opts: Client FixOptions for AI provider resolution.
 
         Yields:
             SessionEvent: Progress, Tier1Summary, and result events.
