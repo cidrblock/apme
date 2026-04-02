@@ -268,6 +268,40 @@ class TestUpdateFromYaml:
         node.update_from_yaml(yaml)
         assert node.delegate_to == "localhost"
 
+    def test_options_rebuilt(self) -> None:
+        """node.options is rebuilt from parsed YAML, excluding name/module/block keys."""
+        node = _make_task()
+        node.update_from_yaml(_TASK_YAML_FQCN_FIXED)
+        assert "when" in node.options
+        assert "register" in node.options
+        assert "become" in node.options
+        assert "tags" in node.options
+        assert node.options["register"] == "install_result"
+        assert "name" not in node.options
+        assert "ansible.builtin.package" not in node.options
+
+    def test_options_cleared_on_minimal(self) -> None:
+        """Minimal YAML produces minimal options."""
+        node = _make_task()
+        minimal = "- name: Minimal\n  ansible.builtin.debug:\n    msg: hi\n"
+        node.update_from_yaml(minimal)
+        assert "register" not in node.options
+        assert "when" not in node.options
+
+    def test_string_module_options_normalized(self) -> None:
+        """Non-dict module args (e.g. command: echo foo) are normalized to _raw."""
+        node = _make_task()
+        yaml = "- name: Run cmd\n  ansible.builtin.command: echo hello\n"
+        node.update_from_yaml(yaml)
+        assert node.module_options == {"_raw": "echo hello"}
+
+    def test_action_keyword_not_treated_as_module(self) -> None:
+        """'action' is a meta key and must not be misidentified as a module name."""
+        node = _make_task()
+        yaml = "- name: Use action\n  action: ansible.builtin.debug\n"
+        node.update_from_yaml(yaml)
+        assert node.module != "action"
+
     def test_unparseable_yaml_preserves_text(self) -> None:
         """Unparseable YAML still updates yaml_lines but leaves fields alone."""
         node = _make_task()
@@ -364,3 +398,33 @@ class TestNodeStateSerialization:
         d = _node_to_dict(node)
         assert "progression" not in d
         assert "state" not in d
+
+    def test_state_reconciled_from_progression(self) -> None:
+        """When progression exists, state is reconciled to progression[-1]."""
+        node = _make_task()
+        node.record_state(0, "scanned", ("L007",))
+        node.record_state(0, "transformed")
+        d = _node_to_dict(node)
+
+        # Corrupt state to point to first entry, not last
+        d["state"] = d["progression"][0]  # type: ignore[index]
+
+        restored = _node_from_dict(d)
+        assert restored.state is not None
+        assert restored.state.phase == "transformed"
+        assert restored.state is restored.progression[-1]
+
+    def test_tuple_violations_accepted(self) -> None:
+        """_node_state_from_dict accepts tuple violations (not just list)."""
+        from apme_engine.engine.content_graph import _node_state_from_dict
+
+        d: dict[str, object] = {
+            "pass_number": 0,
+            "phase": "scanned",
+            "yaml_lines": "",
+            "content_hash": "",
+            "violations": ("L007", "R108"),
+            "timestamp": "",
+        }
+        ns = _node_state_from_dict(d)
+        assert ns.violations == ("L007", "R108")

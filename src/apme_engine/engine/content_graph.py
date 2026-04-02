@@ -914,7 +914,7 @@ def _node_state_from_dict(d: dict[str, object]) -> NodeState:
         Reconstructed frozen NodeState.
     """
     violations_raw = d.get("violations", ())
-    violations = tuple(str(v) for v in violations_raw) if isinstance(violations_raw, list) else ()
+    violations = tuple(str(v) for v in violations_raw) if isinstance(violations_raw, list | tuple) else ()
     return NodeState(
         pass_number=int(cast(int, d.get("pass_number", 0))),
         phase=str(d.get("phase", "")),
@@ -980,16 +980,25 @@ def _node_from_dict(d: dict[str, object]) -> ContentNode:
     node = ContentNode(**kwargs)  # type: ignore[arg-type]
 
     raw_state = d.get("state")
+    deserialized_state: NodeState | None = None
     if isinstance(raw_state, dict):
-        node.state = _node_state_from_dict(cast(dict[str, object], raw_state))
+        deserialized_state = _node_state_from_dict(cast(dict[str, object], raw_state))
 
     raw_progression = d.get("progression")
+    deserialized_progression: list[NodeState] | None = None
     if isinstance(raw_progression, list):
-        node.progression = [
+        deserialized_progression = [
             _node_state_from_dict(cast(dict[str, object], entry))
             for entry in raw_progression
             if isinstance(entry, dict)
         ]
+
+    # Reconcile: progression is source of truth; state == progression[-1].
+    if deserialized_progression:
+        node.progression = deserialized_progression
+        node.state = deserialized_progression[-1]
+    elif deserialized_state is not None:
+        node.state = deserialized_state
 
     return node
 
@@ -2320,6 +2329,7 @@ _TASK_META_KEYS = frozenset(
         "debugger",
         "module_defaults",
         "collections",
+        "action",
         "local_action",
     }
 )
@@ -2370,7 +2380,12 @@ def _apply_parsed_fields(node: ContentNode, parsed: dict[str, object]) -> None:
     if module_key is not None:
         node.module = module_key
         raw_opts = parsed.get(module_key)
-        node.module_options = cast(YAMLDict, raw_opts) if isinstance(raw_opts, dict) else {}
+        if isinstance(raw_opts, dict):
+            node.module_options = cast(YAMLDict, raw_opts)
+        elif raw_opts is not None:
+            node.module_options = cast(YAMLDict, {"_raw": raw_opts})
+        else:
+            node.module_options = {}
 
     node.name = parsed.get("name") if isinstance(parsed.get("name"), str) else None  # type: ignore[assignment]
 
@@ -2448,6 +2463,17 @@ def _apply_parsed_fields(node: ContentNode, parsed: dict[str, object]) -> None:
         )
     else:
         node.set_facts = {}
+
+    # Rebuild generic options so node.options stays consistent with the YAML.
+    # Mirrors GraphBuilder._build_task: exclude name, module key, and
+    # block-structure keys.
+    _BLOCK_KEYS = frozenset({"block", "rescue", "always"})  # noqa: N806
+    options: dict[str, object] = {}
+    for key, value in parsed.items():
+        if key == "name" or key == module_key or key in _BLOCK_KEYS:
+            continue
+        options[key] = value
+    node.options = cast(YAMLDict, options)
 
 
 def _extract_variable_references(node: ContentNode) -> set[str]:
