@@ -1598,6 +1598,8 @@ async def put_rule_config(rule_id: str, body: RuleConfigPutBody) -> RuleDetailOu
             enforced=enf,
         )
         updated = await q.get_rule(db, rule_id)
+        if updated is not None:
+            await db.refresh(updated, attribute_names=["overrides"])
     if updated is None:
         raise HTTPException(status_code=404, detail="Rule not found")
     return _to_rule_detail(updated)

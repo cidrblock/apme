@@ -1416,7 +1416,7 @@ async def list_rules(
 
     Args:
         db: Async database session.
-        category: Filter by category (lint, modernize, risk, policy, secrets).
+        category: Filter by category (lint, modernize, risk, policy, secrets, infrastructure).
         source: Filter by validator source (native, opa, ansible, gitleaks).
         enabled_only: If True, only return enabled rules.
 

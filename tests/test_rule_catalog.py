@@ -32,6 +32,7 @@ from apme_gateway.grpc_reporting.servicer import ReportingServicer
         ("R101", "risk"),
         ("P001", "policy"),
         ("SEC:generic-api-key", "secrets"),
+        ("INFRA-001", "infrastructure"),
         ("X999-unknown", "unknown"),
     ],
 )
@@ -317,7 +318,7 @@ def _sample_rule(rule_id: str) -> reporting_pb2.RuleDefinition:
         category="lint",
         source="native",
         description="test rule",
-        scope=1,  # RULE_SCOPE_TASK (common.proto); stub omits RULE_SCOPE_* constants
+        scope=common_pb2.RULE_SCOPE_TASK,  # type: ignore[attr-defined]
         enabled=True,
     )
 

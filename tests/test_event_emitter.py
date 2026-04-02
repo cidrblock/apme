@@ -102,15 +102,15 @@ class FailingSink:
         raise RuntimeError("boom")
 
     async def register_rules(self, request: object) -> None:
-        """No-op rule registration.
+        """Raise on rule registration.
 
         Args:
-            request: Registration payload (unused).
+            request: Registration payload (unused, raises immediately).
 
-        Returns:
-            None.
+        Raises:
+            RuntimeError: Always raised.
         """
-        return None
+        raise RuntimeError("boom")
 
 
 @pytest.fixture(autouse=True)  # type: ignore[untyped-decorator]
