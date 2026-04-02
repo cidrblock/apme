@@ -28,6 +28,8 @@ import networkx as nx  # type: ignore[import-untyped]
 from .models import ViolationDict, YAMLDict, YAMLValue
 
 if TYPE_CHECKING:
+    from ruamel.yaml.comments import CommentedMap as _CommentedMap
+
     from .models import (
         Collection,
         Module,
@@ -583,7 +585,7 @@ class ContentGraph:
     def apply_transform(
         self,
         node_id: str,
-        transform_fn: Callable[[object, ViolationDict], bool],
+        transform_fn: Callable[[_CommentedMap, ViolationDict], bool],
         violation: ViolationDict,
     ) -> bool:
         """Apply a node-level transform via an ephemeral CommentedMap.
@@ -611,11 +613,13 @@ class ContentGraph:
 
         # Disable explicit_start so serialized fragments don't get a '---'
         # marker prepended — yaml_lines are spliced back into parent files.
+        frag_config = dict(FormattedYAML.default_config)
+        frag_config["explicit_start"] = False
         yaml = FormattedYAML(
             typ="rt",
             pure=True,
             version=(1, 1),
-            config={"explicit_start": False},
+            config=frag_config,  # type: ignore[arg-type]
         )
         try:
             data = yaml.load(node.yaml_lines)
