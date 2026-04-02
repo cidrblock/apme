@@ -90,11 +90,17 @@ def load_rule_configs_from_project(project_root: Path) -> list[RuleConfig]:
         if "severity" in block:
             raw = block["severity"]
             label = str(raw).lower()
-            if label not in _SEVERITY_LABELS_LOWER:
+            if label == "unspecified":
+                sys.stderr.write(
+                    f"Warning: {path}: 'severity: unspecified' for rule {rid} has no effect — omit the key instead\n",
+                )
+            elif label not in _SEVERITY_LABELS_LOWER:
                 sys.stderr.write(
                     f"Warning: {path}: unknown severity {raw!r} for rule {rid}, using 'medium'\n",
                 )
-            sev_arg["severity"] = severity_to_proto(severity_from_label(str(raw)))
+                sev_arg["severity"] = severity_to_proto(severity_from_label(str(raw)))
+            else:
+                sev_arg["severity"] = severity_to_proto(severity_from_label(str(raw)))
 
         enforced = bool(block["enforced"]) if "enforced" in block else False
 

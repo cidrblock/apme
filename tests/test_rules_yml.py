@@ -67,6 +67,29 @@ def test_yaml_error_warns_empty(tmp_path: Path, capsys: pytest.CaptureFixture[st
     assert "rules.yml" in err
 
 
+def test_severity_unspecified_warns_and_skips(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """``severity: unspecified`` warns and does not set severity on the proto.
+
+    Args:
+        tmp_path: Pytest temporary directory.
+        capsys: Pytest capture fixture for stderr inspection.
+    """
+    apme = tmp_path / ".apme"
+    apme.mkdir()
+    (apme / "rules.yml").write_text(
+        "rules:\n  L026:\n    severity: unspecified\n",
+        encoding="utf-8",
+    )
+    cfgs = load_rule_configs_from_project(tmp_path)
+    assert len(cfgs) == 1
+    assert cfgs[0].severity == 0
+    err = capsys.readouterr().err
+    assert "has no effect" in err
+
+
 def test_rules_key_optional_returns_empty(tmp_path: Path) -> None:
     """YAML without a ``rules`` key returns empty without error.
 
