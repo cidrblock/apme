@@ -17,11 +17,9 @@ import logging
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from apme_engine.engine.content_graph import ContentGraph
 from apme_engine.engine.graph_scanner import (
-    GraphScanReport,
     graph_report_to_violations,
     rescan_dirty,
     scan,
@@ -363,7 +361,6 @@ def _count_modified_nodes(graph: ContentGraph) -> int:
     """
     count = 0
     for node in graph.nodes():
-        if len(node.progression) >= 2:
-            if node.progression[0].content_hash != node.progression[-1].content_hash:
-                count += 1
+        if len(node.progression) >= 2 and node.progression[0].content_hash != node.progression[-1].content_hash:
+            count += 1
     return count

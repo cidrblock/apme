@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import pytest
-
 from apme_engine.engine.content_graph import (
     ContentGraph,
     ContentNode,
@@ -17,14 +15,12 @@ from apme_engine.engine.content_graph import (
     NodeType,
 )
 from apme_engine.engine.graph_scanner import (
-    GraphScanReport,
     graph_report_to_violations,
     rescan_dirty,
     scan,
 )
 from apme_engine.engine.models import ViolationDict
 from apme_engine.remediation.graph_engine import (
-    GraphFixReport,
     GraphRemediationEngine,
     splice_modifications,
 )
