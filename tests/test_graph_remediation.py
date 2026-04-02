@@ -789,3 +789,29 @@ class TestSpliceModifications:
         # Patch should use the deterministic fix, not the AI fix
         assert "ansible.builtin.apt" in patches[0].patched
         assert "state: latest" not in patches[0].patched
+
+    def test_include_pending_uses_latest(self) -> None:
+        """include_pending=True uses the latest entry even if unapproved."""
+        graph = ContentGraph()
+        node = _make_node(
+            module="apt",
+            file_path="/workspace/site.yml",
+            line_start=4,
+            line_end=7,
+        )
+        graph.add_node(node)
+
+        node.record_state(0, "scanned", ("M001",))
+        node.update_from_yaml(_TASK_YAML_FQCN)
+        node.record_state(1, "transformed", source="deterministic")
+        # No approve_pending — entries are still pending
+
+        originals = {"/workspace/site.yml": self._ORIGINAL}
+
+        # Default: no patch (pending entries ignored)
+        assert splice_modifications(graph, originals) == []
+
+        # include_pending: uses latest (pending) entry
+        patches = splice_modifications(graph, originals, include_pending=True)
+        assert len(patches) == 1
+        assert "ansible.builtin.apt" in patches[0].patched

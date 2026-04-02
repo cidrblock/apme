@@ -268,6 +268,8 @@ class GraphRemediationEngine:
 def splice_modifications(
     graph: ContentGraph,
     originals: dict[str, str],
+    *,
+    include_pending: bool = False,
 ) -> list[FilePatch]:
     """Splice modified ``yaml_lines`` back into original files.
 
@@ -281,6 +283,10 @@ def splice_modifications(
             ``yaml_lines``).
         originals: Map of ``file_path`` to original file content
             (before any transforms).
+        include_pending: When ``True``, use the latest progression
+            entry (approved or not) instead of the last approved one.
+            Set to ``True`` during convergence re-scans so external
+            validators see the current in-memory state.
 
     Returns:
         List of ``FilePatch`` objects for files that changed.
@@ -299,17 +305,20 @@ def splice_modifications(
             continue
 
         original_hash = node.progression[0].content_hash
-        last_approved = next(
-            (s for s in reversed(node.progression) if s.approved),
-            node.progression[0],
-        )
-        if original_hash == last_approved.content_hash:
+        if include_pending:
+            effective = node.progression[-1]
+        else:
+            effective = next(
+                (s for s in reversed(node.progression) if s.approved),
+                node.progression[0],
+            )
+        if original_hash == effective.content_hash:
             continue
 
         node_rule_ids = list(node.progression[0].violations) if node.progression[0].violations else []
 
         modified_by_file[node.file_path].append(
-            (node.line_start, node.line_end, last_approved.yaml_lines, node_rule_ids),
+            (node.line_start, node.line_end, effective.yaml_lines, node_rule_ids),
         )
 
     patches: list[FilePatch] = []

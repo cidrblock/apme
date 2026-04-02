@@ -1630,7 +1630,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
             native_violations = graph_report_to_violations(graph_report)
 
             if dirty_ids:
-                patches = splice_modifications(g, originals)
+                patches = splice_modifications(g, originals, include_pending=True)
                 for patch in patches:
                     patch_path = Path(patch.path)
                     patch_abs = patch_path.resolve() if patch_path.is_absolute() else (temp_dir / patch_path).resolve()
@@ -1658,19 +1658,35 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
         )
 
         hb_task: asyncio.Task[None] = asyncio.create_task(_heartbeat())  # type: ignore[arg-type]
+        remediate_task = asyncio.create_task(
+            graph_engine.remediate(initial_violations),
+        )
+
         try:
-            graph_report = await graph_engine.remediate(initial_violations)
+            while not remediate_task.done():
+                try:
+                    update = await asyncio.wait_for(progress_queue.get(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    continue
+                if update is not None:
+                    session.progress_logs.append(update)
+                    yield SessionEvent(progress=update)
+
+            while not progress_queue.empty():
+                update = progress_queue.get_nowait()
+                if update is not None:
+                    session.progress_logs.append(update)
+                    yield SessionEvent(progress=update)
+
+            graph_report = remediate_task.result()
         finally:
             hb_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await hb_task
-
-        # Drain queued progress updates
-        while not progress_queue.empty():
-            update = progress_queue.get_nowait()
-            if update is not None:
-                session.progress_logs.append(update)
-                yield SessionEvent(progress=update)
+            if not remediate_task.done():
+                remediate_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await remediate_task
 
         # Persist graph + originals on session for approval gate
         session.content_graph = graph

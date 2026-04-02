@@ -635,16 +635,25 @@ class TestNodeStateFields:
     """Tests for NodeState id, approved, and source fields (ADR-044 Phase 3)."""
 
     def test_record_state_id_format(self) -> None:
-        """record_state generates id as '{node_id}@{pass_number}'."""
+        """record_state generates id as '{node_id}@{seq}'."""
         node = _make_task()
         ns = node.record_state(0, "scanned")
         assert ns.id == f"{node.node_id}@0"
 
     def test_record_state_id_increments(self) -> None:
-        """Each pass gets a distinct id."""
+        """Each entry gets a distinct monotonic id."""
         node = _make_task()
         ns0 = node.record_state(0, "scanned")
         ns1 = node.record_state(1, "transformed")
+        assert ns0.id != ns1.id
+        assert ns0.id.endswith("@0")
+        assert ns1.id.endswith("@1")
+
+    def test_record_state_id_unique_within_pass(self) -> None:
+        """Multiple entries in the same pass get distinct IDs."""
+        node = _make_task()
+        ns0 = node.record_state(0, "scanned", ("M001",))
+        ns1 = node.record_state(0, "transformed")
         assert ns0.id != ns1.id
         assert ns0.id.endswith("@0")
         assert ns1.id.endswith("@1")
@@ -767,6 +776,17 @@ class TestApprovalOperations:
         assert len(node.progression) == 3
         graph.reject_node(node.node_id)
         assert len(node.progression) == 1
+
+    def test_reject_node_no_approved_retains_baseline(self) -> None:
+        """reject_node with no approved entries retains the baseline."""
+        graph, node = self._build_graph_with_progression()
+        original_yaml = node.progression[0].yaml_lines
+
+        result = graph.reject_node(node.node_id)
+        assert result is True
+        assert len(node.progression) == 1
+        assert node.state is node.progression[0]
+        assert node.yaml_lines == original_yaml
 
     def test_reject_nonexistent_node(self) -> None:
         """reject_node returns False for missing node."""

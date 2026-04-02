@@ -192,8 +192,9 @@ class NodeState:
 
     Attributes:
         id: Unique identifier for this progression entry
-            (``"{node_id}@{pass_number}"``).  Used as ``Proposal.id``
-            in the UI and referenced back in ``ApprovalRequest``.
+            (``"{node_id}@{seq}"`` where *seq* is the monotonic
+            progression index).  Used as ``Proposal.id`` in the
+            UI and referenced back in ``ApprovalRequest``.
         pass_number: Convergence pass (0 = initial scan).
         phase: Pipeline phase (``"original"``, ``"scanned"``,
             ``"transformed"``, ``"ai_transformed"``).
@@ -395,8 +396,9 @@ class ContentNode:
         Returns:
             The newly created ``NodeState``.
         """
+        seq = len(self.progression)
         ns = NodeState(
-            id=f"{self.node_id}@{pass_number}",
+            id=f"{self.node_id}@{seq}",
             pass_number=pass_number,
             phase=phase,
             yaml_lines=self.yaml_lines,
@@ -670,6 +672,10 @@ class ContentGraph:
         ``yaml_lines`` and typed fields are restored to the last
         approved state.
 
+        When ``N == 0`` (no approved snapshots exist), the baseline
+        entry is retained so the node always has at least one
+        progression snapshot and ``node.state`` stays consistent.
+
         Args:
             node_id: Graph node identifier.
 
@@ -687,9 +693,13 @@ class ContentGraph:
         if first_unapproved is None:
             return False
 
-        node.progression[:] = node.progression[:first_unapproved]
-
-        if node.progression:
+        if first_unapproved == 0:
+            baseline = node.progression[0]
+            node.progression[:] = [baseline]
+            node.state = baseline
+            node.update_from_yaml(baseline.yaml_lines)
+        else:
+            node.progression[:] = node.progression[:first_unapproved]
             restored = node.progression[-1]
             node.state = restored
             node.update_from_yaml(restored.yaml_lines)
@@ -1202,6 +1212,11 @@ def _node_from_dict(d: dict[str, object]) -> ContentNode:
 
     # Reconcile: progression is source of truth; state == progression[-1].
     if deserialized_progression:
+        # Backfill empty IDs from older serialized graphs.
+        nid = str(identity.path)
+        for i, entry in enumerate(deserialized_progression):
+            if not entry.id:
+                deserialized_progression[i] = replace(entry, id=f"{nid}@{i}")
         node.progression = deserialized_progression
         node.state = deserialized_progression[-1]
     elif deserialized_state is not None:
