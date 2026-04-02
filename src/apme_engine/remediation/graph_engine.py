@@ -39,10 +39,15 @@ ProgressCallback = Callable[[str, str, float, int], None]
 class GraphFixReport:
     """Summary of a graph-aware remediation run.
 
+    ``applied_patches`` is **not** populated by ``remediate()`` itself.
+    Callers produce patches by passing the post-convergence graph to
+    :func:`splice_modifications`, then store the result here.
+
     Attributes:
         passes: Number of convergence passes executed.
         fixed: Count of violations fixed by Tier 1 transforms.
-        applied_patches: File patches (original vs spliced).
+        applied_patches: File patches produced by ``splice_modifications``
+            (populated by the caller, not by ``remediate``).
         remaining_violations: Violations still present after convergence.
         fixed_violations: Violations resolved by transforms.
         oscillation_detected: True if the loop bailed due to oscillation.
@@ -142,7 +147,7 @@ class GraphRemediationEngine:
             passes = pass_num
             self._progress("graph-tier1", f"Pass {pass_num}/{self._max_passes}")
 
-            tier1, tier2_3_unused, _ = partition_violations(violations, registry)
+            tier1, _, _ = partition_violations(violations, registry)
 
             if not tier1:
                 self._progress("graph-tier1", f"Converged at pass {pass_num} (0 fixable)")
@@ -275,6 +280,8 @@ def splice_modifications(
         if not node.file_path or not node.yaml_lines:
             continue
         if node.line_start <= 0 or node.line_end <= 0:
+            continue
+        if node.line_end < node.line_start:
             continue
         original_hash = node.progression[0].content_hash
         current_hash = node.progression[-1].content_hash

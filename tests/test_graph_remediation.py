@@ -232,7 +232,7 @@ class TestGraphRemediationEngine:
         assert "ansible.builtin.apt" in (node.module or "")
 
     def test_already_converged(self) -> None:
-        """When there are no fixable violations, zero passes are needed."""
+        """When content is already clean, pass 1 exits immediately with zero fixes."""
         graph = ContentGraph()
         graph.add_node(_make_node(module="ansible.builtin.apt", yaml_lines=_TASK_YAML_FQCN))
         rules: list[GraphRule] = [_FQCNRule()]
