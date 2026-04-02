@@ -21,7 +21,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, ClassVar, cast
 
 import networkx as nx  # type: ignore[import-untyped]
 
@@ -351,7 +351,7 @@ class ContentNode:
         """Return the node's stable string identifier."""
         return str(self.identity)
 
-    MAX_PROGRESSION: int = 20
+    MAX_PROGRESSION: ClassVar[int] = 20
 
     def record_state(
         self,

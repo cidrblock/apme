@@ -1551,11 +1551,17 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
             )
             graph = ContentGraph()
 
-        # Capture original file contents for splice_modifications
+        # Capture original file contents for splice_modifications.
+        # Key by both absolute path and temp_dir-relative path so
+        # splice_modifications matches regardless of whether
+        # ContentNode.file_path is absolute or relative.
         originals: dict[str, str] = {}
         for yp in yaml_paths:
             with contextlib.suppress(OSError):
-                originals[yp] = Path(yp).read_text(encoding="utf-8")
+                content = Path(yp).read_text(encoding="utf-8")
+                originals[yp] = content
+                with contextlib.suppress(ValueError):
+                    originals[str(Path(yp).relative_to(temp_dir))] = content
 
         # 2. Run graph remediation in executor
         rules = load_graph_rules()
@@ -1616,9 +1622,14 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                 )
             )
 
-        # Write patched content to disk so the final full scan sees it
+        # Write patched content to disk so the final full scan sees it.
+        # patch.path may be absolute (under temp_dir) or relative —
+        # resolve against temp_dir to ensure correct write location.
         for patch in patches:
-            Path(patch.path).write_text(patch.patched, encoding="utf-8")
+            patch_abs = Path(patch.path)
+            if not patch_abs.is_absolute():
+                patch_abs = temp_dir / patch_abs
+            patch_abs.write_text(patch.patched, encoding="utf-8")
 
         # 4. Final full-pipeline scan for the complete violation picture
         progress_callback("graph-tier1", "Running final full-pipeline scan", 0.0, 2)
@@ -1631,7 +1642,11 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
         # 6. Build Tier 1 summary
         tier1_patches: list[FilePatch] = []
         for patch in patches:
-            rel_path = str(Path(patch.path).relative_to(temp_dir))
+            patch_path = Path(patch.path)
+            try:
+                rel_path = str(patch_path.relative_to(temp_dir))
+            except ValueError:
+                rel_path = str(patch_path)
             orig = session.original_files.get(rel_path, patch.original.encode("utf-8"))
             proto_patch = FilePatch(
                 path=rel_path,
