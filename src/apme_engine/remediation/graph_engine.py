@@ -15,7 +15,7 @@ from __future__ import annotations
 import difflib
 import logging
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from apme_engine.engine.content_graph import ContentGraph
@@ -33,7 +33,7 @@ from apme_engine.validators.native.rules.graph_rule_base import GraphRule
 logger = logging.getLogger("apme.remediation.graph")
 
 ProgressCallback = Callable[[str, str, float, int], None]
-RescanFn = Callable[[ContentGraph, frozenset[str]], list["ViolationDict"]]
+RescanFn = Callable[[ContentGraph, frozenset[str]], Awaitable[list["ViolationDict"]]]
 
 
 @dataclass
@@ -122,11 +122,16 @@ class GraphRemediationEngine:
             except Exception:
                 logger.warning("Progress callback raised; ignoring", exc_info=True)
 
-    def remediate(
+    async def remediate(
         self,
         initial_violations: list[ViolationDict] | None = None,
     ) -> GraphFixReport:
         """Run the in-memory convergence loop.
+
+        All transforms start as pending entries.  After the loop,
+        ``graph.approve_pending()`` auto-approves deterministic
+        transforms.  AI transforms (applied in a separate phase
+        by the caller) remain pending for human review.
 
         Args:
             initial_violations: Pre-computed violations from a prior scan.
@@ -144,7 +149,6 @@ class GraphRemediationEngine:
         else:
             violations = list(initial_violations)
 
-        # Record initial state for nodes with violations
         _record_violations(graph, violations, pass_number=0, phase="scanned")
 
         prev_count: float = float("inf")
@@ -177,16 +181,15 @@ class GraphRemediationEngine:
                 if transform_fn is None:
                     continue
 
-                applied = graph.apply_transform(node_id, transform_fn, v)
+                applied = await graph.apply_transform(node_id, transform_fn, v)
                 if applied:
                     applied_this_pass += 1
                     all_fixed.append(dict(v))
 
-            # Record post-transform state for dirty nodes
             for nid in graph.dirty_nodes:
                 node = graph.get_node(nid)
                 if node is not None:
-                    node.record_state(pass_num, "transformed")
+                    node.record_state(pass_num, "transformed", source="deterministic")
 
             self._progress(
                 "graph-tier1",
@@ -200,17 +203,13 @@ class GraphRemediationEngine:
                 )
                 break
 
-            # Rescan only dirty nodes — use the injected bridge when
-            # available, otherwise fall back to in-memory graph rules.
             dirty = graph.dirty_nodes
             if self._rescan_fn is not None:
-                new_violations = self._rescan_fn(graph, dirty)
+                new_violations = await self._rescan_fn(graph, dirty)
             else:
                 rescan_report = rescan_dirty(graph, self._rules, dirty)
                 new_violations = graph_report_to_violations(rescan_report)
 
-            # Record post-rescan state (includes clean confirmation
-            # for dirty nodes that no longer have violations).
             _record_violations(
                 graph,
                 new_violations,
@@ -250,7 +249,9 @@ class GraphRemediationEngine:
                 logger.info("Graph remediation: fully converged at pass %d", pass_num)
                 break
 
-        # Final full rescan for the definitive violation list
+        # Auto-approve all deterministic transforms
+        graph.approve_pending()
+
         final_report = scan(graph, self._rules)
         remaining = graph_report_to_violations(final_report)
 
@@ -296,17 +297,19 @@ def splice_modifications(
             continue
         if node.line_end < node.line_start:
             continue
+
         original_hash = node.progression[0].content_hash
-        current_hash = node.progression[-1].content_hash
-        if original_hash == current_hash:
+        last_approved = next(
+            (s for s in reversed(node.progression) if s.approved),
+            node.progression[0],
+        )
+        if original_hash == last_approved.content_hash:
             continue
 
-        # Collect rule IDs from the initial scanned state's violations —
-        # those are the rules whose violations this node resolved.
         node_rule_ids = list(node.progression[0].violations) if node.progression[0].violations else []
 
         modified_by_file[node.file_path].append(
-            (node.line_start, node.line_end, node.yaml_lines, node_rule_ids),
+            (node.line_start, node.line_end, last_approved.yaml_lines, node_rule_ids),
         )
 
     patches: list[FilePatch] = []

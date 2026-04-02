@@ -1344,11 +1344,67 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                 progress_queue.put_nowait(ProgressUpdate(message="Processing...", phase="heartbeat", level=1))
 
         if use_graph_engine:
+
+            async def async_scan_fn(file_paths: list[str]) -> list[ViolationDict]:
+                nonlocal node_index_set, manifest_captured
+                rel_files = []
+                for fp in file_paths:
+                    p = Path(fp)
+                    rel = str(p.relative_to(temp_dir)) if p.is_absolute() else fp
+                    rel_files.append(File(path=rel, content=p.read_bytes()))
+                (
+                    violations,
+                    _,
+                    _,
+                    _,
+                    hierarchy_payload,
+                    venv_sess,
+                    req_files,
+                    specified_fqcns,
+                    learned_fqcns,
+                    graph_obj,
+                ) = await self._scan_pipeline(
+                    temp_dir,
+                    rel_files,
+                    scan_id,
+                    ansible_core_version=ansible_core_version,
+                    collection_specs=collection_specs,
+                    session_id=fix_session_id,
+                    progress_callback=_progress_callback,
+                    galaxy_cfg_path=session.galaxy_cfg_path,
+                    rule_configs=scan_rule_configs or None,
+                    rule_configs_complete=scan_rule_configs_complete,
+                )
+
+                if graph_obj is not None:
+                    captured_graph[0] = graph_obj
+
+                if not manifest_captured and venv_sess is not None:
+                    manifest_captured = True
+                    session.ansible_core_version = venv_sess.ansible_version
+                    session.installed_collections = _classify_collections(
+                        list_installed_collections(venv_sess.venv_root),
+                        specified_fqcns,
+                        learned_fqcns,
+                    )
+                    session.installed_packages = list_installed_packages(venv_sess.venv_root)
+                    session.dependency_tree = get_dependency_tree(venv_sess.venv_root)
+                    session.requirements_files = req_files
+
+                if hierarchy_payload and not node_index_set:
+                    node_index_set = True
+                    node_index = NodeIndex(hierarchy_payload)
+                    if len(node_index) > 0 and engine_ref[0] is not None:
+                        engine_ref[0].set_node_index(node_index)
+                        logger.info("NodeIndex: indexed %d hierarchy nodes for unit segmentation", len(node_index))
+
+                return violations
+
             async for event in self._session_graph_remediate(
                 session=session,
                 scan_id=scan_id,
                 registry=registry,
-                scan_fn=scan_fn,
+                scan_fn=async_scan_fn,
                 captured_graph=captured_graph,
                 yaml_paths=yaml_paths,
                 temp_dir=temp_dir,
@@ -1356,9 +1412,9 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                 progress_queue=progress_queue,
                 progress_callback=_progress_callback,
                 _heartbeat=_heartbeat,
-                loop=loop,
                 format_content=format_content,
                 format_diffs=format_diffs,
+                fix_opts=fix_opts,
             ):
                 yield event
         else:
@@ -1488,7 +1544,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
         session: SessionState,
         scan_id: str,
         registry: object,
-        scan_fn: Callable[[list[str]], list[ViolationDict]],
+        scan_fn: Callable[[list[str]], Awaitable[list[ViolationDict]]],
         captured_graph: list[object | None],
         yaml_paths: list[str],
         temp_dir: Path,
@@ -1496,22 +1552,22 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
         progress_queue: asyncio.Queue[ProgressUpdate | None],
         progress_callback: Callable[[str, str, float, int], None],
         _heartbeat: Callable[[], Awaitable[None]],
-        loop: asyncio.AbstractEventLoop,
         format_content: Callable[..., object],
         format_diffs: Sequence[object],
+        fix_opts: object | None = None,
     ) -> AsyncIterator[SessionEvent]:
         """Graph-engine remediation path (behind APME_USE_GRAPH_ENGINE=1).
 
-        Runs ``GraphRemediationEngine`` in-memory, splices results to disk,
-        then performs a final full-pipeline scan for the complete violation
-        picture.  Tier 2 AI is **not** wired in this path.
+        Runs ``GraphRemediationEngine`` in-memory with async transforms,
+        splices approved results to disk, then performs a final full-pipeline
+        scan.  Phase 2 applies AI transforms as graph-native mutations
+        that require human approval before splicing.
 
         Args:
             session: Active session state (mutated in place).
             scan_id: Request identifier for logging.
             registry: Transform registry with node transforms.
-            scan_fn: Scan function that calls ``_scan_pipeline`` (used for
-                initial + final full-pipeline scans).
+            scan_fn: Async scan function that calls ``_scan_pipeline``.
             captured_graph: Single-element list holding the captured
                 ``ContentGraph`` from the first ``scan_fn`` call.
             yaml_paths: Absolute YAML file paths under ``temp_dir``.
@@ -1520,9 +1576,9 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
             progress_queue: Queue for streaming progress events.
             progress_callback: ``(phase, msg, frac, level)`` callback.
             _heartbeat: Coroutine factory for periodic heartbeats.
-            loop: Running event loop.
             format_content: Formatter function for post-remediation pass.
             format_diffs: Accumulated format diffs from earlier step.
+            fix_opts: Client FixOptions for AI provider resolution.
 
         Yields:
             SessionEvent: Progress, Tier1Summary, and result events.
@@ -1544,9 +1600,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
         )
 
         # 1. Initial scan to get violations + graph
-        # scan_fn blocks on asyncio.run_coroutine_threadsafe, so it must
-        # run in an executor to avoid deadlocking the event loop.
-        initial_violations = await loop.run_in_executor(None, scan_fn, yaml_paths)
+        initial_violations = await scan_fn(yaml_paths)
 
         graph = captured_graph[0]
         if not isinstance(graph, ContentGraph):
@@ -1556,10 +1610,6 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
             )
             graph = ContentGraph()
 
-        # Capture original file contents for splice_modifications.
-        # Key by both absolute path and temp_dir-relative path so
-        # splice_modifications matches regardless of whether
-        # ContentNode.file_path is absolute or relative.
         originals: dict[str, str] = {}
         for yp in yaml_paths:
             with contextlib.suppress(OSError):
@@ -1568,35 +1618,14 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                 with contextlib.suppress(ValueError):
                     originals[str(Path(yp).relative_to(temp_dir))] = content
 
-        # 2. Run graph remediation in executor
+        # 2. Build async rescan bridge and run graph remediation
         rules = load_graph_rules(rules_dir=native_rules_dir())
-
         temp_dir_resolved = temp_dir.resolve()
 
-        def _rescan_bridge(
+        async def _rescan_bridge(
             g: ContentGraph,
             dirty_ids: frozenset[str],
         ) -> list[ViolationDict]:
-            """Validator bridge: graph rules + full-pipeline scan.
-
-            1. Runs in-memory native graph rules via ``rescan_dirty``,
-               scoped to ``dirty_ids`` in the content graph.
-            2. Materialises modified files to ``temp_dir`` via
-               ``splice_modifications`` so external validators see
-               current state.
-            3. Calls ``scan_fn`` over all ``yaml_paths`` for full
-               validator fan-out (OPA, Ansible, Gitleaks).
-            4. Merges native (node-id paths) and external (file paths)
-               violations, filtering native-source duplicates from the
-               pipeline results.
-
-            Args:
-                g: Live ContentGraph (in-memory modifications).
-                dirty_ids: Node IDs modified this pass.
-
-            Returns:
-                Merged violation list for the convergence loop.
-            """
             graph_report = rescan_dirty(g, rules, dirty_ids)
             native_violations = graph_report_to_violations(graph_report)
 
@@ -1614,7 +1643,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                     patch_abs.parent.mkdir(parents=True, exist_ok=True)
                     patch_abs.write_text(patch.patched, encoding="utf-8")
 
-            pipeline_violations = scan_fn(yaml_paths)
+            pipeline_violations = await scan_fn(yaml_paths)
 
             external = [v for v in pipeline_violations if str(v.get("source", "")) != "native"]
             return native_violations + external
@@ -1629,37 +1658,25 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
         )
 
         hb_task: asyncio.Task[None] = asyncio.create_task(_heartbeat())  # type: ignore[arg-type]
-        remediate_future = loop.run_in_executor(
-            None,
-            graph_engine.remediate,
-            initial_violations,
-        )
-
         try:
-            while not remediate_future.done():
-                try:
-                    update = await asyncio.wait_for(progress_queue.get(), timeout=1.0)
-                except asyncio.TimeoutError:
-                    continue
-                if update is not None:
-                    session.progress_logs.append(update)
-                    yield SessionEvent(progress=update)
-
-            while not progress_queue.empty():
-                update = progress_queue.get_nowait()
-                if update is not None:
-                    session.progress_logs.append(update)
-                    yield SessionEvent(progress=update)
-
-            graph_report = remediate_future.result()
+            graph_report = await graph_engine.remediate(initial_violations)
         finally:
             hb_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await hb_task
-            if not remediate_future.done():
-                remediate_future.cancel()
 
-        # 3. Splice modifications and write patched files to temp_dir
+        # Drain queued progress updates
+        while not progress_queue.empty():
+            update = progress_queue.get_nowait()
+            if update is not None:
+                session.progress_logs.append(update)
+                yield SessionEvent(progress=update)
+
+        # Persist graph + originals on session for approval gate
+        session.content_graph = graph
+        session.graph_originals = originals
+
+        # 3. Splice approved modifications and write patched files
         patches = splice_modifications(graph, originals)
 
         for patch in patches:
@@ -1677,9 +1694,6 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                 )
             )
 
-        # Write patched content to disk so the final full scan sees it.
-        # patch.path may be absolute (under temp_dir) or relative —
-        # resolve against temp_dir to ensure correct write location.
         for patch in patches:
             patch_abs = Path(patch.path)
             if not patch_abs.is_absolute():
@@ -1688,7 +1702,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
 
         # 4. Final full-pipeline scan for the complete violation picture
         progress_callback("graph-tier1", "Running final full-pipeline scan", 0.0, 2)
-        final_violations = await loop.run_in_executor(None, scan_fn, yaml_paths)
+        final_violations = await scan_fn(yaml_paths)
 
         # 5. Partition remaining violations
         add_classification_to_violations(final_violations, registry)  # type: ignore[arg-type]

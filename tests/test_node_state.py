@@ -85,6 +85,7 @@ class TestNodeState:
     def test_frozen(self) -> None:
         """NodeState instances must be immutable."""
         ns = NodeState(
+            id="test@0",
             pass_number=0,
             phase="scanned",
             yaml_lines="- name: foo\n",
@@ -453,7 +454,7 @@ class TestApplyTransform:
         graph.add_node(node)
         return graph, node.node_id
 
-    def test_transform_applied(self) -> None:
+    async def test_transform_applied(self) -> None:
         """A transform that modifies the CommentedMap updates yaml_lines and typed fields."""
 
         def rename_to_fqcn(task, violation):  # type: ignore[no-untyped-def]
@@ -466,7 +467,7 @@ class TestApplyTransform:
             return False
 
         graph, nid = self._build_graph()
-        applied = graph.apply_transform(nid, rename_to_fqcn, {})
+        applied = await graph.apply_transform(nid, rename_to_fqcn, {})
         assert applied is True
 
         node = graph.get_node(nid)
@@ -475,7 +476,7 @@ class TestApplyTransform:
         assert "ansible.builtin.apt" in node.yaml_lines
         assert "apt:" not in node.yaml_lines or "ansible.builtin.apt" in node.yaml_lines
 
-    def test_noop_transform(self) -> None:
+    async def test_noop_transform(self) -> None:
         """A transform returning False leaves the node unchanged."""
 
         def noop(task, violation):  # type: ignore[no-untyped-def]
@@ -483,11 +484,11 @@ class TestApplyTransform:
 
         graph, nid = self._build_graph()
         original_yaml = graph.get_node(nid).yaml_lines  # type: ignore[union-attr]
-        applied = graph.apply_transform(nid, noop, {})
+        applied = await graph.apply_transform(nid, noop, {})
         assert applied is False
         assert graph.get_node(nid).yaml_lines == original_yaml  # type: ignore[union-attr]
 
-    def test_dirty_tracking(self) -> None:
+    async def test_dirty_tracking(self) -> None:
         """Applying a transform marks the node as dirty."""
 
         def always_change(task, violation):  # type: ignore[no-untyped-def]
@@ -496,10 +497,10 @@ class TestApplyTransform:
 
         graph, nid = self._build_graph()
         assert graph.dirty_nodes == frozenset()
-        graph.apply_transform(nid, always_change, {})
+        await graph.apply_transform(nid, always_change, {})
         assert nid in graph.dirty_nodes
 
-    def test_clear_dirty(self) -> None:
+    async def test_clear_dirty(self) -> None:
         """clear_dirty resets the dirty set."""
 
         def always_change(task, violation):  # type: ignore[no-untyped-def]
@@ -507,12 +508,12 @@ class TestApplyTransform:
             return True
 
         graph, nid = self._build_graph()
-        graph.apply_transform(nid, always_change, {})
+        await graph.apply_transform(nid, always_change, {})
         assert len(graph.dirty_nodes) == 1
         graph.clear_dirty()
         assert graph.dirty_nodes == frozenset()
 
-    def test_no_document_marker(self) -> None:
+    async def test_no_document_marker(self) -> None:
         """Serialized yaml_lines must not contain a '---' document marker."""
 
         def add_tag(task, violation):  # type: ignore[no-untyped-def]
@@ -520,18 +521,18 @@ class TestApplyTransform:
             return True
 
         graph, nid = self._build_graph()
-        graph.apply_transform(nid, add_tag, {})
+        await graph.apply_transform(nid, add_tag, {})
         node = graph.get_node(nid)
         assert node is not None
         assert not node.yaml_lines.startswith("---")
 
-    def test_nonexistent_node(self) -> None:
+    async def test_nonexistent_node(self) -> None:
         """Applying to a missing node returns False."""
         graph = ContentGraph()
-        applied = graph.apply_transform("nonexistent", lambda t, v: True, {})
+        applied = await graph.apply_transform("nonexistent", lambda t, v: True, {})
         assert applied is False
 
-    def test_progression_integration(self) -> None:
+    async def test_progression_integration(self) -> None:
         """apply_transform + record_state produces correct progression."""
 
         def add_tag(task, violation):  # type: ignore[no-untyped-def]
@@ -542,7 +543,7 @@ class TestApplyTransform:
         node = graph.get_node(nid)
         assert node is not None
         node.record_state(0, "scanned", ("L026",))
-        graph.apply_transform(nid, add_tag, {})
+        await graph.apply_transform(nid, add_tag, {})
         node.record_state(0, "transformed")
 
         assert len(node.progression) == 2
@@ -550,6 +551,26 @@ class TestApplyTransform:
         assert node.progression[0].violations == ("L026",)
         assert node.progression[1].phase == "transformed"
         assert "added" in node.progression[1].yaml_lines
+
+    async def test_async_transform_fn(self) -> None:
+        """An async transform function is awaited transparently."""
+
+        async def async_rename(task, violation):  # type: ignore[no-untyped-def]
+            from apme_engine.remediation.transforms._helpers import get_module_key, rename_key
+
+            mk = get_module_key(task)
+            if mk == "apt":
+                rename_key(task, mk, "ansible.builtin.apt")
+                return True
+            return False
+
+        graph, nid = self._build_graph()
+        applied = await graph.apply_transform(nid, async_rename, {})
+        assert applied is True
+
+        node = graph.get_node(nid)
+        assert node is not None
+        assert node.module == "ansible.builtin.apt"
 
 
 # ---------------------------------------------------------------------------
@@ -603,3 +624,158 @@ class TestRegistryNodeTransform:
         assert "A001" in reg.rule_ids
         assert "B001" in reg.rule_ids
         assert len(reg) == 2
+
+
+# ---------------------------------------------------------------------------
+# NodeState id, approved, source fields
+# ---------------------------------------------------------------------------
+
+
+class TestNodeStateFields:
+    """Tests for NodeState id, approved, and source fields (ADR-044 Phase 3)."""
+
+    def test_record_state_id_format(self) -> None:
+        """record_state generates id as '{node_id}@{pass_number}'."""
+        node = _make_task()
+        ns = node.record_state(0, "scanned")
+        assert ns.id == f"{node.node_id}@0"
+
+    def test_record_state_id_increments(self) -> None:
+        """Each pass gets a distinct id."""
+        node = _make_task()
+        ns0 = node.record_state(0, "scanned")
+        ns1 = node.record_state(1, "transformed")
+        assert ns0.id != ns1.id
+        assert ns0.id.endswith("@0")
+        assert ns1.id.endswith("@1")
+
+    def test_record_state_default_unapproved(self) -> None:
+        """All entries start unapproved (pending)."""
+        node = _make_task()
+        ns = node.record_state(0, "scanned")
+        assert ns.approved is False
+
+    def test_record_state_source(self) -> None:
+        """Source is stored as metadata."""
+        node = _make_task()
+        ns = node.record_state(0, "transformed", source="deterministic")
+        assert ns.source == "deterministic"
+
+    def test_record_state_source_default(self) -> None:
+        """Default source is empty string."""
+        node = _make_task()
+        ns = node.record_state(0, "scanned")
+        assert ns.source == ""
+
+
+# ---------------------------------------------------------------------------
+# ContentGraph approval operations
+# ---------------------------------------------------------------------------
+
+
+class TestApprovalOperations:
+    """Tests for approve_pending, approve_node, reject_node (ADR-044 Phase 3)."""
+
+    def _build_graph_with_progression(self) -> tuple[ContentGraph, ContentNode]:
+        graph = ContentGraph()
+        node = _make_task()
+        graph.add_node(node)
+        node.record_state(0, "scanned", ("M001",))
+        node.update_from_yaml(_TASK_YAML_FQCN_FIXED)
+        node.record_state(1, "transformed", source="deterministic")
+        return graph, node
+
+    def test_approve_pending_all(self) -> None:
+        """approve_pending() approves all entries across the graph."""
+        graph, node = self._build_graph_with_progression()
+        assert all(not s.approved for s in node.progression)
+
+        count = graph.approve_pending()
+        assert count == 2
+        assert all(s.approved for s in node.progression)
+
+    def test_approve_pending_scoped(self) -> None:
+        """approve_pending(node_id) only approves that node."""
+        graph, node1 = self._build_graph_with_progression()
+        node2 = _make_task(yaml_lines=_TASK_YAML_SHORT)
+        node2.module = "copy"
+        # Give node2 a distinct identity
+        node2_identity = NodeIdentity(
+            path="site.yml/plays[0]/tasks[1]",
+            node_type=NodeType.TASK,
+        )
+        node2 = ContentNode(
+            identity=node2_identity,
+            file_path="site.yml",
+            line_start=14,
+            line_end=18,
+            module="copy",
+            yaml_lines=_TASK_YAML_SHORT,
+        )
+        graph.add_node(node2)
+        node2.record_state(0, "scanned", ("M001",))
+
+        graph.approve_pending(node1.node_id)
+        assert all(s.approved for s in node1.progression)
+        assert not node2.progression[0].approved
+
+    def test_approve_node_convenience(self) -> None:
+        """approve_node returns True when entries are approved."""
+        graph, node = self._build_graph_with_progression()
+        assert graph.approve_node(node.node_id) is True
+        assert all(s.approved for s in node.progression)
+
+    def test_approve_node_already_approved(self) -> None:
+        """approve_node returns False when already approved."""
+        graph, node = self._build_graph_with_progression()
+        graph.approve_pending()
+        assert graph.approve_node(node.node_id) is False
+
+    def test_reject_node_truncates(self) -> None:
+        """reject_node removes unapproved entries and restores state."""
+        graph, node = self._build_graph_with_progression()
+        # Approve first entry, leave second pending
+        from dataclasses import replace
+
+        node.progression[0] = replace(node.progression[0], approved=True)
+
+        result = graph.reject_node(node.node_id)
+        assert result is True
+        assert len(node.progression) == 1
+        assert node.progression[0].approved is True
+        assert node.state is node.progression[0]
+        assert node.yaml_lines == node.progression[0].yaml_lines
+
+    def test_reject_node_all_approved(self) -> None:
+        """reject_node returns False when all entries are approved."""
+        graph, node = self._build_graph_with_progression()
+        graph.approve_pending()
+        assert graph.reject_node(node.node_id) is False
+
+    def test_reject_node_cascades(self) -> None:
+        """Rejecting the first unapproved entry also removes subsequent entries."""
+        graph, node = self._build_graph_with_progression()
+        # Add a third entry (AI transform)
+        node.update_from_yaml("- name: AI fixed\n  ansible.builtin.apt:\n    name: nginx\n")
+        node.record_state(2, "ai_transformed", source="ai")
+
+        # Approve first entry only
+        from dataclasses import replace
+
+        node.progression[0] = replace(node.progression[0], approved=True)
+
+        assert len(node.progression) == 3
+        graph.reject_node(node.node_id)
+        assert len(node.progression) == 1
+
+    def test_reject_nonexistent_node(self) -> None:
+        """reject_node returns False for missing node."""
+        graph = ContentGraph()
+        assert graph.reject_node("missing") is False
+
+    def test_approve_updates_node_state(self) -> None:
+        """After approve_pending, node.state reflects the last progression entry."""
+        graph, node = self._build_graph_with_progression()
+        graph.approve_pending()
+        assert node.state is node.progression[-1]
+        assert node.state.approved is True

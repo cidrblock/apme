@@ -15,10 +15,11 @@ Public API
 from __future__ import annotations
 
 import hashlib
+import inspect
 import os
 import re
-from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field
+from collections.abc import Awaitable, Callable, Iterator
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, ClassVar, cast
@@ -190,20 +191,34 @@ class NodeState:
     full node history.
 
     Attributes:
+        id: Unique identifier for this progression entry
+            (``"{node_id}@{pass_number}"``).  Used as ``Proposal.id``
+            in the UI and referenced back in ``ApprovalRequest``.
         pass_number: Convergence pass (0 = initial scan).
-        phase: Pipeline phase (``"original"``, ``"scanned"``, ``"transformed"``).
+        phase: Pipeline phase (``"original"``, ``"scanned"``,
+            ``"transformed"``, ``"ai_transformed"``).
         yaml_lines: Raw YAML text for this node at this point in time.
         content_hash: SHA-256 hex digest of ``yaml_lines``.
         violations: Rule IDs of violations active at this state.
         timestamp: ISO 8601 UTC timestamp when the snapshot was taken.
+        approved: Whether this entry has been approved.  All entries
+            start pending (``False``).  Deterministic transforms are
+            auto-approved via ``ContentGraph.approve_pending()`` after
+            convergence; AI transforms await human approval.
+        source: UI metadata indicating how the transform was produced
+            (e.g. ``"deterministic"``, ``"ai"``).  The graph never
+            inspects this field for logic.
     """
 
+    id: str
     pass_number: int
     phase: str
     yaml_lines: str
     content_hash: str
     violations: tuple[str, ...]
     timestamp: str
+    approved: bool = False
+    source: str = ""
 
 
 def _content_hash(text: str) -> str:
@@ -358,6 +373,7 @@ class ContentNode:
         pass_number: int,
         phase: str,
         violations: tuple[str, ...] = (),
+        source: str = "",
     ) -> NodeState:
         """Record a progression snapshot at the current pipeline phase.
 
@@ -371,19 +387,23 @@ class ContentNode:
         Args:
             pass_number: Convergence pass (0 = initial scan).
             phase: Pipeline phase (``"original"``, ``"scanned"``,
-                ``"transformed"``).
+                ``"transformed"``, ``"ai_transformed"``).
             violations: Rule IDs of violations active at this state.
+            source: How the transform was produced (e.g.
+                ``"deterministic"``, ``"ai"``).  UI metadata only.
 
         Returns:
             The newly created ``NodeState``.
         """
         ns = NodeState(
+            id=f"{self.node_id}@{pass_number}",
             pass_number=pass_number,
             phase=phase,
             yaml_lines=self.yaml_lines,
             content_hash=_content_hash(self.yaml_lines),
             violations=violations,
             timestamp=datetime.now(timezone.utc).isoformat(),
+            source=source,
         )
         if len(self.progression) >= self.MAX_PROGRESSION:
             self.progression.pop(0)
@@ -597,10 +617,88 @@ class ContentGraph:
         """Reset the dirty-node set (called after a convergence pass)."""
         self._dirty_nodes.clear()
 
-    def apply_transform(
+    # -- Approval tracking (ADR-044 Phase 3) --------------------------------
+
+    def approve_pending(self, node_id: str | None = None) -> int:
+        """Approve all pending progression entries.
+
+        When ``node_id`` is given, only that node's entries are approved.
+        When ``None``, all pending entries across the entire graph are
+        approved.  This is the dedicated function called after Tier 1
+        convergence to auto-approve deterministic transforms.
+
+        Since ``NodeState`` is frozen, each pending entry is replaced
+        with a copy that has ``approved=True``.
+
+        Args:
+            node_id: Optional node to scope approval to.
+
+        Returns:
+            Number of entries approved.
+        """
+        count = 0
+        targets = [self.get_node(node_id)] if node_id else list(self.nodes())
+        for node in targets:
+            if node is None:
+                continue
+            for i, entry in enumerate(node.progression):
+                if not entry.approved:
+                    node.progression[i] = replace(entry, approved=True)
+                    count += 1
+            if node.progression:
+                node.state = node.progression[-1]
+        return count
+
+    def approve_node(self, node_id: str) -> bool:
+        """Approve all pending entries for a specific node.
+
+        Convenience wrapper around ``approve_pending`` scoped to one node.
+
+        Args:
+            node_id: Graph node identifier.
+
+        Returns:
+            True if any entries were approved.
+        """
+        return self.approve_pending(node_id) > 0
+
+    def reject_node(self, node_id: str) -> bool:
+        """Reject unapproved entries and cascade forward.
+
+        Finds the first unapproved progression entry (index *N*) and
+        truncates the progression to entries ``0..N-1``.  The node's
+        ``yaml_lines`` and typed fields are restored to the last
+        approved state.
+
+        Args:
+            node_id: Graph node identifier.
+
+        Returns:
+            True if any entries were removed.
+        """
+        node = self.get_node(node_id)
+        if node is None:
+            return False
+
+        first_unapproved = next(
+            (i for i, s in enumerate(node.progression) if not s.approved),
+            None,
+        )
+        if first_unapproved is None:
+            return False
+
+        node.progression[:] = node.progression[:first_unapproved]
+
+        if node.progression:
+            restored = node.progression[-1]
+            node.state = restored
+            node.update_from_yaml(restored.yaml_lines)
+        return True
+
+    async def apply_transform(
         self,
         node_id: str,
-        transform_fn: Callable[[_CommentedMap, ViolationDict], bool],
+        transform_fn: Callable[[_CommentedMap, ViolationDict], bool | Awaitable[bool]],
         violation: ViolationDict,
     ) -> bool:
         """Apply a node-level transform via an ephemeral CommentedMap.
@@ -610,9 +708,14 @@ class ContentGraph:
         ``node.yaml_lines``, and calls ``node.update_from_yaml()``
         to rebuild typed fields.  The node is marked dirty on success.
 
+        Supports both sync and async transform functions.  Sync
+        functions (deterministic transforms) are called directly;
+        async functions (e.g. AI transforms) are awaited.
+
         Args:
             node_id: Graph node identifier.
-            transform_fn: Callable ``(CommentedMap, ViolationDict) -> bool``.
+            transform_fn: ``(CommentedMap, ViolationDict) -> bool``
+                or ``async (CommentedMap, ViolationDict) -> bool``.
             violation: Violation dict passed to the transform.
 
         Returns:
@@ -626,8 +729,6 @@ class ContentGraph:
         if node is None or not node.yaml_lines:
             return False
 
-        # Disable explicit_start so serialized fragments don't get a '---'
-        # marker prepended — yaml_lines are spliced back into parent files.
         frag_config = dict(FormattedYAML.default_config)
         frag_config["explicit_start"] = False
         yaml = FormattedYAML(
@@ -641,7 +742,6 @@ class ContentGraph:
         except Exception:  # noqa: BLE001
             return False
 
-        # Extract the task CommentedMap from the parsed structure.
         task: CommentedMap | None = None
         wrapper_seq: CommentedSeq | None = None
         if isinstance(data, CommentedSeq) and len(data) == 1 and isinstance(data[0], CommentedMap):
@@ -652,7 +752,8 @@ class ContentGraph:
         if task is None:
             return False
 
-        applied = transform_fn(task, violation)
+        result = transform_fn(task, violation)
+        applied = await result if inspect.isawaitable(result) else result
         if not applied:
             return False
 
@@ -993,12 +1094,15 @@ def _node_state_to_dict(ns: NodeState) -> dict[str, object]:
         Plain dict with all NodeState fields.
     """
     return {
+        "id": ns.id,
         "pass_number": ns.pass_number,
         "phase": ns.phase,
         "yaml_lines": ns.yaml_lines,
         "content_hash": ns.content_hash,
         "violations": list(ns.violations),
         "timestamp": ns.timestamp,
+        "approved": ns.approved,
+        "source": ns.source,
     }
 
 
@@ -1014,12 +1118,15 @@ def _node_state_from_dict(d: dict[str, object]) -> NodeState:
     violations_raw = d.get("violations", ())
     violations = tuple(str(v) for v in violations_raw) if isinstance(violations_raw, list | tuple) else ()
     return NodeState(
+        id=str(d.get("id", "")),
         pass_number=int(cast(int, d.get("pass_number", 0))),
         phase=str(d.get("phase", "")),
         yaml_lines=str(d.get("yaml_lines", "")),
         content_hash=str(d.get("content_hash", "")),
         violations=violations,
         timestamp=str(d.get("timestamp", "")),
+        approved=bool(d.get("approved", False)),
+        source=str(d.get("source", "")),
     )
 
 

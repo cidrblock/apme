@@ -212,7 +212,7 @@ class TestRescanDirty:
 class TestGraphRemediationEngine:
     """Tests for ``GraphRemediationEngine.remediate``."""
 
-    def test_single_pass_convergence(self) -> None:
+    async def test_single_pass_convergence(self) -> None:
         """One fixable violation is resolved in a single pass."""
         graph = ContentGraph()
         graph.add_node(_make_node(module="apt"))
@@ -220,7 +220,7 @@ class TestGraphRemediationEngine:
         registry = _build_registry_with_fqcn()
 
         engine = GraphRemediationEngine(registry, graph, rules, max_passes=5)
-        report = engine.remediate()
+        report = await engine.remediate()
 
         assert report.fixed == 1
         assert report.passes >= 1
@@ -231,7 +231,7 @@ class TestGraphRemediationEngine:
         assert node is not None
         assert "ansible.builtin.apt" in (node.module or "")
 
-    def test_already_converged(self) -> None:
+    async def test_already_converged(self) -> None:
         """When content is already clean, pass 1 exits immediately with zero fixes."""
         graph = ContentGraph()
         graph.add_node(_make_node(module="ansible.builtin.apt", yaml_lines=_TASK_YAML_FQCN))
@@ -239,13 +239,13 @@ class TestGraphRemediationEngine:
         registry = _build_registry_with_fqcn()
 
         engine = GraphRemediationEngine(registry, graph, rules)
-        report = engine.remediate()
+        report = await engine.remediate()
 
         assert report.fixed == 0
         assert report.passes == 1
         assert report.nodes_modified == 0
 
-    def test_initial_violations_parameter(self) -> None:
+    async def test_initial_violations_parameter(self) -> None:
         """Supplying initial_violations skips the first scan."""
         graph = ContentGraph()
         node = _make_node(module="apt")
@@ -266,12 +266,12 @@ class TestGraphRemediationEngine:
             }
         ]
         engine = GraphRemediationEngine(registry, graph, rules)
-        report = engine.remediate(initial_violations=pre_violations)
+        report = await engine.remediate(initial_violations=pre_violations)
 
         assert report.fixed == 1
         assert report.nodes_modified == 1
 
-    def test_multi_node_remediation(self) -> None:
+    async def test_multi_node_remediation(self) -> None:
         """Multiple nodes are fixed in the same pass."""
         graph = ContentGraph()
         graph.add_node(_make_node("site.yml/plays[0]/tasks[0]", module="apt"))
@@ -288,12 +288,12 @@ class TestGraphRemediationEngine:
         registry = _build_registry_with_fqcn()
 
         engine = GraphRemediationEngine(registry, graph, rules)
-        report = engine.remediate()
+        report = await engine.remediate()
 
         assert report.fixed == 2
         assert report.nodes_modified == 2
 
-    def test_no_transform_available(self) -> None:
+    async def test_no_transform_available(self) -> None:
         """Violations with no registered transform are left unfixed."""
         graph = ContentGraph()
         graph.add_node(_make_node(module="apt"))
@@ -301,13 +301,13 @@ class TestGraphRemediationEngine:
         registry = TransformRegistry()  # empty — no transforms
 
         engine = GraphRemediationEngine(registry, graph, rules)
-        report = engine.remediate()
+        report = await engine.remediate()
 
         assert report.fixed == 0
         assert report.nodes_modified == 0
         assert len(report.remaining_violations) == 1
 
-    def test_progression_recorded(self) -> None:
+    async def test_progression_recorded(self) -> None:
         """NodeState progression is recorded during convergence."""
         graph = ContentGraph()
         node = _make_node(module="apt")
@@ -316,13 +316,41 @@ class TestGraphRemediationEngine:
         registry = _build_registry_with_fqcn()
 
         engine = GraphRemediationEngine(registry, graph, rules)
-        engine.remediate()
+        await engine.remediate()
 
         assert len(node.progression) >= 2
         assert node.progression[0].phase == "scanned"
         assert any(ns.phase == "transformed" for ns in node.progression)
 
-    def test_clean_state_after_rescan(self) -> None:
+    async def test_entries_approved_after_convergence(self) -> None:
+        """All progression entries are auto-approved after convergence."""
+        graph = ContentGraph()
+        node = _make_node(module="apt")
+        graph.add_node(node)
+        rules: list[GraphRule] = [_FQCNRule()]
+        registry = _build_registry_with_fqcn()
+
+        engine = GraphRemediationEngine(registry, graph, rules)
+        await engine.remediate()
+
+        assert all(s.approved for s in node.progression)
+
+    async def test_transform_source_deterministic(self) -> None:
+        """Transformed entries have source='deterministic'."""
+        graph = ContentGraph()
+        node = _make_node(module="apt")
+        graph.add_node(node)
+        rules: list[GraphRule] = [_FQCNRule()]
+        registry = _build_registry_with_fqcn()
+
+        engine = GraphRemediationEngine(registry, graph, rules)
+        await engine.remediate()
+
+        transformed = [s for s in node.progression if s.phase == "transformed"]
+        assert len(transformed) >= 1
+        assert all(s.source == "deterministic" for s in transformed)
+
+    async def test_clean_state_after_rescan(self) -> None:
         """Dirty nodes confirmed clean after rescan get an empty-violations scanned entry."""
         graph = ContentGraph()
         node = _make_node(module="apt")
@@ -331,7 +359,7 @@ class TestGraphRemediationEngine:
         registry = _build_registry_with_fqcn()
 
         engine = GraphRemediationEngine(registry, graph, rules)
-        engine.remediate()
+        await engine.remediate()
 
         scanned_states = [ns for ns in node.progression if ns.phase == "scanned"]
         assert len(scanned_states) >= 2
@@ -340,7 +368,7 @@ class TestGraphRemediationEngine:
         # Final scanned state confirms clean (empty violations)
         assert scanned_states[-1].violations == ()
 
-    def test_progress_callback(self) -> None:
+    async def test_progress_callback(self) -> None:
         """Progress callback is invoked during remediation."""
         messages: list[str] = []
 
@@ -353,11 +381,11 @@ class TestGraphRemediationEngine:
         registry = _build_registry_with_fqcn()
 
         engine = GraphRemediationEngine(registry, graph, rules, progress_callback=on_progress)
-        engine.remediate()
+        await engine.remediate()
 
         assert any("fixable" in m.lower() or "converged" in m.lower() for m in messages)
 
-    def test_max_passes_limit(self) -> None:
+    async def test_max_passes_limit(self) -> None:
         """Engine respects max_passes even if violations remain."""
 
         class _InfiniteRule(GraphRule):
@@ -387,16 +415,16 @@ class TestGraphRemediationEngine:
         registry.register("T999", node=_noop_transform)
 
         engine = GraphRemediationEngine(registry, graph, [_InfiniteRule()], max_passes=3)
-        report = engine.remediate()
+        report = await engine.remediate()
 
         assert report.passes <= 3
         assert report.oscillation_detected
 
-    def test_rescan_fn_called_instead_of_builtin(self) -> None:
+    async def test_rescan_fn_called_instead_of_builtin(self) -> None:
         """When rescan_fn is provided, it replaces the built-in rescan_dirty call."""
         rescan_calls: list[tuple[ContentGraph, frozenset[str]]] = []
 
-        def _custom_rescan(
+        async def _custom_rescan(
             g: ContentGraph,
             dirty: frozenset[str],
         ) -> list[ViolationDict]:
@@ -427,7 +455,7 @@ class TestGraphRemediationEngine:
             rules,
             rescan_fn=_custom_rescan,
         )
-        report = engine.remediate(initial_violations=violations)
+        report = await engine.remediate(initial_violations=violations)
 
         assert report.fixed == 1
         assert len(rescan_calls) == 1
@@ -435,11 +463,11 @@ class TestGraphRemediationEngine:
         assert captured_graph is graph
         assert node.node_id in captured_dirty
 
-    def test_rescan_fn_violations_drive_convergence(self) -> None:
+    async def test_rescan_fn_violations_drive_convergence(self) -> None:
         """Violations returned by rescan_fn feed back into the convergence loop."""
         pass_count = [0]
 
-        def _rescan_with_new_violation(
+        async def _rescan_with_new_violation(
             g: ContentGraph,
             dirty: frozenset[str],
         ) -> list[ViolationDict]:
@@ -484,12 +512,12 @@ class TestGraphRemediationEngine:
             max_passes=5,
             rescan_fn=_rescan_with_new_violation,
         )
-        report = engine.remediate(initial_violations=violations)
+        report = await engine.remediate(initial_violations=violations)
 
         assert pass_count[0] >= 1
         assert report.passes >= 2
 
-    def test_rescan_fn_none_uses_builtin(self) -> None:
+    async def test_rescan_fn_none_uses_builtin(self) -> None:
         """When rescan_fn is None, the built-in rescan_dirty is used."""
         graph = ContentGraph()
         graph.add_node(_make_node(module="apt"))
@@ -502,12 +530,12 @@ class TestGraphRemediationEngine:
             rules,
             rescan_fn=None,
         )
-        report = engine.remediate()
+        report = await engine.remediate()
 
         assert report.fixed == 1
         assert report.nodes_modified == 1
 
-    def test_rescan_fn_external_violations_dont_crash(self) -> None:
+    async def test_rescan_fn_external_violations_dont_crash(self) -> None:
         """External (non-native) violations from rescan_fn are handled gracefully.
 
         External violations (OPA, Ansible) have ``path`` = file_path rather
@@ -517,7 +545,7 @@ class TestGraphRemediationEngine:
         """
         rescan_calls: list[frozenset[str]] = []
 
-        def _bridge_with_opa(
+        async def _bridge_with_opa(
             g: ContentGraph,
             dirty: frozenset[str],
         ) -> list[ViolationDict]:
@@ -558,7 +586,7 @@ class TestGraphRemediationEngine:
             rules,
             rescan_fn=_bridge_with_opa,
         )
-        report = engine.remediate(initial_violations=violations)
+        report = await engine.remediate(initial_violations=violations)
 
         assert report.fixed == 1
         assert len(rescan_calls) >= 1
@@ -628,6 +656,7 @@ class TestSpliceModifications:
         node.record_state(0, "scanned", ("M001",))
         node.update_from_yaml(_TASK_YAML_FQCN)
         node.record_state(1, "transformed")
+        graph.approve_pending()
 
         originals = {"/workspace/site.yml": self._ORIGINAL}
         patches = splice_modifications(graph, originals)
@@ -670,6 +699,7 @@ class TestSpliceModifications:
         n2.record_state(0, "scanned", ("M001",))
         n2.update_from_yaml("- name: Copy file\n  ansible.builtin.copy:\n    src: a.txt\n    dest: /tmp/a.txt\n")
         n2.record_state(1, "transformed")
+        graph.approve_pending()
 
         originals = {"/workspace/site.yml": self._ORIGINAL}
         patches = splice_modifications(graph, originals)
@@ -687,6 +717,7 @@ class TestSpliceModifications:
         node.record_state(0, "scanned")
         node.update_from_yaml(_TASK_YAML_FQCN)
         node.record_state(1, "transformed")
+        graph.approve_pending()
 
         patches = splice_modifications(graph, {})
         assert patches == []
@@ -703,3 +734,58 @@ class TestSpliceModifications:
 
         patches = splice_modifications(graph, {"/workspace/site.yml": self._ORIGINAL})
         assert patches == []
+
+    def test_unapproved_entries_not_spliced(self) -> None:
+        """Unapproved progression entries are ignored by splice."""
+        graph = ContentGraph()
+        node = _make_node(
+            module="apt",
+            file_path="/workspace/site.yml",
+            line_start=4,
+            line_end=7,
+        )
+        graph.add_node(node)
+
+        node.record_state(0, "scanned", ("M001",))
+        node.update_from_yaml(_TASK_YAML_FQCN)
+        node.record_state(1, "transformed", source="deterministic")
+        # Do NOT approve — entries remain pending
+
+        originals = {"/workspace/site.yml": self._ORIGINAL}
+        patches = splice_modifications(graph, originals)
+
+        # With no approved entries, last_approved falls back to
+        # progression[0] (original), so hash matches → no patch
+        assert patches == []
+
+    def test_splice_uses_last_approved_not_latest(self) -> None:
+        """splice_modifications uses the last approved entry, not the latest."""
+        graph = ContentGraph()
+        node = _make_node(
+            module="apt",
+            file_path="/workspace/site.yml",
+            line_start=4,
+            line_end=7,
+        )
+        graph.add_node(node)
+
+        # Original → deterministic fix → AI fix
+        node.record_state(0, "scanned", ("M001",))
+        node.update_from_yaml(_TASK_YAML_FQCN)
+        node.record_state(1, "transformed", source="deterministic")
+
+        # Approve the deterministic entry only
+        graph.approve_pending()
+
+        # Now add an unapproved AI entry with different content
+        ai_yaml = "- name: AI modified\n  ansible.builtin.apt:\n    name: nginx\n    state: latest\n"
+        node.update_from_yaml(ai_yaml)
+        node.record_state(2, "ai_transformed", source="ai")
+
+        originals = {"/workspace/site.yml": self._ORIGINAL}
+        patches = splice_modifications(graph, originals)
+
+        assert len(patches) == 1
+        # Patch should use the deterministic fix, not the AI fix
+        assert "ansible.builtin.apt" in patches[0].patched
+        assert "state: latest" not in patches[0].patched
