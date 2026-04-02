@@ -1362,14 +1362,14 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
         format_content: Callable[..., object],
         format_diffs: Sequence[object],
     ) -> AsyncIterator[SessionEvent]:
-        """Graph-engine remediation — in-memory convergence + final scan.
+        """Graph-engine remediation — in-memory convergence, graph-authoritative.
 
         Convergence sends dirty nodes to ALL validators via gRPC:
         native graph rules run in-process, while OPA, Ansible, and
         Gitleaks receive scoped requests containing only dirty node
-        data (no file I/O during convergence).  After convergence,
-        approved changes are spliced to disk and a final full-pipeline
-        scan runs all validators for the definitive picture.
+        data (no file I/O during convergence).  The ContentGraph is
+        authoritative for remaining violations — no final re-scan is
+        needed.  Approved changes are spliced to disk.
 
         Args:
             session: Active session state (mutated in place).

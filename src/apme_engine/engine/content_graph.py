@@ -675,6 +675,10 @@ class ContentGraph:
         record captures what the transform did and which violations
         appeared/disappeared.
 
+        Violation deltas use the nearest subsequent ``scanned`` snapshot
+        (post-rescan) rather than the ``transformed`` snapshot, which is
+        recorded before the rescan and typically has empty violations.
+
         Returns:
             List of step-diff records, each with ``node_id``,
             ``pass_number``, ``phase``, ``diff``, ``violations_added``,
@@ -696,7 +700,12 @@ class ContentGraph:
                     )
                 )
                 prev_rules = set(prev.violations)
-                curr_rules = set(curr.violations)
+                post_rules = set(curr.violations)
+                if not post_rules and curr.phase == "transformed":
+                    for j in range(i + 1, len(prog)):
+                        if prog[j].phase == "scanned":
+                            post_rules = set(prog[j].violations)
+                            break
                 steps.append(
                     {
                         "node_id": node.node_id,
@@ -704,8 +713,8 @@ class ContentGraph:
                         "phase": curr.phase,
                         "source": curr.source,
                         "diff": diff,
-                        "violations_removed": sorted(prev_rules - curr_rules),
-                        "violations_added": sorted(curr_rules - prev_rules),
+                        "violations_removed": sorted(prev_rules - post_rules),
+                        "violations_added": sorted(post_rules - prev_rules),
                     }
                 )
         return steps

@@ -564,7 +564,7 @@ class TestSessionGraphRemediate:
     """Tests for _session_graph_remediate (graph engine remediation path).
 
     Exercises ``GraphRemediationEngine`` in-memory convergence, splicing
-    results to disk, and the final full-pipeline scan.
+    results to disk, and graph-authoritative reporting of remaining violations.
     """
 
     async def test_happy_path_produces_patches_and_events(self, tmp_path: Path) -> None:

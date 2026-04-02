@@ -25,6 +25,7 @@ from apme_engine.remediation.ai_provider import (
     apply_patches,
 )
 from apme_engine.remediation.enrich import enrich_violations
+from apme_engine.remediation.graph_engine import FilePatch as FilePatch
 from apme_engine.remediation.partition import (
     add_classification_to_violations,
     normalize_rule_id,
@@ -40,9 +41,6 @@ from apme_engine.remediation.unit_segmenter import (
 )
 
 logger = logging.getLogger("apme.remediation")
-
-
-from apme_engine.remediation.graph_engine import FilePatch as FilePatch  # noqa: E402
 
 
 @dataclass

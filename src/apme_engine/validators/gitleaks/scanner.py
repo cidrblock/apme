@@ -192,9 +192,10 @@ def _build_stdin_payload(
         nodes: ``(node_id, content)`` tuples.
 
     Returns:
-        Tuple of ``(payload_text, delimiter_lines_sorted, node_ids_sorted,
-        node_content_by_id)`` where ``delimiter_lines_sorted[i]`` is the
-        1-based line number of the delimiter for ``node_ids_sorted[i]``.
+        Tuple of ``(payload_text, delimiter_lines, node_ids,
+        node_content_by_id)`` in the same order as ``nodes``, where
+        ``delimiter_lines[i]`` is the 1-based line number of the delimiter
+        for ``node_ids[i]``.
     """
     parts: list[str] = []
     delimiter_lines: list[int] = []
@@ -222,21 +223,22 @@ def _resolve_node_id(
     finding_line: int,
     delimiter_lines: list[int],
     node_ids: list[str],
-) -> str:
+) -> tuple[str, int]:
     """Walk backwards from finding_line to the nearest delimiter.
 
     Args:
         finding_line: 1-based line from gitleaks StartLine.
-        delimiter_lines: Sorted 1-based line numbers of delimiters.
+        delimiter_lines: 1-based line numbers of delimiters (input order).
         node_ids: Parallel list of node IDs.
 
     Returns:
-        The node_id owning ``finding_line``, or ``""`` if before any delimiter.
+        Tuple of ``(node_id, delimiter_line)`` for the owning node,
+        or ``("", 0)`` if before any delimiter.
     """
     idx = bisect.bisect_right(delimiter_lines, finding_line) - 1
     if idx < 0:
-        return ""
-    return node_ids[idx]
+        return "", 0
+    return node_ids[idx], delimiter_lines[idx]
 
 
 def run_gitleaks_nodes(
@@ -318,7 +320,7 @@ def run_gitleaks_nodes(
         start_line = int(line_val) if isinstance(line_val, int | float | str) else 0
         end_line = int(end_val) if isinstance(end_val, int | float | str) else start_line
 
-        node_id = _resolve_node_id(start_line, delimiter_lines, node_ids)
+        node_id, delim_line = _resolve_node_id(start_line, delimiter_lines, node_ids)
         if not node_id:
             continue
 
@@ -329,13 +331,15 @@ def run_gitleaks_nodes(
         gitleaks_rule = str(f.get("RuleID", "unknown"))
         desc = str(f.get("Description", f"Secret detected: {gitleaks_rule}"))
 
+        rel_start = max(1, start_line - delim_line)
+        rel_end = max(1, end_line - delim_line)
         violations.append(
             {
                 "rule_id": _build_rule_id(gitleaks_rule),
                 "severity": "critical",
                 "message": desc,
                 "file": "",
-                "line": start_line if start_line == end_line else [start_line, end_line],
+                "line": rel_start if rel_start == rel_end else [rel_start, rel_end],
                 "path": node_id,
                 "scope": "playbook",
                 "source": "gitleaks",

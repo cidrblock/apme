@@ -391,25 +391,25 @@ class TestResolveNodeId:
         """Finding in first node resolves correctly."""
         delims = [1, 4]
         ids = ["node-a", "node-b"]
-        assert _resolve_node_id(2, delims, ids) == "node-a"
+        assert _resolve_node_id(2, delims, ids) == ("node-a", 1)
 
     def test_line_in_second_node(self) -> None:
         """Finding in second node resolves correctly."""
         delims = [1, 4]
         ids = ["node-a", "node-b"]
-        assert _resolve_node_id(5, delims, ids) == "node-b"
+        assert _resolve_node_id(5, delims, ids) == ("node-b", 4)
 
     def test_line_on_delimiter(self) -> None:
         """Finding exactly on delimiter resolves to that node."""
         delims = [1, 4]
         ids = ["node-a", "node-b"]
-        assert _resolve_node_id(4, delims, ids) == "node-b"
+        assert _resolve_node_id(4, delims, ids) == ("node-b", 4)
 
     def test_line_before_any_delimiter(self) -> None:
         """Finding before first delimiter returns empty."""
         delims = [5]
         ids = ["node-a"]
-        assert _resolve_node_id(1, delims, ids) == ""
+        assert _resolve_node_id(1, delims, ids) == ("", 0)
 
 
 class TestRunGitleaksNodes:

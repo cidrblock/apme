@@ -79,9 +79,8 @@ def _run_scan(
     if content_graph_data:
         nodes.extend(_extract_nodes_from_graph_data(content_graph_data))
 
-    graph_node_ids = {nid for nid, _ in nodes}
-    for f in files:
-        if f.path not in graph_node_ids:
+    if not nodes:
+        for f in files:
             try:
                 content = f.content.decode("utf-8", errors="replace")
             except Exception:  # noqa: BLE001
