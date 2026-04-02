@@ -133,7 +133,7 @@ SEVERITY_DEFAULTS: dict[str, Severity] = {
     "L098": Severity.ERROR,
     "M005": Severity.HIGH,
     "M010": Severity.HIGH,
-    # Error: runtime breakage today
+    # Low: best practice / convention
     "L045": Severity.LOW,
     # ── OPA rules ───────────────────────────────────────────────────────
     "L003": Severity.LOW,

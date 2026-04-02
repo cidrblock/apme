@@ -22,7 +22,7 @@ from pathlib import Path
 import grpc
 import grpc.aio
 
-from apme.v1 import primary_pb2_grpc, validate_pb2_grpc
+from apme.v1 import primary_pb2_grpc, reporting_pb2, validate_pb2_grpc
 from apme.v1.common_pb2 import (
     CollectionRef,
     File,
@@ -64,7 +64,7 @@ from apme.v1.reporting_pb2 import (
     ProposalOutcome,
 )
 from apme.v1.validate_pb2 import ValidateRequest
-from apme_engine.daemon.event_emitter import emit_fix_completed, start_sinks
+from apme_engine.daemon.event_emitter import emit_fix_completed, emit_register_rules, start_sinks
 from apme_engine.daemon.session import ResourceExhaustedError, SessionState, SessionStore
 from apme_engine.daemon.violation_convert import violation_dict_to_proto, violation_proto_to_dict
 from apme_engine.engine.models import ViolationDict
@@ -460,6 +460,54 @@ VALIDATOR_ENV_VARS = {
 }
 
 
+def _apply_rule_configs(
+    violations: list[ViolationDict],
+    rule_configs: list[object],
+) -> list[ViolationDict]:
+    """Filter and adjust violations based on ``RuleConfig`` overrides (ADR-041).
+
+    - Violations for disabled rules are removed.
+    - Severity is overridden when ``RuleConfig.severity`` differs from the
+      violation's current value.
+    - Enforced flag is attached as ``_enforced`` metadata so downstream
+      ignore-annotation processing can respect it.
+
+    Args:
+        violations: Mutable list of violation dicts from validators.
+        rule_configs: Proto ``RuleConfig`` messages from ``ScanOptions``.
+
+    Returns:
+        Filtered list with overrides applied.
+    """
+    if not rule_configs:
+        return violations
+
+    from apme_engine.severity_defaults import severity_to_label
+
+    config_map: dict[str, object] = {}
+    for rc in rule_configs:
+        config_map[rc.rule_id] = rc  # type: ignore[attr-defined]
+
+    filtered: list[ViolationDict] = []
+    for v in violations:
+        rule_id = str(v.get("rule_id", ""))
+        rc = config_map.get(rule_id)
+        if rc is not None:
+            if not rc.enabled:  # type: ignore[attr-defined]
+                continue
+            if rc.severity:  # type: ignore[attr-defined]
+                from apme_engine.severity_defaults import severity_from_proto
+
+                v["severity"] = severity_to_label(severity_from_proto(rc.severity))  # type: ignore[attr-defined]
+            if rc.enforced:  # type: ignore[attr-defined]
+                v["_enforced"] = True
+        filtered.append(v)
+    return filtered
+
+
+_known_rule_ids: set[str] = set()
+
+
 class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
     """Primary gRPC servicer — sole API surface for all clients.
 
@@ -497,6 +545,8 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
         session_id: str = "",
         progress_callback: Callable[[str, str, float, int], None] | None = None,
         galaxy_cfg_path: Path | None = None,
+        rule_configs: list[object] | None = None,
+        rule_configs_complete: bool = False,
     ) -> tuple[
         list[ViolationDict],
         ScanDiagnostics | None,
@@ -536,6 +586,19 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                 for streaming per-validator progress to callers.
             galaxy_cfg_path: Session-scoped ``ansible.cfg`` for Galaxy auth
                 (ADR-045).  Reserved for proxy integration — not yet consumed.
+            rule_configs: Per-rule overrides from ``ScanOptions`` (ADR-041).
+                When provided, disabled rules are filtered and severity is
+                overridden after validator fan-out.
+            rule_configs_complete: When ``True`` the incoming ``rule_configs``
+                represents the full catalog (Gateway path).  The Primary
+                performs bidirectional audit and hard-fails on unknown **or**
+                missing rule IDs.  When ``False`` (CLI path), unknown IDs
+                produce a warning only.
+
+        Raises:
+            ValueError: If ``rule_configs_complete`` is ``True`` and either
+                direction of the bidirectional audit fails (unknown IDs the
+                Primary cannot execute, or known IDs absent from the config).
 
         Returns:
             Tuple of (violations, ScanDiagnostics or None, resolved session_id,
@@ -729,6 +792,26 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
             logger.info("Fan-out: done (%.0fms) %s Total=%d (req=%s)", fan_out_ms, parts, len(violations), scan_id)
 
         violations = _deduplicate_violations(_sort_violations(violations))
+        if rule_configs:
+            unknown, missing = _validate_rule_configs(rule_configs, complete=rule_configs_complete)
+            if rule_configs_complete:
+                errors: list[str] = []
+                if unknown:
+                    errors.append(f"unknown rule IDs: {unknown}")
+                if missing:
+                    errors.append(f"missing rule IDs (known to this engine but absent from config): {missing}")
+                if errors:
+                    raise ValueError(
+                        f"Rule catalog mismatch (bidirectional audit): {'; '.join(errors)}. "
+                        "The Gateway catalog is out of sync with this engine."
+                    )
+            elif unknown:
+                logger.warning(
+                    "rule_configs references unknown rule IDs (scan=%s): %s — ignoring",
+                    scan_id,
+                    unknown,
+                )
+            violations = _apply_rule_configs(violations, rule_configs)
         _attach_snippets(violations, files)
 
         total_ms = (time.monotonic() - scan_t0) * 1000
@@ -1067,6 +1150,12 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
             fix_session_id = scan_opts.session_id
             galaxy_servers = scan_opts.galaxy_servers
 
+        scan_rule_configs: list[object] = []
+        scan_rule_configs_complete = False
+        if scan_opts and scan_opts.rule_configs:
+            scan_rule_configs = list(scan_opts.rule_configs)
+            scan_rule_configs_complete = scan_opts.rule_configs_complete
+
         if galaxy_servers:
             session.galaxy_cfg_path = _write_session_galaxy_cfg(galaxy_servers)
             if session.galaxy_cfg_path:
@@ -1193,6 +1282,8 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                 session_id=fix_session_id,
                 progress_callback=_progress_callback,
                 galaxy_cfg_path=session.galaxy_cfg_path,
+                rule_configs=scan_rule_configs or None,
+                rule_configs_complete=scan_rule_configs_complete,
             )
             future = asyncio.run_coroutine_threadsafe(coro, loop)
             (
@@ -1809,6 +1900,91 @@ async def serve(listen_address: str = "0.0.0.0:50051") -> grpc.aio.Server:
         server.add_insecure_port(f"[::]:{port}")
     else:
         server.add_insecure_port(listen_address)
+    await _register_rule_catalog()
     await server.start()
     await start_sinks()
     return server
+
+
+async def _register_rule_catalog() -> None:
+    """Collect built-in rules, populate ``_known_rule_ids``, and push to Gateway.
+
+    This is a **hard requirement** for Primary startup.  If catalog
+    collection fails or returns no rules, the Primary cannot perform
+    bidirectional audit (ADR-041) and must not serve scans.
+
+    Gateway push is best-effort — the Primary is authoritative even
+    without a Gateway (CLI-only / daemon mode).  But the local catalog
+    *must* succeed so ``_known_rule_ids`` is populated.
+
+    Raises:
+        RuntimeError: If catalog collection fails or returns zero rules.
+    """
+    import os
+    import platform
+
+    global _known_rule_ids  # noqa: PLW0603
+
+    from apme_engine.rule_catalog import collect_all_rules
+
+    rules = collect_all_rules()
+    if not rules:
+        raise RuntimeError(
+            "Rule catalog collection returned zero rules. "
+            "The Primary cannot start without an authoritative catalog (ADR-041)."
+        )
+
+    _known_rule_ids = {r.rule_id for r in rules}
+    logger.info("Known rule IDs populated: %d rules", len(_known_rule_ids))
+
+    pod_id = os.environ.get("APME_POD_ID", "").strip() or platform.node()
+    is_authority = os.environ.get("APME_RULE_AUTHORITY", "true").strip().lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+
+    request = reporting_pb2.RegisterRulesRequest(
+        pod_id=pod_id,
+        is_authority=is_authority,
+        rules=rules,
+    )
+    try:
+        await emit_register_rules(request)
+    except Exception:
+        logger.warning("Gateway push failed (best-effort); local catalog is authoritative", exc_info=True)
+
+
+def _validate_rule_configs(
+    rule_configs: list[object],
+    *,
+    complete: bool = False,
+) -> tuple[list[str], list[str]]:
+    """Validate rule IDs in configs against this Primary's known catalog.
+
+    Performs a forward check (unknown IDs) always.  When *complete* is
+    ``True`` (Gateway path), also performs a reverse check (missing IDs)
+    to detect catalog drift.
+
+    Args:
+        rule_configs: Proto RuleConfig messages.
+        complete: If ``True``, treat *rule_configs* as the full catalog
+            and check for missing IDs (bidirectional audit).
+
+    Returns:
+        Tuple of (unknown_ids, missing_ids).  *missing_ids* is always
+        empty when *complete* is ``False``.
+    """
+    if not _known_rule_ids or not rule_configs:
+        return [], []
+    config_ids: set[str] = set()
+    unknown: list[str] = []
+    for rc in rule_configs:
+        rid: str = rc.rule_id  # type: ignore[attr-defined]
+        config_ids.add(rid)
+        if rid not in _known_rule_ids:
+            unknown.append(rid)
+    missing: list[str] = []
+    if complete:
+        missing = sorted(_known_rule_ids - config_ids)
+    return unknown, missing
