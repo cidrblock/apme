@@ -1090,8 +1090,8 @@ class TestSessionRescanBridge:
     closure and passes it to GraphRemediationEngine as rescan_fn.
     """
 
-    async def test_bridge_calls_graph_rules_and_scan_fn(self, tmp_path: Path) -> None:
-        """Bridge runs in-memory graph rules + full-pipeline scan, merging results.
+    async def test_bridge_passed_to_graph_engine_as_rescan_fn(self, tmp_path: Path) -> None:
+        """Bridge closure is constructed and passed into GraphRemediationEngine as rescan_fn.
 
         Args:
             tmp_path: Pytest temporary directory fixture.
