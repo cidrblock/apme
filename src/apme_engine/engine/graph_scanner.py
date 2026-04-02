@@ -210,6 +210,73 @@ def scan(
     return report
 
 
+def rescan_dirty(
+    graph: ContentGraph,
+    rules: list[GraphRule],
+    dirty_node_ids: frozenset[str],
+) -> GraphScanReport:
+    """Re-evaluate rules against only the specified (dirty) nodes.
+
+    Used by the graph-aware convergence loop to avoid a full-graph scan
+    after each transform pass.  Only graph rules are run — external
+    validators (OPA, Ansible, Gitleaks) are skipped because Tier 1
+    transforms only address native rule violations.
+
+    Args:
+        graph: ContentGraph (may have been mutated since last scan).
+        rules: Pre-loaded GraphRule instances.
+        dirty_node_ids: Node IDs to re-evaluate.
+
+    Returns:
+        GraphScanReport scoped to the dirty nodes.
+    """
+    start = time.monotonic()
+    enabled_rules = [r for r in rules if r.enabled]
+    report = GraphScanReport(rules_evaluated=len(enabled_rules))
+
+    for node_id in sorted(dirty_node_ids):
+        node = graph.get_node(node_id)
+        if node is None:
+            continue
+        if node.node_type not in _SCANNABLE_TYPES:
+            continue
+
+        report.nodes_scanned += 1
+        node_result = GraphNodeResult(node_id=node.node_id, node=node)
+
+        for rule in enabled_rules:
+            try:
+                matched = rule.match(graph, node.node_id)
+                if not matched:
+                    continue
+                result = rule.process(graph, node.node_id)
+                if result is not None:
+                    result.rule = rule.get_metadata()
+                    node_result.rule_results.append(result)
+            except Exception as err:
+                logger.warning(
+                    "Rule %s failed on %s: %s",
+                    rule.rule_id,
+                    node.node_id,
+                    err,
+                    exc_info=True,
+                )
+                node_result.rule_results.append(
+                    GraphRuleResult(
+                        rule=rule.get_metadata(),
+                        verdict=False,
+                        node_id=node.node_id,
+                        error=f"Rule execution failed: {type(err).__name__}: {err}",
+                    )
+                )
+
+        if node_result.rule_results:
+            report.node_results.append(node_result)
+
+    report.elapsed_ms = round((time.monotonic() - start) * 1000, 3)
+    return report
+
+
 # ---------------------------------------------------------------------------
 # Result conversion (graph -> violation dicts for gRPC response)
 # ---------------------------------------------------------------------------
