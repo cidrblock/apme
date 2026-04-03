@@ -18,12 +18,9 @@ from apme_engine.engine.content_graph import (
     NodeIdentity,
     NodeType,
 )
-from apme_engine.engine.graph_scanner import graph_report_to_violations, scan
 from apme_engine.engine.models import ViolationDict
 from apme_engine.remediation.ai_context import (
     AINodeContext,
-    _build_parent_context,
-    _build_sibling_snippets,
     _simplify_dict,
     _truncate_snippet,
     build_ai_node_context,
@@ -32,7 +29,6 @@ from apme_engine.remediation.ai_provider import AINodeFix, AISkipped
 from apme_engine.remediation.graph_engine import (
     AINodeProposal,
     GraphRemediationEngine,
-    splice_modifications,
 )
 from apme_engine.remediation.registry import TransformRegistry
 from apme_engine.validators.native.rules.graph_rule_base import (
@@ -543,7 +539,10 @@ class TestUnifiedConvergence:
         )
 
         engine = GraphRemediationEngine(
-            registry, graph, rules, ai_provider=mock_ai,
+            registry,
+            graph,
+            rules,
+            ai_provider=mock_ai,
         )
         report = await engine.remediate()
 
@@ -569,7 +568,10 @@ class TestUnifiedConvergence:
         )
 
         engine = GraphRemediationEngine(
-            registry, graph, rules, ai_provider=mock_ai,
+            registry,
+            graph,
+            rules,
+            ai_provider=mock_ai,
         )
         await engine.remediate()
 
@@ -588,7 +590,10 @@ class TestUnifiedConvergence:
         mock_ai = _MockAIProvider()
 
         engine = GraphRemediationEngine(
-            registry, graph, rules, ai_provider=mock_ai,
+            registry,
+            graph,
+            rules,
+            ai_provider=mock_ai,
         )
         await engine.remediate()
 
@@ -608,8 +613,11 @@ class TestUnifiedConvergence:
         mock_ai = _MockAIProvider(fixes={})
 
         engine = GraphRemediationEngine(
-            registry, graph, rules,
-            ai_provider=mock_ai, max_ai_attempts=1,
+            registry,
+            graph,
+            rules,
+            ai_provider=mock_ai,
+            max_ai_attempts=1,
         )
         await engine.remediate()
 
@@ -633,7 +641,10 @@ class TestUnifiedConvergence:
         )
 
         engine = GraphRemediationEngine(
-            registry, graph, rules, ai_provider=mock_ai,
+            registry,
+            graph,
+            rules,
+            ai_provider=mock_ai,
         )
         report = await engine.remediate()
 
@@ -659,7 +670,10 @@ class TestUnifiedConvergence:
         )
 
         engine = GraphRemediationEngine(
-            registry, graph, rules, ai_provider=mock_ai,
+            registry,
+            graph,
+            rules,
+            ai_provider=mock_ai,
         )
         report = await engine.remediate()
 
@@ -679,7 +693,10 @@ class TestUnifiedConvergence:
         mock_ai = _MockAIProvider(fixes={})
 
         engine = GraphRemediationEngine(
-            registry, graph, rules, ai_provider=mock_ai,
+            registry,
+            graph,
+            rules,
+            ai_provider=mock_ai,
         )
         report = await engine.remediate()
 
