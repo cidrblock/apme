@@ -244,7 +244,7 @@ class GraphRemediationEngine:
                     break
 
                 violations = await self._rescan_and_record(graph, pass_num)
-                new_tier1, _, _ = partition_violations(violations, registry)
+                new_tier1, new_tier2, _ = partition_violations(violations, registry)
                 new_fixable = len(new_tier1)
 
                 if new_fixable >= prev_count:
@@ -260,6 +260,8 @@ class GraphRemediationEngine:
                 prev_count = new_fixable
                 if new_fixable > 0:
                     continue
+
+                tier1, tier2 = new_tier1, new_tier2
 
             # Phase B: Tier 2 AI transforms
             if not tier1 and tier2 and self._ai_provider is not None and ai_attempts < self._max_ai_attempts:

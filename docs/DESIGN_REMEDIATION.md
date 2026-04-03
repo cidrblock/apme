@@ -262,8 +262,7 @@ The LLM receives the node's YAML and violations via `AINodeContext`. It returns 
 
 ```json
 {
-  "node_id": "pb:site.yml#play:0#task:1",
-  "fixed_yaml": "<entire corrected YAML for the node>",
+  "fixed_snippet": "<the entire corrected YAML for this task/block>",
   "changes": [
     {"rule_id": "L024", "explanation": "Added task name", "confidence": 0.95}
   ],
