@@ -426,7 +426,7 @@ def _record_violations(
     for node_id, vdicts in by_node.items():
         node = graph.get_node(node_id)
         if node is not None:
-            rule_ids = tuple(sorted({str(v.get("rule_id", "")) for v in vdicts}))
+            rule_ids = tuple(sorted(rid for v in vdicts if (rid := str(v.get("rule_id", "")))))
             node.record_state(
                 pass_number,
                 phase,

@@ -145,8 +145,9 @@ def resolve_file_line_to_node(
 
     best: str = ""
     best_span = float("inf")
-    for i in range(max(0, idx - 1), min(len(ranges), idx + 3)):
-        ls, le, nid = ranges[i]
+    for ls, le, nid in ranges:
+        if ls > line:
+            break
         if ls <= line <= le:
             span = le - ls
             if span < best_span:

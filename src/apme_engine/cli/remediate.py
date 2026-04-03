@@ -210,7 +210,7 @@ def _emit_json(
     patches: list[object],
     report: FixReport | None,
 ) -> None:
-    """Write structured JSON to stdout — matches ``check --json`` schema.
+    """Write structured JSON to stdout.
 
     Args:
         violations: Remaining violations as dicts.
