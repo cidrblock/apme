@@ -80,7 +80,7 @@ User runs:  apme check /path/to/project
 │     │  │                                                  │      │
 │     │  ├─► OPA :50054                                     │      │
 │     │  │   - json.loads(hierarchy_payload)                 │      │
-│     │  │   - opa eval via subprocess (ADR-009)            │      │
+│     │  │   - opa eval via subprocess            │      │
 │     │  │   - Rego eval: data.apme.rules.violations        │      │
 │     │  │   → violations[] + ValidatorDiagnostics          │      │
 │     │  │                                                  │      │
@@ -175,7 +175,7 @@ Per-module `RiskAnnotator` subclasses inspect each `TaskCall` and attach `RiskAn
 
 Annotations are attached to the `TaskCall` and serialized into the hierarchy payload's `annotations` array, making them available to OPA rules (e.g., R118 checks for `inbound_transfer`).
 
-### Stage 5: Build hierarchy payload
+### Stage 4: Build hierarchy payload
 
 Serializes the tree into a flat JSON structure consumable by OPA and other payload-based validators:
 

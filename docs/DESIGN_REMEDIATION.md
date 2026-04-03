@@ -100,10 +100,10 @@ These are mechanical rewrites where the correct output is unambiguous given the 
 
 - **L021** — add `mode: '0644'` to `file`/`copy`/`template` tasks missing an explicit mode
 - **L007** — replace `ansible.builtin.shell` with `ansible.builtin.command` when no shell features are used
-- **M001** — rewrite short module names to FQCN using `resolved_fqcn` from ansible-core introspection or OPA L005; escalates to AI (Tier 2) when no FQCN can be resolved
+- **M001** — rewrite short module names to FQCN using `resolved_fqcn` from ansible-core introspection or OPA L005
 - **M005** — rename deprecated parameter (`sudo:` → `become:`)
 
-The transform function receives the file content and violation, returns the corrected content. No ambiguity, no judgment.
+The transform function receives a `CommentedMap` task and the violation dict, modifies the task in-place, and returns `True` if changed. No ambiguity, no judgment.
 
 ### Tier 2: AI-Proposable Fixes (Abbenay AIProvider)
 
@@ -274,7 +274,7 @@ The LLM receives the node's YAML and violations via `AINodeContext`. It returns 
 
 ### Graph-Native Application
 
-AI fixes are applied through `ContentGraph.apply_ai_fix()`, which updates the node's content and records a `NodeState` with `source="ai"`. The graph engine tracks content hashes to detect changes and re-validates. AI proposals use the same approval semantics as deterministic transforms — they appear as pending proposals with `source="ai"` and can be selectively approved.
+AI fixes are applied via `node.update_from_yaml(fix.fixed_snippet)` on the `ContentNode`, which updates the node's content and marks it dirty. The graph engine records a `NodeState` with `source="ai"` and tracks content hashes to detect changes. After application, the graph is rescanned via `rescan_fn` to validate. AI proposals use the same approval semantics as deterministic transforms — they appear as pending proposals with `source="ai"` and can be selectively approved via `approve_pending(source_filter="ai")`.
 
 ### CLI Modes
 
@@ -286,101 +286,94 @@ AI fixes are applied through `ContentGraph.apply_ai_fix()`, which updates the no
 
 ### Graceful Degradation
 
-Without `--ai`, Tier 2 violations are reported as "AI-candidate" with a note about `--ai`. With `--ai`, if the Abbenay daemon is unreachable, the CLI exits with a clear error — the user explicitly opted in and deserves an explicit failure.
+Without `--ai`, Tier 2 violations are reported as "AI-candidate" with a note about `--ai`. With `--ai`, if the Abbenay daemon is unreachable, the provider logs a warning and returns `None` — AI escalation is skipped gracefully and remaining violations fall to Tier 3 (manual review).
 
 ## Convergence Loop
 
 ### Algorithm
 
 ```python
-def remediate(files, max_passes=5):
+async def remediate(graph, violations, registry, max_passes=5):
     prev_count = float("inf")
+    ai_proposals = []
 
     for pass_num in range(1, max_passes + 1):
-        violations = scan(files)
-        fixable = [v for v in violations if is_finding_resolvable(v, registry)]
+        tier1, tier2, _ = partition_violations(violations, registry)
 
-        if not fixable:
-            break  # nothing left to fix deterministically
+        # Phase A: Tier 1 deterministic transforms
+        if tier1:
+            applied = await _apply_tier1(graph, registry, tier1)
 
-        for v in fixable:
-            content = read_file(v["file"])
-            result = registry.apply(v["rule_id"], content, v)
-            if result.applied:
-                write_file(v["file"], result.content)
+            if applied == 0:
+                break
 
-        # Re-check progress (internal re-scan)
-        new_violations = scan(files)
-        new_count = len(new_violations)
+            violations = await rescan_fn(graph, graph.dirty_nodes)
+            new_tier1, new_tier2, _ = partition_violations(violations, registry)
+            new_fixable = len(new_tier1)
 
-        if new_count >= prev_count:
-            # Oscillation or no progress — bail
-            break
+            if new_fixable >= prev_count:
+                break  # oscillation
 
-        prev_count = new_count
+            prev_count = new_fixable
+            if new_fixable > 0:
+                continue
 
-        if new_count == 0:
-            break  # fully converged
+            tier1, tier2 = new_tier1, new_tier2
 
-    # After deterministic passes (Tier 1), partition remaining into Tier 2 + 3
-    remaining = scan(files)
-    tier2 = [v for v in remaining
-             if not is_finding_resolvable(v, registry) and v.get("ai_proposable", True)]
-    tier3 = [v for v in remaining
-             if not is_finding_resolvable(v, registry) and not v.get("ai_proposable", True)]
+        # Phase B: Tier 2 AI transforms (when tier1 cleared)
+        if not tier1 and tier2 and ai_provider is not None:
+            ai_proposals.extend(await _apply_ai_transforms(graph, tier2))
 
-    ai_results = escalate_to_ai(tier2)  # no-op if AI unavailable
+            if graph.dirty_nodes:
+                violations = await rescan_fn(graph, graph.dirty_nodes)
 
-    return FixReport(
-        passes=pass_num,
-        fixed=prev_initial_count - len(remaining),
-        remaining_ai=tier2,         # Tier 2: AI-proposed patches
-        remaining_manual=tier3,     # Tier 3: manual review only
-        ai_proposed=ai_results,
-    )
+    approve_pending(source_filter="deterministic")
+    return GraphFixReport(...)
 ```
 
 ### Oscillation Detection
 
-An oscillation occurs when a fix introduces a new violation that triggers another fix that re-introduces the original. Detection is simple: if the violation count does not decrease after a pass, stop. The `max_passes` parameter (default 5) provides a hard ceiling.
+An oscillation occurs when a fix introduces a new violation that triggers another fix that re-introduces the original. Detection compares the **Tier-1-fixable** violation count (not total) after each pass. If the fixable count does not decrease, the loop stops. The `max_passes` parameter (default 5) provides a hard ceiling.
 
 ### Convergence Report
 
 ```python
 @dataclass
-class FixReport:
-    passes: int                     # number of convergence passes executed
-    fixed: int                      # violations resolved by Tier 1 transforms
-    remaining_ai: list[dict]        # Tier 2: violations with AI proposals
-    remaining_manual: list[dict]    # Tier 3: violations requiring manual review
-    ai_proposed: list[dict]         # AI-suggested patches (pending review)
-    oscillation_detected: bool      # True if loop bailed due to no progress
+class GraphFixReport:
+    passes: int                           # convergence passes executed
+    oscillation: bool                     # True if bailed due to no progress
+    fixed_violations: list[ViolationDict] # violations resolved by Tier 1
+    remaining_violations: list[ViolationDict]  # all remaining (Tier 2 + 3)
+    ai_proposals: list[AINodeProposal]    # AI-proposed node fixes
+    step_diffs: list[StepDiff]            # per-pass diff records
+    nodes_modified: set[str]              # node IDs with content changes
+    applied_patches: list[FilePatch]      # file-level patches (caller-filled)
 ```
 
 ## Progress Streaming
 
-`GraphRemediationEngine.remediate()` runs inside the async event loop via `run_in_executor()` for blocking graph operations. Without explicit progress plumbing, the gRPC stream (and downstream WebSocket) goes silent for the entire remediation duration — often minutes for large projects with AI escalation.
+`GraphRemediationEngine.remediate()` is an `async def` coroutine that runs as an `asyncio.create_task` alongside a queue drain loop. Without explicit progress plumbing, the gRPC stream (and downstream WebSocket) goes silent for the entire remediation duration — often minutes for large projects with AI escalation.
 
 Three layers ensure continuous feedback:
 
 ### ProgressCallback
 
-A `Callable[[str, str, float], None]` (`phase`, `message`, `fraction`) is threaded into `GraphRemediationEngine` and `_scan_pipeline`. Each component calls back at key milestones:
+A `Callable[[str, str, float, int], None]` (`phase`, `message`, `fraction`, `level`) is threaded into `GraphRemediationEngine` and `_scan_pipeline`. Each component calls back at key milestones:
 
 | Source | Phase | Example messages |
 |--------|-------|-----------------|
-| `_scan_pipeline` | `scan` | `Dispatching to 4 validators...`, `Gitleaks: 0 findings` |
-| `GraphRemediationEngine` | `tier1` | `Pass 1/5: scanning...`, `Pass 1: 113 transforms applied` |
-| `GraphRemediationEngine` | `ai` | `AI: node pb:site.yml#play:0#task:1`, `AI: 12/42 nodes` |
+| `_scan_pipeline` | `scan` | `Dispatching to 4 validators...`, `Gitleaks: 0 findings [...]` |
+| `GraphRemediationEngine` | `graph-tier1` | `Pass 1/5: scanning...`, `Pass 1: 113 transforms applied` |
+| `GraphRemediationEngine` | `graph-ai` | `AI attempt 1/2: 12 candidates` |
 
-### Thread-safe Queue and Drain Loop
+### Async Queue and Drain Loop
 
-Because `remediate()` runs in an executor thread, callbacks cannot directly `yield` into the async generator. Instead:
+Because `remediate()` runs as a concurrent async task, progress is bridged through an async queue:
 
 1. `_session_process` creates an `asyncio.Queue[ProgressUpdate | None]`.
-2. The callback posts updates via `loop.call_soon_threadsafe(queue.put_nowait, update)`.
-3. A drain loop (`while not remediate_future.done()`) polls the queue with a 1-second timeout and yields each `ProgressUpdate` as a `SessionEvent(progress=...)`.
-4. After the future completes, remaining queued items are drained.
+2. The callback posts updates via `queue.put_nowait(update)`.
+3. A drain loop (`while not remediate_task.done()`) polls the queue with a 1-second timeout and yields each `ProgressUpdate` as a `SessionEvent(progress=...)`.
+4. After the task completes, remaining queued items are drained.
 
 ### Heartbeat
 
@@ -394,12 +387,12 @@ A concurrent `asyncio` task sends a generic `ProgressUpdate(phase="heartbeat", m
 
 ```protobuf
 service Primary {
-  rpc Scan(ScanRequest) returns (ScanResponse);
   rpc Format(FormatRequest) returns (FormatResponse);
   rpc FormatStream(stream ScanChunk) returns (FormatResponse);
-  rpc FixSession(stream SessionCommand) returns (stream SessionEvent);
   rpc Health(HealthRequest) returns (HealthResponse);
-  // ScanStream removed (ADR-039). FixSession carries ScanChunk uploads for check and remediate.
+  rpc FixSession(stream SessionCommand) returns (stream SessionEvent);  // ADR-028, ADR-039
+  rpc ListAIModels(ListAIModelsRequest) returns (ListAIModelsResponse);
+  // Scan and ScanStream removed (ADR-039). FixSession carries ScanChunk uploads for check and remediate.
 }
 
 message FixOptions {
@@ -410,6 +403,8 @@ message FixOptions {
   bool enable_ai = 5;               // opt-in AI escalation
   bool enable_agentic = 6;          // Tier 3 (future)
   string ai_model = 7;
+  string session_id = 8;
+  repeated string galaxy_servers = 9;
 }
 
 // Client -> Server: upload chunks, then approval/extend/close commands
@@ -516,5 +511,5 @@ Phase 6: Summary
 3. **Convergence loop** — check (internal scan) → transform → re-check loop with oscillation detection (done)
 4. **`FixSession` RPC** — bidirectional streaming gRPC contract on Primary (done — ADR-028)
 5. **CLI `remediate` integration** — interactive review, `--apply`, `--check`, `--auto-approve` (done)
-6. **AI escalation** — `AIProvider` protocol + `AbbenayProvider` + hybrid validation loop (in progress — Phase 3)
+6. **AI escalation** — `AIProvider` protocol + `AbbenayProvider` + graph-native AI convergence (done — Phase 3)
 7. **Web UI remediation queue** — accept/reject AI proposals (Phase 4)

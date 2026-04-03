@@ -167,19 +167,19 @@ Classification happens server-side in `primary_server.py` before proto serializa
 
 - Every violation dict now carries two extra fields (`remediation_class`, `remediation_resolution`)
 - Code that processes violations must handle mutable classification (not a static lookup)
-- The `RemediationEngine` convergence loop must update resolution on failures, adding complexity to the loop
+- The `GraphRemediationEngine` convergence loop must update resolution on failures, adding complexity to the loop
 
 ### Neutral
 
 - The `TransformRegistry` remains the initial authority for `auto-fixable` — this decision does not change how transforms are registered, only how their outcomes are tracked
-- AI resolution states (`ai-proposed`, `ai-failed`, `ai-low-confidence`, `user-rejected`) are populated by the `AIProvider` integration — see ADR-024 and `docs/DESIGN_AI_ESCALATION.md`
+- AI resolution states (`ai-proposed`, `ai-failed`, `ai-low-confidence`, `user-rejected`) are populated by the `AIProvider` integration — see ADR-025 and `docs/DESIGN_AI_ESCALATION.md`
 
 ## Implementation Notes
 
 - `RemediationClass` and `RemediationResolution` are `str, Enum` (not `StrEnum`) for Python 3.10 compatibility
 - `add_classification_to_violations()` mutates the violation list in place and returns `None` — callers should not capture the return value
 - The `_to_str_value()` helper in `partition.py` handles both enum members and plain strings when extracting values for dict lookups (necessary because `str(enum_member)` returns `"ClassName.MEMBER"` with `str, Enum`)
-- The engine sets `TRANSFORM_FAILED` when `registry.apply()` returns `applied=False` and reclassifies to `AI_CANDIDATE`
+- The engine sets `TRANSFORM_FAILED` when `registry.apply_node()` returns `False` and reclassifies to `AI_CANDIDATE`
 - The engine sets `OSCILLATION` on remaining Tier 1 violations when the convergence loop detects non-decreasing fixable counts
 
 ## Related Decisions
@@ -187,7 +187,8 @@ Classification happens server-side in `primary_server.py` before proto serializa
 - ADR-008: Rule ID conventions — classification is orthogonal to rule IDs; the same rule can have different classification per finding
 - ADR-009: Remediation engine — this ADR refines the three-tier model from static per-rule to dynamic per-finding
 - ADR-020: Reporting service — will consume `remediation_class` and `remediation_resolution` fields for funnel metrics and trend analysis
-- ADR-024: AIProvider protocol — defines the abstraction that populates the AI resolution states
+- ADR-025: AIProvider protocol — defines the abstraction that populates the AI resolution states
+- ADR-044: Node identity and progression model — graph-based convergence replaces file-based engine
 
 ---
 

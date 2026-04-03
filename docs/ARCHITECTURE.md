@@ -2,7 +2,7 @@
 
 ## Overview
 
-APME is an eight-container microservice deployed as a single Podman pod. The Primary service runs the engine (parse + annotate), then fans validation out **in parallel** to four independent validator backends over a unified gRPC contract. The Gateway provides a REST API and gRPC Reporting service for the React UI. The CLI is ephemeral — run on-the-fly with the project directory mounted.
+APME is a multi-container microservice deployed as a single Podman pod (nine containers in the full reference deployment including Abbenay). The Primary service runs the engine (parse + annotate), then fans validation out **in parallel** to four independent validator backends over a unified gRPC contract. The Gateway provides a REST API and gRPC Reporting service for the React UI. The CLI is ephemeral — run on-the-fly with the project directory mounted.
 
 All inter-service communication is gRPC. The Gateway additionally exposes a REST API for the UI. There is no message queue, no service discovery. Containers in the same pod share `localhost`; addresses are fixed by convention.
 
@@ -64,16 +64,15 @@ Proto definitions live in `proto/apme/v1/`. Generated Python stubs in `src/apme/
 
 ```protobuf
 service Primary {
-  rpc Scan(ScanRequest) returns (ScanResponse);
   rpc Format(FormatRequest) returns (FormatResponse);
   rpc FormatStream(stream ScanChunk) returns (FormatResponse);
   rpc Health(HealthRequest) returns (HealthResponse);
   rpc FixSession(stream SessionCommand) returns (stream SessionEvent);  // ADR-028, ADR-039
-  // ... ListAIModels, etc.
+  rpc ListAIModels(ListAIModelsRequest) returns (ListAIModelsResponse);
 }
 ```
 
-**`ScanStream` was removed (ADR-039).** **Check** and **remediate** are user-facing actions; the engine uses **`FixSession`** internally for both (chunked **`ScanChunk`** uploads in `SessionCommand`). Unary **`Scan`** accepts a **`ScanRequest`** (optional **`ScanOptions`**, **`scan_id`**) and returns **`ScanResponse`** with merged violations, **`ScanDiagnostics`**, and **`ScanSummary`**. **`FixSession`** is bidirectional streaming for progress, AI proposal review, and session resume.
+**`Scan` and `ScanStream` were removed (ADR-039).** **Check** and **remediate** are user-facing actions; the engine uses **`FixSession`** internally for both (chunked **`ScanChunk`** uploads in `SessionCommand`). **`FixSession`** is bidirectional streaming for progress, AI proposal review, and session resume.
 
 **`ScanOptions`** carries `repeated RuleConfig rule_configs` (ADR-041) — per-rule overrides that control `enabled`, `severity`, and `enforced` flags. When `rule_configs_complete = true` (Gateway path), the Primary performs a **bidirectional audit**: it hard-fails the scan if the config references unknown rule IDs *or* omits rules the engine knows. For CLI-originated scans (`rule_configs_complete = false`), unknown IDs produce a warning only. The Primary filters disabled rules from fan-out results and overrides severity labels before returning violations.
 
@@ -144,7 +143,7 @@ All gRPC servers use `grpc.aio` (fully async). This means multiple scan requests
 |---------|---------------------|--------------------------|
 | Primary | `asyncio.gather()` fan-out; engine scan via `run_in_executor()` | 16 |
 | Native | CPU-bound rules via `run_in_executor()` | 32 |
-| OPA | True async HTTP via `httpx.AsyncClient` | 32 |
+| OPA | Blocking `opa eval` subprocess via `run_in_executor()` | 32 |
 | Ansible | Blocking venv build + subprocess via `run_in_executor()` | 8 |
 | Gitleaks | Blocking subprocess via `run_in_executor()` | 16 |
 
@@ -184,13 +183,12 @@ All validator logs are prefixed with `[req=xxx]` for end-to-end correlation acro
 
 ## OPA container internals
 
-The OPA container runs a multi-process architecture:
+The OPA container uses `opa eval` subprocess invocations:
 
-1. **OPA binary** starts as a REST server on `localhost:8181` with the Rego bundle mounted
-2. **`entrypoint.sh`** waits for OPA to become healthy
-3. **`apme-opa-validator`** (Python gRPC wrapper) starts on port 50054, receives `ValidateRequest`, extracts `hierarchy_payload`, POSTs it to the local OPA REST API, and converts the response to `ValidateResponse`
+1. **OPA binary** is available in the container (the entrypoint may start an OPA REST server on `localhost:8181` for compatibility, but the validator does not use it)
+2. **`apme-opa-validator`** (Python gRPC wrapper) starts on port 50054, receives `ValidateRequest`, extracts `hierarchy_payload`, invokes `opa eval` via subprocess with the Rego bundle, and converts the JSON output to `ValidateResponse`
 
-This keeps OPA's native REST interface intact while presenting a uniform gRPC contract to Primary.
+The subprocess approach avoids an HTTP dependency and keeps OPA as a stateless evaluation tool. See AGENTS.md invariant #9.
 
 ## Gitleaks container internals
 
