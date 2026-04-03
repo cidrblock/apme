@@ -41,6 +41,7 @@ Decisions that are fully reflected in the codebase.
 | [ADR-033](ADR-033-centralized-log-bridge.md) | Centralized Log Bridge with gRPC Transport | 2026-03-22 |
 | [ADR-037](ADR-037-project-centric-ui-model.md) | Project-Centric UI Model with Session Abstraction | 2026-03-24 |
 | [ADR-039](ADR-039-unified-operation-stream.md) | Unified Operation Stream — Check and Remediate | 2026-03-24 |
+| [ADR-044](ADR-044-node-identity-progression-model.md) | Node Identity and Progression Model | 2026-03-27 |
 | [ADR-047](ADR-047-tox-developer-orchestration.md) | tox as Sole Developer Orchestration Tool | 2026-03-30 |
 
 ## Accepted
@@ -68,7 +69,6 @@ Decisions under consideration — not yet accepted or implemented.
 | [ADR-038](ADR-038-public-data-api.md) | Public Data API for Platform Consumers | 2026-03-25 |
 | [ADR-041](ADR-041-rule-catalog-override-architecture.md) | Rule Catalog & Override Architecture | 2026-03-25 |
 | [ADR-042](ADR-042-third-party-plugin-services.md) | Third-Party Plugin Services | 2026-03-20 |
-| [ADR-044](ADR-044-node-identity-progression-model.md) | Node Identity and Progression Model | 2026-03-27 |
 | [ADR-045](ADR-045-galaxy-auth-delegation.md) | Delegate Galaxy Authentication to ansible-galaxy, Galaxy Config as Scan Metadata | 2026-03-28 |
 | [ADR-046](ADR-046-ai-assisted-report-generation.md) | AI-Assisted Report Generation | 2026-03-30 |
 

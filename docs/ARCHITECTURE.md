@@ -2,7 +2,7 @@
 
 ## Overview
 
-APME is an eight-container microservice deployed as a single Podman pod. The Primary service runs the engine (parse + annotate), then fans validation out **in parallel** to four independent validator backends over a unified gRPC contract. The Gateway provides a REST API and gRPC Reporting service for the React UI. The CLI is ephemeral — run on-the-fly with the project directory mounted.
+APME is a multi-container microservice deployed as a single Podman pod. The Primary service runs the engine (parse + annotate), then fans validation out **in parallel** to four independent validator backends over a unified gRPC contract. The Gateway provides a REST API and gRPC Reporting service for the React UI. The CLI is ephemeral — run on-the-fly with the project directory mounted.
 
 All inter-service communication is gRPC. The Gateway additionally exposes a REST API for the UI. There is no message queue, no service discovery. Containers in the same pod share `localhost`; addresses are fixed by convention.
 
@@ -19,7 +19,7 @@ All gRPC servers use **`grpc.aio`** (fully async). Blocking work (engine scan, s
 │  │          │  │          │  │          │  │          │  │          │ │
 │  │ engine + │  │ Python   │  │ OPA bin  │  │ ansible- │  │ gitleaks │ │
 │  │ orchestr │  │ rules on │  │ + gRPC   │  │ core     │  │ + gRPC   │ │
-│  │ session  │  │ scandata │  │ wrapper  │  │ venvs    │  │ wrapper  │ │
+│  │ session  │  │ graph    │  │ wrapper  │  │ venvs    │  │ wrapper  │ │
 │  │  venvs   │  │          │  │          │  │ (ro)     │  │          │ │
 │  └────┬─────┘  └──────────┘  └──────────┘  └──────────┘  └──────────┘ │
 │       │                                                               │
@@ -27,12 +27,12 @@ All gRPC servers use **`grpc.aio`** (fully async). Blocking work (engine scan, s
 │  │      Galaxy Proxy :8765 (PEP 503)        │                         │
 │  └──────────────────────────────────────────┘                         │
 │                                                                       │
-│  ┌──────────────────┐  ┌──────────────────┐                           │
-│  │ Gateway :8080    │  │ UI :8081 (nginx) │                           │
-│  │ REST API +       │◄─┤ React SPA        │                           │
-│  │ gRPC Reporting   │  │ /api/ → Gateway  │                           │
-│  │ :50060 (SQLite)  │  │                  │                           │
-│  └──────────────────┘  └──────────────────┘                           │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐     │
+│  │ Gateway :8080    │  │ UI :8081 (nginx) │  │ Abbenay :50057   │     │
+│  │ REST API +       │◄─┤ React SPA        │  │ AI inference     │     │
+│  │ gRPC Reporting   │  │ /api/ → Gateway  │  │ gateway          │     │
+│  │ :50060 (SQLite)  │  │                  │  │ (optional)       │     │
+│  └──────────────────┘  └──────────────────┘  └──────────────────┘     │
 └───────────────────────────────────────────────────────────────────────┘
 
      ┌──────────┐
@@ -47,13 +47,14 @@ All gRPC servers use **`grpc.aio`** (fully async). Blocking work (engine scan, s
 | Service | Image | Port | Role |
 |---------|-------|------|------|
 | **Primary** | `apme-primary` | 50051 | Runs the engine (parse → annotate → hierarchy); manages session-scoped venvs (`VenvSessionManager`); fans out `ValidateRequest` to all validators in parallel; merges, deduplicates, and returns violations. Pushes `FixCompletedEvent` to the Gateway via gRPC. |
-| **Native** | `apme-native` | 50055 | Python rules operating on deserialized `scandata` (the full in-memory model). Rules L026–L060, M005/M010, P001–P004, R101–R501 |
-| **OPA** | `apme-opa` | 50054 | OPA binary (REST on 8181 internally) + Python gRPC wrapper. Rego rules L003–L025, M006/M008/M009/M011, R118 on the hierarchy JSON |
+| **Native** | `apme-native` | 50055 | Python graph rules operating on the deserialized `ContentGraph` (via `content_graph_data`). Rules L026–L060, M005/M010, P001–P004, R101–R501 |
+| **OPA** | `apme-opa` | 50054 | OPA binary (`opa eval` subprocess) + Python gRPC wrapper. Rego rules L003–L025, M006/M008/M009/M011, R118 on the hierarchy JSON |
 | **Ansible** | `apme-ansible` | 50053 | Ansible-runtime checks using session-scoped venvs (shared read-only via `/sessions` volume). Rules L057–L059, M001–M004 |
 | **Gitleaks** | `apme-gitleaks` | 50056 | Gitleaks binary + Python gRPC wrapper. Scans raw files for hardcoded secrets, API keys, private keys. Filters vault-encrypted content and Jinja2 expressions. Rules SEC:* (800+ patterns) |
 | **Galaxy Proxy** | `apme-galaxy-proxy` | 8765 | PEP 503 simple repository API that converts Galaxy collection tarballs to pip-installable Python wheels. Caching is the proxy's concern — the engine has zero cache management code |
 | **Gateway** | `apme-gateway` | 8080 / 50060 | Dual-protocol: FastAPI REST API (:8080) for the UI and a gRPC Reporting service (:50060) that receives `FixCompletedEvent` and `RegisterRules` from Primary. Persists activity history, rule catalog, rule overrides, and ContentGraph snapshots to SQLite. Health endpoint probes all upstream services. REST endpoints include `/api/v1/rules` for rule catalog management (ADR-041) and `/api/v1/projects/{id}/graph` for ContentGraph visualization. |
 | **UI** | `apme-ui` | 8081 | React SPA served by nginx. Proxies `/api/` to the Gateway at `127.0.0.1:8080`. Displays activity history, violations, sessions, system health, and rule catalog management (ADR-041). |
+| **Abbenay** | `apme-abbenay` | 50057 | AI inference gateway for Tier 2 (AI-assisted) remediation. Receives `propose_node_fix` requests from the graph engine; translates to LLM API calls (Azure OpenAI, etc.). Optional — AI escalation degrades gracefully when absent. |
 | **CLI** | `apme-cli` | — | Ephemeral. **Check** and **remediate** are user-facing actions; the engine uses **`FixSession`** internally for both (ADR-039). The CLI streams project files as chunked **`ScanChunk`** messages on that RPC (check mode omits remediate options). Run with `--pod apme-pod` and CWD mounted |
 
 ## gRPC service contracts
@@ -64,16 +65,15 @@ Proto definitions live in `proto/apme/v1/`. Generated Python stubs in `src/apme/
 
 ```protobuf
 service Primary {
-  rpc Scan(ScanRequest) returns (ScanResponse);
   rpc Format(FormatRequest) returns (FormatResponse);
   rpc FormatStream(stream ScanChunk) returns (FormatResponse);
   rpc Health(HealthRequest) returns (HealthResponse);
   rpc FixSession(stream SessionCommand) returns (stream SessionEvent);  // ADR-028, ADR-039
-  // ... ListAIModels, etc.
+  rpc ListAIModels(ListAIModelsRequest) returns (ListAIModelsResponse);
 }
 ```
 
-**`ScanStream` was removed (ADR-039).** **Check** and **remediate** are user-facing actions; the engine uses **`FixSession`** internally for both (chunked **`ScanChunk`** uploads in `SessionCommand`). Unary **`Scan`** accepts a **`ScanRequest`** (optional **`ScanOptions`**, **`scan_id`**) and returns **`ScanResponse`** with merged violations, **`ScanDiagnostics`**, and **`ScanSummary`**. **`FixSession`** is bidirectional streaming for progress, AI proposal review, and session resume.
+**`Scan` and `ScanStream` were removed (ADR-039).** **Check** and **remediate** are user-facing actions; the engine uses **`FixSession`** internally for both (chunked **`ScanChunk`** uploads in `SessionCommand`). **`FixSession`** is bidirectional streaming for progress, AI proposal review, and session resume.
 
 **`ScanOptions`** carries `repeated RuleConfig rule_configs` (ADR-041) — per-rule overrides that control `enabled`, `severity`, and `enforced` flags. When `rule_configs_complete = true` (Gateway path), the Primary performs a **bidirectional audit**: it hard-fails the scan if the config references unknown rule IDs *or* omits rules the engine knows. For CLI-originated scans (`rule_configs_complete = false`), unknown IDs produce a warning only. The Primary filters disabled rules from fan-out results and overrides severity labels before returning violations.
 
@@ -93,12 +93,23 @@ Every validator container implements this service. The `ValidateRequest` carries
 | `project_root` | `string` | All |
 | `files` | `repeated File` | Ansible (writes to temp dir), Gitleaks (writes to temp dir) |
 | `hierarchy_payload` | `bytes` (JSON) | OPA, Ansible |
-| `scandata` | `bytes` (jsonpickle) | Native |
+| `scandata` | `bytes` | Legacy/deprecated — defined in proto but no longer populated by Primary. Retained for backward compatibility. |
+| `content_graph_data` | `bytes` (JSON) | Native (graph rules via `ContentGraph.from_dict()`) |
 | `ansible_core_version` | `string` | Ansible |
 | `collection_specs` | `repeated string` | Ansible |
 | `request_id` | `string` | All (correlation ID for logging/tracing) |
+| `session_id` | `string` | Ansible (venv reuse) |
+| `venv_path` | `string` | Ansible (resolved venv path, read-only) |
 
-The `ValidateResponse` echoes back `request_id` for correlation and includes a `ValidatorDiagnostics` message with timing data, violation counts, and validator-specific metadata. Each validator ignores the data fields it doesn't need. This keeps the contract uniform — adding a new validator means implementing one RPC and choosing which fields to consume.
+Three distinct serialization methods serve different validator needs:
+
+| Serialization | Format | Consumers | Why |
+|--------------|--------|-----------|-----|
+| **`hierarchy_payload`** | JSON (`json.dumps`) | OPA, Ansible | Flat hierarchy structure consumable by Rego rules and ansible-core introspection |
+| **`content_graph_data`** | JSON (`ContentGraph.to_dict(slim=True)`) | Native, Ansible, Gitleaks | Full graph topology with node identity for graph rules, file/line→node lookup, and finding attribution; `slim=True` strips progression/state to reduce wire size |
+| **`files`** | Protobuf `File` messages | Ansible, Gitleaks | Raw file content for filesystem-based tools (ansible-lint, gitleaks binary) |
+
+Each validator ignores the fields it doesn't need. This keeps the contract uniform — adding a new validator means implementing one RPC and choosing which fields to consume.
 
 ### Reporting (`reporting.proto`)
 
@@ -144,7 +155,7 @@ All gRPC servers use `grpc.aio` (fully async). This means multiple scan requests
 |---------|---------------------|--------------------------|
 | Primary | `asyncio.gather()` fan-out; engine scan via `run_in_executor()` | 16 |
 | Native | CPU-bound rules via `run_in_executor()` | 32 |
-| OPA | True async HTTP via `httpx.AsyncClient` | 32 |
+| OPA | Blocking `opa eval` subprocess via `run_in_executor()` | 32 |
 | Ansible | Blocking venv build + subprocess via `run_in_executor()` | 8 |
 | Gitleaks | Blocking subprocess via `run_in_executor()` | 16 |
 
@@ -176,21 +187,22 @@ All validator logs are prefixed with `[req=xxx]` for end-to-end correlation acro
 | Data | Format | Wire type | Producer | Consumer |
 |------|--------|-----------|----------|----------|
 | Hierarchy payload | JSON (`json.dumps`) | `bytes` in protobuf | Engine (Primary) | OPA, Ansible |
-| Scandata | jsonpickle (`jsonpickle.encode`) | `bytes` in protobuf | Engine (Primary) | Native |
+| ContentGraph | JSON (`ContentGraph.to_dict(slim=True)`) | `bytes` in protobuf | Engine (Primary) | Native |
 | Violations | Protobuf `Violation` messages | gRPC | All validators | Primary |
-| Project files | Protobuf `File` messages | gRPC | CLI | Primary, Ansible |
+| Project files | Protobuf `File` messages | gRPC | CLI | Primary, Ansible, Gitleaks |
 
-**jsonpickle** is used for scandata because the engine's in-memory model (`SingleScan`) contains complex Python objects (trees, contexts, specs, annotations) that standard JSON cannot represent. jsonpickle preserves types for round-trip deserialization.
+The engine produces three serialization formats from a single scan run. The **hierarchy payload** is a flat JSON structure designed for Rego evaluation and ansible-core introspection. The **ContentGraph** is a graph-based JSON representation (ADR-044) with node identity, types, edges, and YAML content — `slim=True` omits progression/state snapshots to reduce wire size. Native deserializes it via `ContentGraph.from_dict()` and runs graph rules against it.
+
+**Note:** jsonpickle is still used internally by the ARI engine for the `ScanContext.scandata` in-process object, but it is **not** sent over the wire to validators. The ContentGraph is extracted from `scandata.content_graph` in Primary and serialized as plain JSON.
 
 ## OPA container internals
 
-The OPA container runs a multi-process architecture:
+The OPA container uses `opa eval` subprocess invocations:
 
-1. **OPA binary** starts as a REST server on `localhost:8181` with the Rego bundle mounted
-2. **`entrypoint.sh`** waits for OPA to become healthy
-3. **`apme-opa-validator`** (Python gRPC wrapper) starts on port 50054, receives `ValidateRequest`, extracts `hierarchy_payload`, POSTs it to the local OPA REST API, and converts the response to `ValidateResponse`
+1. **OPA binary** is available in the container (the entrypoint may start an OPA REST server on `localhost:8181` for compatibility, but the validator does not use it)
+2. **`apme-opa-validator`** (Python gRPC wrapper) starts on port 50054, receives `ValidateRequest`, extracts `hierarchy_payload`, invokes `opa eval` via subprocess with the Rego bundle, and converts the JSON output to `ValidateResponse`
 
-This keeps OPA's native REST interface intact while presenting a uniform gRPC contract to Primary.
+The subprocess approach avoids an HTTP dependency and keeps OPA as a stateless evaluation tool. See AGENTS.md invariant #9.
 
 ## Gitleaks container internals
 
@@ -217,9 +229,10 @@ The wrapper adds Ansible-aware filtering:
 |------|---------|----------|
 | 50051 | Primary | gRPC |
 | 50053 | Ansible | gRPC |
-| 50054 | OPA | gRPC (wrapper; OPA REST on 8181 internal) |
+| 50054 | OPA | gRPC (wrapper; `opa eval` subprocess) |
 | 50055 | Native | gRPC |
 | 50056 | Gitleaks | gRPC (wrapper; gitleaks binary for detection) |
+| 50057 | Abbenay | gRPC (AI inference gateway; optional) |
 | 50060 | Gateway | gRPC (Reporting service) |
 | 8080 | Gateway | HTTP (REST API for UI) |
 | 8081 | UI | HTTP (nginx; proxies /api/ to Gateway) |

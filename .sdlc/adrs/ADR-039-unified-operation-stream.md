@@ -19,7 +19,7 @@ APME had two separate gRPC RPCs for analyzing content:
 
 2. **`FixSession`** (ADR-028): streams file bytes wrapped in `SessionCommand`,
    **formats files first** (YAML normalization), then runs a
-   `RemediationEngine` convergence loop with Tier 1 transforms.
+   `GraphRemediationEngine` convergence loop with Tier 1 transforms.
 
 The formatting step in `FixSession` normalizes content before scanning, which
 can expose violations that raw content does not trigger. Identical repository

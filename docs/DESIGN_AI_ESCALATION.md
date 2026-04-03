@@ -1,6 +1,6 @@
 # AI Escalation Design
 
-## Status: in progress
+## Status: implemented (Phase 3 complete)
 
 This document describes the AI escalation subsystem for Tier 2 violations. It extends the remediation engine (see `DESIGN_REMEDIATION.md`) with an LLM-backed proposal pipeline that validates, cleans up, and interactively presents AI-generated fixes.
 
@@ -44,9 +44,9 @@ The design prioritizes:
   |  |    for each remaining_ai node:                            |  |
   |  |      build AINodeContext from ContentGraph                |  |
   |  |      -> AIProvider.propose_node_fix()                     |  |
-  |  |      -> apply_ai_fix() on ContentGraph                   |  |
+  |  |      -> node.update_from_yaml(fix.fixed_snippet)          |  |
   |  |      -> re-validate via rescan_fn                         |  |
-  |  |      -> yield proposal (source="ai") to CLI              |  |
+  |  |    return GraphFixReport with ai_proposals                |  |
   |  +----------------------------------------------------------+  |
   |                                                                  |
   |  +-----------------+     +--------------------+                 |
@@ -96,17 +96,6 @@ from typing import Protocol
 from dataclasses import dataclass, field
 
 @dataclass
-class AIPatch:
-    """A single task-level fix proposed by an AI provider."""
-    rule_id: str
-    line_start: int
-    line_end: int
-    fixed_lines: str
-    explanation: str
-    confidence: float
-    diff_hunk: str = ""
-
-@dataclass
 class AISkipped:
     """A violation the AI could not fix, with an explanation."""
     rule_id: str
@@ -115,49 +104,30 @@ class AISkipped:
     suggestion: str
 
 @dataclass
-class AIProposal:
-    """AI-generated fixes for a single file (batch of patches)."""
-    file: str
-    original_yaml: str
-    fixed_yaml: str
-    patches: list[AIPatch]
-    diff: str
+class AINodeFix:
+    """AI-generated fix for a single graph node."""
+    fixed_snippet: str
+    rule_ids: list[str] = field(default_factory=list)
+    explanation: str = ""
+    confidence: float = 0.85
     skipped: list[AISkipped] = field(default_factory=list)
-    hybrid_transforms_applied: int = 0
 
 class AIProvider(Protocol):
-    async def propose_fixes(
+    async def propose_node_fix(
         self,
-        violations: list[ViolationDict],
-        file_content: str,
-        file_path: str,
+        context: AINodeContext,
         *,
         model: str | None = None,
-        feedback: str | None = None,
-    ) -> tuple[list[AIPatch] | None, list[AISkipped]]:
-        """Propose fixes for multiple violations in a single file (batch).
+    ) -> AINodeFix | None:
+        """Propose a fix for a single graph node.
 
-        Returns tuple of (patches or None on failure, skipped violations).
-        """
-        ...
-
-    async def propose_unit_fixes(
-        self,
-        violations: list[ViolationDict],
-        snippet: str,
-        file_path: str,
-        line_start: int,
-        line_end: int,
-        *,
-        model: str | None = None,
-        feedback: str | None = None,
-    ) -> tuple[list[AIPatch] | None, list[AISkipped]]:
-        """Propose fixes for violations within a single unit (task snippet).
-
-        Line numbers in returned patches refer to the original file.
+        The context carries the node's YAML, violations, parent context,
+        and best-practice guidance. Returns None on failure.
         """
         ...
 ```
+
+`AINodeContext` is built by `build_ai_node_context()` from `ai_context.py`, which extracts the node's YAML, violations, parent context, sibling snippets, and best-practice guidance from the `ContentGraph`.
 
 ### AbbenayProvider (Default Implementation)
 
@@ -165,12 +135,12 @@ class AIProvider(Protocol):
 
 Responsibilities:
 
-- **Auto-discovery**: find the Abbenay daemon via `$XDG_RUNTIME_DIR/abbenay/daemon.sock` or `~/.abbenay/daemon.sock`
-- **Preflight**: call `health_check()` before starting, fail fast if unreachable
-- **Prompt construction**: build a structured prompt from violation metadata, file content, ansible-doc output, and best practices
-- **Inline policy**: send `PolicyConfig` on every request (temperature: 0.0, json_only format, retry_on_invalid_json)
-- **Response parsing**: extract `fixed_yaml`, `explanation`, `confidence` from structured JSON response
-- **Error handling**: connection errors, timeouts, malformed responses return `None`
+- **Auto-discovery**: find the Abbenay daemon via `$XDG_RUNTIME_DIR/abbenay/daemon.sock`, `/run/user/<uid>/abbenay/daemon.sock`, or `/tmp/abbenay/daemon.sock`
+- **Provider resolution**: `_resolve_ai_provider()` does not preflight the daemon; it returns `None` only when AI is disabled or required configuration is missing (address, model, import). Runtime failures surface during `propose_node_fix()` and the graph engine catches/skips those nodes
+- **Prompt construction**: build a graph-native prompt from `AINodeContext` (node YAML, violations, parent context, sibling snippets, best practices)
+- **Inline policy**: send policy on every request (temperature: 0.0, json_only format, max_tokens: 8192, timeout: 60000)
+- **Response parsing**: extract `fixed_snippet`, `changes[]`, `skipped[]` from structured JSON response; aggregate confidence from `changes`
+- **Error handling**: connection errors, timeouts, and API failures raise exceptions; the graph engine catches them and skips the node
 
 ```python
 def discover_abbenay() -> str | None:
@@ -179,7 +149,8 @@ def discover_abbenay() -> str | None:
     candidates = []
     if xdg:
         candidates.append(Path(xdg) / "abbenay" / "daemon.sock")
-    candidates.append(Path.home() / ".abbenay" / "daemon.sock")
+    candidates.append(Path(f"/run/user/{os.getuid()}/abbenay/daemon.sock"))
+    candidates.append(Path("/tmp/abbenay/daemon.sock"))
     for sock in candidates:
         if sock.exists():
             return f"unix://{sock}"
@@ -192,46 +163,41 @@ def discover_abbenay() -> str | None:
 
 The core innovation: every AI proposal is re-validated through APME's own validators before presentation. If the AI introduces Tier 1-fixable side effects, deterministic transforms clean them up automatically. Only genuinely unfixable issues trigger an LLM retry.
 
-### Per-Violation Flow
+### Per-Node Flow
 
 ```
-  1. Build prompt
-     +-- violation metadata (rule_id, message, file, line)
-     +-- file content (full YAML)
-     +-- code window (10 lines before/after violation)
-     +-- ansible-doc output for relevant module (pre-fetched)
+  1. Build AINodeContext from ContentGraph
+     +-- node YAML (yaml_lines from ContentNode)
+     +-- violations targeting this node
+     +-- parent context (parent node's YAML, if any)
+     +-- sibling snippets (nearby tasks for context)
      +-- best practices (universal + rule-category-specific)
      +-- feedback from prior attempt (if retry)
 
-  2. LLM call (attempt 1)
-     +-- ai_provider.propose_fix() -> AIProposal | None
+  2. LLM call
+     +-- ai_provider.propose_node_fix(context) -> AINodeFix | None
 
   3. Parse check
-     +-- None / parse error -> resolution = AI_FAILED, skip
+     +-- None / parse error -> skip node
      +-- valid -> continue
 
-  4. Re-validate
-     +-- run validation (internal scan) on the proposed YAML
-     +-- clean (0 new violations) -> present to user
-     +-- new violations found -> step 5
+  4. Apply to graph
+     +-- node.update_from_yaml(fix.fixed_snippet)
+     +-- mark node dirty
+     +-- record NodeState(source="ai")
 
-  5. Hybrid cleanup
-     +-- partition new violations via is_finding_resolvable()
-     +-- Tier 1 fixable -> apply deterministic transforms
-     +-- re-check after transforms (internal re-scan)
-     +-- clean -> present to user (note transforms applied)
-     +-- still violations -> step 6
+  5. Re-validate (after all AI nodes in this pass)
+     +-- rescan_fn(graph, dirty_nodes)
+     +-- if new Tier 1 violations: post-AI cleanup pass
 
-  6. Retry decision
-     +-- attempt < 2 -> retry LLM with feedback (step 2)
-     |   feedback = "your fix introduced: [violation list]"
-     +-- attempt >= 2 -> resolution = AI_FAILED, skip
+  6. Retry decision (global, not per-node)
+     +-- ai_attempts < max_ai_attempts -> re-partition, repeat Phase B
+     +-- feedback = prior violations for previously-attempted nodes
 
-  7. User review (interactive, serial)
-     +-- y -> write patch, resolution = AI_PROPOSED
-     +-- n -> resolution = USER_REJECTED
-     +-- s -> skip all remaining
-     +-- q -> quit, remaining stay UNRESOLVED
+  7. User review (post-convergence)
+     +-- proposals emitted as AINodeProposal with before/after YAML
+     +-- approve via approve_pending(source_filter="ai")
+     +-- interactive: y/n/a/s/q per proposal
 ```
 
 ### Why Hybrid Cleanup Before Retry
@@ -244,11 +210,11 @@ The LLM might fix the semantic issue perfectly but leave a formatting or FQCN ga
 
 ### Max Attempts
 
-Two LLM calls per violation (initial + 1 retry with feedback). Rationale:
+`max_ai_attempts` (default 2) limits how many times Phase B (AI) runs globally within the convergence loop. Each pass sends all current Tier 2 nodes to the LLM. On retry, nodes that were previously attempted receive feedback describing what violations remained after their first fix.
 
-- One retry with specific feedback ("your fix introduced M001 on line 14") is usually sufficient
+- One retry with specific feedback is usually sufficient
 - More retries risk diminishing returns and increasing cost
-- Configurable via `max_ai_attempts` parameter (default 2)
+- Total LLM calls per session = `max_ai_attempts * len(tier2_nodes)`
 
 ---
 
@@ -256,54 +222,60 @@ Two LLM calls per violation (initial + 1 retry with feedback). Rationale:
 
 ### Prompt Template
 
+The prompt is built per-node by `_build_node_prompt()` in `abbenay_provider.py`. The structure (simplified; see `NODE_PROMPT_TEMPLATE` for the full template including the `Rules:` section):
+
 ```
-You are an Ansible remediation assistant. A static analysis rule has flagged
-an issue in an Ansible YAML file. Your task is to fix the issue while following
-Ansible best practices.
+You are an expert Ansible automation engineer and code reviewer.
+Fix the YAML violations listed below.
 
-## Violation
-- Rule: {rule_id}
-- Message: {message}
-- File: {file_path}
-- Line: {line}
+## Violations
+- [{rule_id}] {message} (line {line})
+...
 
-## Code Context (lines {start}-{end})
-{code_window}
+## YAML to fix
+```yaml
+{yaml_lines}
+```
 
-## Full File
-{file_content}
+{parent_context_section}
 
-## Module Documentation
-{ansible_doc_output}
+{sibling_context_section}
 
-## Best Practices
+## Ansible Best Practices
 {best_practices}
 
 {feedback_section}
 
 ## Instructions
-Fix the violation. Respond with a JSON object:
-{
-  "fixed_yaml": "the corrected YAML for the entire file",
-  "explanation": "one-sentence explanation of what you changed",
-  "confidence": 0.95
-}
 
-Rules:
-- Preserve all YAML comments
-- Maintain exact indentation (2 spaces)
-- Use FQCN for all modules (e.g., ansible.builtin.copy, not copy)
-- Use YAML syntax for task arguments, not key=value
-- Use true/false for booleans, not yes/no
-- Do not add or remove tasks, only fix the flagged issue
-- If you cannot fix the issue with confidence, set confidence to 0.0
+Return the COMPLETE corrected YAML for this task/block in "fixed_snippet".
+Do NOT return line numbers — just the corrected YAML text.
+
+Respond with ONLY this JSON (no markdown fences, no explanation outside JSON):
+{
+  "fixed_snippet": "<the entire corrected YAML for this task/block>",
+  "changes": [
+    {
+      "rule_id": "<rule ID fixed>",
+      "explanation": "<one-sentence explanation>",
+      "confidence": 0.95
+    }
+  ],
+  "skipped": [
+    {
+      "rule_id": "<rule ID that could not be fixed>",
+      "reason": "<why this cannot be auto-fixed>",
+      "suggestion": "<how the user can fix this manually>"
+    }
+  ]
+}
 ```
 
 ### Feedback Section (Retry Only)
 
 ```
 ## Previous Attempt Feedback
-Your previous fix introduced new violations:
+Your previous fix still has violations:
 - M001: Use FQCN for module 'copy' (line 14)
 - L008: Incorrect indentation (line 15)
 
@@ -312,25 +284,22 @@ Please correct these issues in your new response.
 
 ### Inline Policy
 
-Every request to Abbenay includes an inline `PolicyConfig`:
+Every request to Abbenay includes an inline policy dict:
 
 ```python
 policy = {
     "sampling": {"temperature": 0.0},
     "output": {
         "format": "json_only",
-        "max_tokens": 4096,
-        "system_prompt_snippet": SYSTEM_PROMPT,
-        "system_prompt_mode": "prepend",
+        "max_tokens": 8192,
     },
     "reliability": {
-        "retry_on_invalid_json": True,
-        "timeout": 30000,
+        "timeout": 60000,
     },
 }
 ```
 
-Temperature 0.0 ensures deterministic output. JSON-only format enables structured parsing. Retry-on-invalid-JSON handles transient LLM formatting issues at the Abbenay layer.
+Temperature 0.0 ensures deterministic output. JSON-only format enables structured parsing.
 
 ---
 
@@ -378,7 +347,7 @@ module_usage:
 |----------------|------------------------|
 | M001-M004 | fqcn |
 | L007, L008, L009 | yaml_formatting |
-| M006, M008 | module_usage |
+| M006, M008, M009 | module_usage |
 | L011, L012, L013 | naming |
 | L043, L046 | jinja2 |
 
@@ -399,43 +368,49 @@ The best practices YAML can be updated manually or via automation:
 
 ### Auto-Discovery
 
-When `--ai` is set, the CLI auto-discovers the Abbenay daemon:
+When `--ai` is set, Primary auto-discovers the Abbenay daemon:
 
 1. Check `$XDG_RUNTIME_DIR/abbenay/daemon.sock` (Linux standard)
-2. Fall back to `~/.abbenay/daemon.sock`
-3. Override with `--abbenay-addr host:port`
+2. Fall back to `/run/user/<uid>/abbenay/daemon.sock`
+3. Fall back to `/tmp/abbenay/daemon.sock`
+4. Override with `APME_ABBENAY_ADDR` env var
 
 ### Preflight Health Check
 
-Before entering the remediation loop:
+Before entering the remediation loop, `_resolve_ai_provider` in Primary checks prerequisites:
 
 ```python
-addr = args.abbenay_addr or discover_abbenay()
-if addr is None:
-    sys.exit("Error: --ai requires a running Abbenay daemon.\n"
-             "Start with: abbenay daemon start\n"
-             "Or specify: --abbenay-addr host:port")
+if not fix_opts or not fix_opts.enable_ai:
+    return None
 
-provider = AbbenayProvider(addr, token=args.abbenay_token)
-if not await provider.preflight():
-    sys.exit(f"Error: Abbenay daemon at {addr} is not healthy.")
+addr = os.environ.get("APME_ABBENAY_ADDR") or discover_abbenay()
+if not addr:
+    logger.warning("AI escalation requested but no Abbenay daemon found")
+    return None
+
+model = fix_opts.ai_model or os.environ.get("APME_AI_MODEL")
+if not model:
+    logger.warning("AI escalation requested but no model specified")
+    return None
+
+token = os.environ.get("APME_ABBENAY_TOKEN")
+provider = AbbenayProvider(addr, token=token, model=model)
 ```
 
-The `preflight()` method calls the Abbenay client's `health_check()` RPC -- the same `HealthCheck` service exposed by the Abbenay daemon.
+Graceful degradation: if the daemon address, model, or `abbenay_grpc` import is missing, `_resolve_ai_provider` returns `None` — AI escalation is disabled and Tier 2 violations fall to manual review.
 
-### Health Check Extension
+### Health Check
 
-The existing `apme health-check` subcommand is extended with `--include-ai`:
+The `apme health-check` subcommand checks all engine services:
 
 ```
-$ apme health-check --include-ai
+$ apme health-check
 
   primary  (localhost:50051)  ok   12ms
   native   (localhost:50055)  ok    8ms
   opa      (localhost:50054)  ok   15ms
   ansible  (localhost:50053)  ok   22ms
   proxy    (localhost:8765)   ok    5ms
-  abbenay  (unix:///run/user/1000/abbenay/daemon.sock)  ok  v2026.3.7-alpha  18ms
 ```
 
 ---
@@ -450,11 +425,15 @@ apme remediate [target] [options]
 AI Escalation:
   --ai                 Enable AI escalation for Tier 2 violations (opt-in)
   --model MODEL        Model for AI proposals (e.g., openai/gpt-4o)
-  --abbenay-addr ADDR  Daemon address (default: auto-discover from socket)
-  --abbenay-token TOK  Consumer auth token (or APME_ABBENAY_TOKEN env var)
+  --auto-approve       Approve all AI proposals without prompting (CI mode)
+
+Environment Variables:
+  APME_ABBENAY_ADDR    Daemon address (default: auto-discover from socket)
+  APME_ABBENAY_TOKEN   Consumer auth token
+  APME_AI_MODEL        Default AI model
 ```
 
-The existing `--no-ai` flag is replaced by `--ai` (opt-in). AI never runs unless explicitly requested.
+AI never runs unless explicitly requested via `--ai`.
 
 ### Interactive Review
 
@@ -477,7 +456,7 @@ AI validated (clean after hybrid cleanup, 2 transforms applied)
 Explanation: Replaced shell cp with ansible.builtin.copy for idempotency.
 Confidence: 0.92
 
-Apply this fix? [y]es / [n]o / [s]kip remaining / [q]uit:
+Apply this fix? [y]es / [n]o / [a]ccept all / [s]kip rest / [q]uit:
 ```
 
 Low-confidence proposals display a warning:
@@ -491,12 +470,13 @@ Low-confidence proposals display a warning:
 |-----|--------|------------|
 | y | Write patch to disk | AI_PROPOSED |
 | n | Skip this proposal | USER_REJECTED |
+| a | Accept all remaining | AI_PROPOSED for all |
 | s | Skip all remaining | USER_REJECTED for all |
 | q | Quit immediately | Remaining stay UNRESOLVED |
 
 ### CI Mode
 
-When `--apply` is set without a TTY (non-interactive), proposals with `confidence >= 0.9` are auto-accepted. All others are rejected. The threshold is not configurable in the initial implementation.
+When `--auto-approve` is set, all proposals are accepted without prompting — no confidence threshold filtering.
 
 ### Summary Output
 
@@ -533,21 +513,11 @@ The `--model` flag is passed through to `AbbenayClient.chat(model=...)`. If omit
 
 ---
 
-## MCP Tools
+## MCP Tools (Deferred)
 
-Dynamic MCP registration is available in Abbenay `v2026.3.7-alpha` (DR-025 merged).
+Dynamic MCP registration is available in Abbenay but has not yet been integrated into APME. The `src/apme_engine/mcp/` package does not exist. Best practices and module documentation are currently embedded directly in the prompt by the `AbbenayProvider` prompt builder, not served via MCP.
 
-### Ansible Docstring Server
-
-`src/apme_engine/mcp/ansible_doc_server.py` -- a lightweight MCP server (stdio transport) wrapping `ansible-doc` via APME's venv sessions. The LLM can autonomously call `get_ansible_doc(fqcn)` when it needs module documentation.
-
-**Fallback**: the prompt builder pre-fetches `ansible-doc` output for the relevant module and embeds it in the prompt.
-
-### Best Practices Server
-
-`src/apme_engine/mcp/ansible_best_practices_server.py` -- MCP server exposing the structured best practices mapping. The LLM calls `get_ansible_best_practices(category)` to look up guidelines.
-
-**Fallback**: best practices are pre-selected by the prompt builder based on violation category.
+Future MCP integration (when implemented) would allow the LLM to autonomously call tools like `get_ansible_doc(fqcn)` and `get_ansible_best_practices(category)` during generation.
 
 ---
 
@@ -567,7 +537,7 @@ Dynamic MCP registration is available in Abbenay `v2026.3.7-alpha` (DR-025 merge
 
 ### Graceful Degradation
 
-If `--ai` is set but the daemon is unreachable, the CLI exits with a clear error. AI escalation never fails silently -- the user explicitly opted in and deserves an explicit failure. Without `--ai`, Tier 2 violations are reported as "AI-candidate" with no proposals.
+`_resolve_ai_provider()` returns `None` only when AI configuration or prerequisites are missing (no daemon address, no model configured, or the optional client import is unavailable). In that case, AI escalation is not activated. If `--ai` is set and a provider is resolved but the daemon is unreachable at proposal time, `propose_node_fix()` raises; the graph engine catches that failure and skips proposal generation for the affected node. Remaining Tier 2 violations are still reported as "AI-candidate", but with no proposals. Without `--ai`, Tier 2 violations are also reported as "AI-candidate" with no proposals.
 
 ---
 
@@ -661,9 +631,7 @@ src/apme_engine/remediation/
 src/apme_engine/data/
   +-- ansible_best_practices.yml   # structured mapping from agents.md
 
-src/apme_engine/mcp/               # deferred -- blocked on Abbenay MCP RPC
-  +-- ansible_doc_server.py
-  +-- ansible_best_practices_server.py
+# src/apme_engine/mcp/ -- deferred, not yet implemented (see MCP Tools section)
 ```
 
 ---
@@ -674,7 +642,7 @@ src/apme_engine/mcp/               # deferred -- blocked on Abbenay MCP RPC
 - [DESIGN_VALIDATORS.md](DESIGN_VALIDATORS.md) -- Validator protocol, scan pipeline
 - [ADR-009: Separate Remediation Engine](../.sdlc/adrs/ADR-009-remediation-engine.md)
 - [ADR-023: Per-Finding Classification](../.sdlc/adrs/ADR-023-per-finding-classification.md)
-- [ADR-024: AIProvider Protocol Abstraction](../.sdlc/adrs/ADR-024-ai-provider-protocol.md)
+- [ADR-025: AIProvider Protocol Abstraction](../.sdlc/adrs/ADR-025-ai-provider-protocol.md)
 - DESIGN-inline-policy.md (in abbenay-rd repo) -- Abbenay inline policy
 - DESIGN-dynamic-mcp-registration.md (in abbenay-rd repo) -- Abbenay MCP registration RFE
 - [ansible-creator agents.md](https://raw.githubusercontent.com/ansible/ansible-creator/refs/heads/main/docs/agents.md) -- Ansible coding guidelines

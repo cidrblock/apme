@@ -67,20 +67,20 @@ User runs:  apme check /path/to/project
 │  6. Build ValidateRequest:                                       │
 │     - hierarchy_payload = json.dumps(ctx.hierarchy_payload,      │
 │                                      default=str)                │
-│     - scandata = jsonpickle.encode(ctx.scandata)                 │
+│     - content_graph_data = graph.to_dict(slim=True)              │
 │     - files, ansible_core_version, collection_specs              │
 │                                                                  │
 │  7. Parallel fan-out (asyncio.gather):                           │
 │     ┌─────────────────────────────────────────────────────┐      │
 │     │                                                     │      │
 │     │  ┌─► Native :50055                                  │      │
-│     │  │   - Deserialize ContentGraph from scandata       │      │
+│     │  │   - Deserialize ContentGraph from graph data      │      │
 │     │  │   - GraphRule evaluation via graph_scanner.scan() │      │
 │     │  │   → violations[] + ValidatorDiagnostics          │      │
 │     │  │                                                  │      │
 │     │  ├─► OPA :50054                                     │      │
 │     │  │   - json.loads(hierarchy_payload)                 │      │
-│     │  │   - opa eval via subprocess (ADR-009)            │      │
+│     │  │   - opa eval via subprocess                       │      │
 │     │  │   - Rego eval: data.apme.rules.violations        │      │
 │     │  │   → violations[] + ValidatorDiagnostics          │      │
 │     │  │                                                  │      │
@@ -134,7 +134,7 @@ User runs:  apme check /path/to/project
 
 ## Engine pipeline detail
 
-The engine (`ARIScanner.evaluate()`) runs five stages in sequence. All stages operate on the same in-memory model; there is no intermediate serialization between stages.
+The engine (`ARIScanner.evaluate()`) runs four stages in sequence. All stages operate on the same in-memory model; there is no intermediate serialization between stages.
 
 ### Stage 1: Load definitions
 
@@ -175,7 +175,7 @@ Per-module `RiskAnnotator` subclasses inspect each `TaskCall` and attach `RiskAn
 
 Annotations are attached to the `TaskCall` and serialized into the hierarchy payload's `annotations` array, making them available to OPA rules (e.g., R118 checks for `inbound_transfer`).
 
-### Stage 5: Build hierarchy payload
+### Stage 4: Build hierarchy payload
 
 Serializes the tree into a flat JSON structure consumable by OPA and other payload-based validators:
 

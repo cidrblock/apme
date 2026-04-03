@@ -91,14 +91,23 @@ provider = AI_PROVIDERS[config["ai_provider"]]()
 ### Negative
 
 - **Indirection.** One extra layer between the engine and the LLM client. Acceptable given the benefits; the protocol is a single method.
-- **Async boundary.** The protocol method is `async`. The engine currently runs synchronously. The boundary is bridged with `asyncio.run()` at the engine level.
+- **Async boundary.** The protocol method is `async`. The `GraphRemediationEngine.remediate()` is also async, so no bridging is needed.
+
+## Implementation Update (2026-04)
+
+The `AIProvider` protocol has been updated to graph-native:
+
+- **`propose_fix()`** is replaced by **`propose_node_fix(context: AINodeContext, *, model=None) -> AINodeFix | None`** — operates on individual graph nodes rather than full files
+- **`AIProposal`** and **`AIPatch`** are replaced by **`AINodeFix`** (single-node fix) and **`AINodeProposal`** (result with before/after YAML)
+- **`AINodeContext`** (in `ai_context.py`) bundles the node's YAML, violations, parent context, sibling snippets, and best-practice guidance from the `ContentGraph`
+- Engine wiring: `GraphRemediationEngine.__init__(ai_provider: AIProvider | None = None)`
+- Primary resolves the provider via `_resolve_ai_provider()` with graceful degradation (returns `None` when prerequisites are missing: no daemon address, no model, or no `abbenay_grpc` install); if the daemon is unreachable at runtime, `propose_node_fix()` raises and the graph engine catches/skips
 
 ## Implementation Notes
 
-- `AIProvider` protocol and `AIProposal` dataclass: `src/apme_engine/remediation/ai_provider.py`
+- `AIProvider` protocol and `AINodeFix` dataclass: `src/apme_engine/remediation/ai_provider.py`
+- `AINodeContext` builder: `src/apme_engine/remediation/ai_context.py`
 - `AbbenayProvider`: `src/apme_engine/remediation/abbenay_provider.py`
-- Engine wiring: `RemediationEngine.__init__(ai_provider: AIProvider | None = None)`
-- CLI creates `AbbenayProvider` only when `--ai` is set, after preflight health check
 - Full design: `docs/DESIGN_AI_ESCALATION.md`
 
 ## Related Decisions
