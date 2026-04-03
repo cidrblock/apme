@@ -83,7 +83,7 @@ def run_scan(
 
     logger.info("Engine: loader start (%s, type=%s)", Path(name).name, scan_type)
     t0 = time.monotonic()
-    loader.load(
+    scandata = loader.load(
         type=scan_type,
         name=name,
         path=name,
@@ -95,8 +95,6 @@ def run_scan(
     )
     engine_total_ms = (time.monotonic() - t0) * 1000
     logger.info("Engine: loader done (%.0fms)", engine_total_ms)
-
-    scandata = loader._current
     diag = _extract_engine_diagnostics(scandata, engine_total_ms)
 
     if not scandata or not getattr(scandata, "hierarchy_payload", None):
