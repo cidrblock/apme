@@ -80,7 +80,7 @@ User runs:  apme check /path/to/project
 │     │  │                                                  │      │
 │     │  ├─► OPA :50054                                     │      │
 │     │  │   - json.loads(hierarchy_payload)                 │      │
-│     │  │   - opa eval via subprocess            │      │
+│     │  │   - opa eval via subprocess                       │      │
 │     │  │   - Rego eval: data.apme.rules.violations        │      │
 │     │  │   → violations[] + ValidatorDiagnostics          │      │
 │     │  │                                                  │      │
@@ -134,7 +134,7 @@ User runs:  apme check /path/to/project
 
 ## Engine pipeline detail
 
-The engine (`ARIScanner.evaluate()`) runs five stages in sequence. All stages operate on the same in-memory model; there is no intermediate serialization between stages.
+The engine (`ARIScanner.evaluate()`) runs four stages in sequence. All stages operate on the same in-memory model; there is no intermediate serialization between stages.
 
 ### Stage 1: Load definitions
 

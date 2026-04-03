@@ -327,7 +327,7 @@ async def remediate(graph, violations, registry, max_passes=5):
             if graph.dirty_nodes:
                 violations = await rescan_fn(graph, graph.dirty_nodes)
 
-    approve_pending(source_filter="deterministic")
+    graph.approve_pending(source_filter="deterministic")
     return GraphFixReport(...)
 ```
 
@@ -340,14 +340,15 @@ An oscillation occurs when a fix introduces a new violation that triggers anothe
 ```python
 @dataclass
 class GraphFixReport:
-    passes: int                           # convergence passes executed
-    oscillation: bool                     # True if bailed due to no progress
-    fixed_violations: list[ViolationDict] # violations resolved by Tier 1
-    remaining_violations: list[ViolationDict]  # all remaining (Tier 2 + 3)
-    ai_proposals: list[AINodeProposal]    # AI-proposed node fixes
-    step_diffs: list[StepDiff]            # per-pass diff records
-    nodes_modified: set[str]              # node IDs with content changes
-    applied_patches: list[FilePatch]      # file-level patches (caller-filled)
+    passes: int = 0                                    # convergence passes executed
+    fixed: int = 0                                     # count of violations fixed
+    applied_patches: list[FilePatch] = []              # file-level patches (caller-filled)
+    remaining_violations: list[ViolationDict] = []     # all remaining (Tier 2 + 3)
+    fixed_violations: list[ViolationDict] = []         # violations resolved by transforms
+    oscillation_detected: bool = False                 # True if bailed due to oscillation
+    nodes_modified: int = 0                            # count of ContentNodes modified
+    step_diffs: list[dict[str, object]] = []           # per-progression-step diffs
+    ai_proposals: list[AINodeProposal] = []            # AI-proposed node fixes
 ```
 
 ## Progress Streaming
@@ -404,7 +405,7 @@ message FixOptions {
   bool enable_agentic = 6;          // Tier 3 (future)
   string ai_model = 7;
   string session_id = 8;
-  repeated string galaxy_servers = 9;
+  repeated GalaxyServerDef galaxy_servers = 9;
 }
 
 // Client -> Server: upload chunks, then approval/extend/close commands

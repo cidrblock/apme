@@ -140,7 +140,7 @@ Responsibilities:
 - **Prompt construction**: build a graph-native prompt from `AINodeContext` (node YAML, violations, parent context, sibling snippets, best practices)
 - **Inline policy**: send policy on every request (temperature: 0.0, json_only format, max_tokens: 8192, timeout: 60000)
 - **Response parsing**: extract `fixed_snippet`, `changes[]`, `skipped[]` from structured JSON response; aggregate confidence from `changes`
-- **Error handling**: connection errors, timeouts, malformed responses return `None`
+- **Error handling**: connection errors, timeouts, and API failures raise exceptions; the graph engine catches them and skips the node
 
 ```python
 def discover_abbenay() -> str | None:
@@ -222,7 +222,7 @@ The LLM might fix the semantic issue perfectly but leave a formatting or FQCN ga
 
 ### Prompt Template
 
-The prompt is built per-node by `_build_node_prompt()` in `abbenay_provider.py`:
+The prompt is built per-node by `_build_node_prompt()` in `abbenay_provider.py`. The structure (simplified; see `NODE_PROMPT_TEMPLATE` for the full template including the `Rules:` section):
 
 ```
 You are an expert Ansible automation engineer and code reviewer.
@@ -377,21 +377,27 @@ When `--ai` is set, Primary auto-discovers the Abbenay daemon:
 
 ### Preflight Health Check
 
-Before entering the remediation loop, `_resolve_ai_provider` in Primary:
+Before entering the remediation loop, `_resolve_ai_provider` in Primary checks prerequisites:
 
 ```python
-addr = os.environ.get("APME_ABBENAY_ADDR") or discover_abbenay()
-if addr is None:
-    logger.warning("No Abbenay daemon found; AI escalation disabled")
+if not fix_opts or not fix_opts.enable_ai:
     return None
 
-provider = AbbenayProvider(addr, token=os.environ.get("APME_ABBENAY_TOKEN"))
-if not await provider.preflight():
-    logger.warning("Abbenay daemon at %s is not healthy", addr)
+addr = os.environ.get("APME_ABBENAY_ADDR") or discover_abbenay()
+if not addr:
+    logger.warning("AI escalation requested but no Abbenay daemon found")
     return None
+
+model = fix_opts.ai_model or os.environ.get("APME_AI_MODEL")
+if not model:
+    logger.warning("AI escalation requested but no model specified")
+    return None
+
+token = os.environ.get("APME_ABBENAY_TOKEN")
+provider = AbbenayProvider(addr, token=token, model=model)
 ```
 
-Graceful degradation: if the daemon is not available, AI escalation is disabled and Tier 2 violations fall to manual review. The CLI does not hard-exit.
+Graceful degradation: if the daemon address, model, or `abbenay_grpc` import is missing, `_resolve_ai_provider` returns `None` — AI escalation is disabled and Tier 2 violations fall to manual review.
 
 ### Health Check
 
