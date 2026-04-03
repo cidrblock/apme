@@ -342,6 +342,125 @@ class TestGitleaksServicer:
 
 
 # ---------------------------------------------------------------------------
+# Tests for _extract_nodes_from_graph_data and _run_scan coverage
+# ---------------------------------------------------------------------------
+
+
+class TestExtractNodesFromGraphData:
+    """Tests for ``_extract_nodes_from_graph_data`` node extraction and covered paths."""
+
+    def test_returns_nodes_and_covered_paths(self) -> None:
+        """Nodes with yaml_lines are extracted; their file_path is tracked."""
+        from apme_engine.daemon.gitleaks_validator_server import _extract_nodes_from_graph_data
+
+        graph = {
+            "version": 1,
+            "nodes": [
+                {"id": "site.yml/plays[0]/tasks[0]", "data": {"yaml_lines": "- name: foo\n", "file_path": "site.yml"}},
+                {"id": "site.yml/plays[0]", "data": {"yaml_lines": "", "file_path": "site.yml"}},
+                {"id": "vars/main.yml", "data": {"yaml_lines": "", "file_path": "vars/main.yml"}},
+            ],
+            "edges": [],
+        }
+        nodes, covered = _extract_nodes_from_graph_data(json.dumps(graph).encode())
+        assert len(nodes) == 1
+        assert nodes[0] == ("site.yml/plays[0]/tasks[0]", "- name: foo\n")
+        assert covered == {"site.yml"}
+
+    def test_empty_input(self) -> None:
+        """Empty bytes returns empty results."""
+        from apme_engine.daemon.gitleaks_validator_server import _extract_nodes_from_graph_data
+
+        nodes, covered = _extract_nodes_from_graph_data(b"")
+        assert nodes == []
+        assert covered == set()
+
+    def test_invalid_json(self) -> None:
+        """Invalid JSON returns empty results."""
+        from apme_engine.daemon.gitleaks_validator_server import _extract_nodes_from_graph_data
+
+        nodes, covered = _extract_nodes_from_graph_data(b"not json")
+        assert nodes == []
+        assert covered == set()
+
+
+class TestRunScanCoverage:
+    """Tests for ``_run_scan`` combining graph nodes with uncovered files."""
+
+    def test_uncovered_files_included(self) -> None:
+        """Files not covered by graph nodes are included in the scan."""
+        from apme.v1.common_pb2 import File
+        from apme_engine.daemon.gitleaks_validator_server import _run_scan
+
+        graph = {
+            "version": 1,
+            "nodes": [
+                {"id": "play.yml/plays[0]/tasks[0]", "data": {"yaml_lines": "- debug:\n", "file_path": "play.yml"}},
+            ],
+            "edges": [],
+        }
+        files = [
+            File(path="play.yml", content=b"---\n- hosts: all\n  tasks:\n    - debug:\n"),
+            File(path="vars/secrets.yml", content=b"api_key: AKIAIOSFODNN7EXAMPLE\n"),
+        ]
+
+        with patch("apme_engine.daemon.gitleaks_validator_server.run_gitleaks_nodes") as mock_scan:
+            mock_scan.return_value = []
+            _run_scan(json.dumps(graph).encode(), files)
+
+            called_nodes = mock_scan.call_args[0][0]
+
+        assert len(called_nodes) == 2
+        node_keys = {n[0] for n in called_nodes}
+        assert "play.yml/plays[0]/tasks[0]" in node_keys
+        assert "vars/secrets.yml" in node_keys
+
+    def test_covered_files_excluded(self) -> None:
+        """Files whose path matches a graph node's file_path are excluded."""
+        from apme.v1.common_pb2 import File
+        from apme_engine.daemon.gitleaks_validator_server import _run_scan
+
+        graph = {
+            "version": 1,
+            "nodes": [
+                {"id": "play.yml/plays[0]/tasks[0]", "data": {"yaml_lines": "- debug:\n", "file_path": "play.yml"}},
+            ],
+            "edges": [],
+        }
+        files = [
+            File(path="play.yml", content=b"---\n- hosts: all\n  tasks:\n    - debug:\n"),
+        ]
+
+        with patch("apme_engine.daemon.gitleaks_validator_server.run_gitleaks_nodes") as mock_scan:
+            mock_scan.return_value = []
+            _run_scan(json.dumps(graph).encode(), files)
+
+            called_nodes = mock_scan.call_args[0][0]
+
+        assert len(called_nodes) == 1
+        assert called_nodes[0][0] == "play.yml/plays[0]/tasks[0]"
+
+    def test_no_graph_data_uses_all_files(self) -> None:
+        """Without graph data all files are scanned as file-keyed nodes."""
+        from apme.v1.common_pb2 import File
+        from apme_engine.daemon.gitleaks_validator_server import _run_scan
+
+        files = [
+            File(path="a.yml", content=b"key: val\n"),
+            File(path="b.yml", content=b"other: val\n"),
+        ]
+
+        with patch("apme_engine.daemon.gitleaks_validator_server.run_gitleaks_nodes") as mock_scan:
+            mock_scan.return_value = []
+            _run_scan(b"", files)
+
+            called_nodes = mock_scan.call_args[0][0]
+
+        assert len(called_nodes) == 2
+        assert {n[0] for n in called_nodes} == {"a.yml", "b.yml"}
+
+
+# ---------------------------------------------------------------------------
 # Tests for stdin-based node scanner (run_gitleaks_nodes)
 # ---------------------------------------------------------------------------
 

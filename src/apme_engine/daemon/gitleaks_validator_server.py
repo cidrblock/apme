@@ -28,24 +28,28 @@ logger = logging.getLogger("apme.gitleaks")
 _MAX_CONCURRENT_RPCS = int(os.environ.get("APME_GITLEAKS_MAX_RPCS", "16"))
 
 
-def _extract_nodes_from_graph_data(raw: bytes) -> list[tuple[str, str]]:
+def _extract_nodes_from_graph_data(raw: bytes) -> tuple[list[tuple[str, str]], set[str]]:
     """Parse serialized ContentGraph JSON and extract ``(node_id, yaml_lines)`` tuples.
 
     Args:
         raw: JSON-encoded ContentGraph (from ``ContentGraph.to_dict(slim=True)``).
 
     Returns:
-        List of ``(node_id, yaml_lines)`` for nodes with non-empty content.
+        Tuple of (scan nodes, covered file paths).  Scan nodes are
+        ``(node_id, yaml_lines)`` for nodes with non-empty content.
+        Covered file paths are the set of ``file_path`` values for those
+        nodes, used to avoid re-scanning the same content via raw files.
     """
     try:
         data = cast(dict[str, object], json.loads(raw))
     except (json.JSONDecodeError, UnicodeDecodeError):
-        return []
+        return [], set()
 
     result: list[tuple[str, str]] = []
+    covered_paths: set[str] = set()
     raw_nodes = data.get("nodes")
     if not isinstance(raw_nodes, list):
-        return result
+        return result, covered_paths
 
     for entry in raw_nodes:
         if not isinstance(entry, dict):
@@ -57,36 +61,47 @@ def _extract_nodes_from_graph_data(raw: bytes) -> list[tuple[str, str]]:
         yaml_lines = str(node_data.get("yaml_lines", ""))
         if yaml_lines:
             result.append((node_id, yaml_lines))
+            file_path = node_data.get("file_path")
+            if isinstance(file_path, str) and file_path:
+                covered_paths.add(file_path)
 
-    return result
+    return result, covered_paths
 
 
 def _run_scan(
     content_graph_data: bytes,
     files: list[File],
 ) -> tuple[list[ViolationDict], int]:
-    """Build node tuples from graph data + files, scan via stdin.
+    """Build node tuples from graph data + uncovered files, scan via stdin.
+
+    Graph nodes with ``yaml_lines`` get node-native attribution.  Files
+    whose paths are **not** covered by any graph node are included as
+    file-keyed entries so secrets outside the task-level graph (vars
+    files, play headers, etc.) are still scanned.
 
     Args:
         content_graph_data: Serialized ContentGraph JSON (may be empty).
-        files: File protos not covered by the graph.
+        files: File protos from the original scan request.
 
     Returns:
         Tuple of ``(violations, node_count)``.
     """
     nodes: list[tuple[str, str]] = []
+    covered_paths: set[str] = set()
 
     if content_graph_data:
-        nodes.extend(_extract_nodes_from_graph_data(content_graph_data))
+        graph_nodes, covered_paths = _extract_nodes_from_graph_data(content_graph_data)
+        nodes.extend(graph_nodes)
 
-    if not nodes:
-        for f in files:
-            try:
-                content = f.content.decode("utf-8", errors="replace")
-            except Exception:  # noqa: BLE001
-                continue
-            if content:
-                nodes.append((f.path, content))
+    for f in files:
+        if f.path in covered_paths:
+            continue
+        try:
+            content = f.content.decode("utf-8", errors="replace")
+        except Exception:  # noqa: BLE001
+            continue
+        if content:
+            nodes.append((f.path, content))
 
     if not nodes:
         return [], 0
