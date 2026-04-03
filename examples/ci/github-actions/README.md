@@ -91,7 +91,24 @@ commits fixes (requires write permissions).
 | Code | Meaning |
 |------|---------|
 | 0 | No violations found |
-| 1 | Violations found, format changes needed, or error |
+| 1 | Violations found (or format changes needed) |
+| 2 | Error (file not found, engine failure, invalid arguments) |
+
+This lets CI distinguish actionable results from infrastructure failures:
+
+```yaml
+- run: apme check .
+  id: scan
+  continue-on-error: true
+
+- if: steps.scan.outcome == 'failure'
+  run: |
+    if [ "${{ steps.scan.outputs.exit-code }}" = "2" ]; then
+      echo "::error::APME infrastructure failure"
+      exit 1
+    fi
+    echo "::warning::APME found violations"
+```
 
 ## Caching
 
