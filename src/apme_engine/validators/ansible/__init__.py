@@ -4,7 +4,6 @@ Rules are colocated under rules/ and follow the same pattern as native and OPA v
 Each rule module exports a run() function that returns a list of violation dicts.
 """
 
-import bisect
 import json
 import sys
 import time
@@ -137,11 +136,6 @@ def resolve_file_line_to_node(
     ranges = lookup.get(file_path)
     if not ranges:
         return ""
-
-    starts = [r[0] for r in ranges]
-    idx = bisect.bisect_right(starts, line) - 1
-    if idx < 0:
-        idx = 0
 
     best: str = ""
     best_span = float("inf")
