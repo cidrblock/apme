@@ -93,6 +93,30 @@ class TestContentNodeToOpaDict:
         assert isinstance(topts, dict)
         assert topts["when"] == "ansible_os_family == 'Debian'"
 
+    def test_loop_and_with_options_forwarded(self) -> None:
+        """Verify loop and with_* options are forwarded to OPA dict."""
+        task = ContentNode(
+            identity=NodeIdentity(path="site.yml/plays[0]/tasks[0]", node_type=NodeType.TASK),
+            file_path="site.yml",
+            line_start=1,
+            line_end=5,
+            module="ansible.builtin.set_fact",
+            module_options={"result": "{{ items }}"},
+            options={
+                "loop": "{{ all_services }}",
+                "when": "item.state == 'running'",
+                "with_custom_lookup": "{{ data }}",
+                "internal_ansible_field": "should_be_excluded",
+            },
+        )
+        d = content_node_to_opa_dict(task)
+        opts = d["options"]
+        assert isinstance(opts, dict)
+        assert opts["loop"] == "{{ all_services }}"
+        assert opts["when"] == "item.state == 'running'"
+        assert opts["with_custom_lookup"] == "{{ data }}"
+        assert "internal_ansible_field" not in opts
+
     def test_key_is_node_id(self) -> None:
         """Verify 'key' in OPA dict is always node_id (not ari_key)."""
         g = _make_minimal_graph()
