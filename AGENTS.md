@@ -145,7 +145,7 @@ one needs to change, write an ADR first.
 
 ### 2. Engine Agent
 
-**Purpose**: Implements the ARI-based scanning engine and Primary orchestrator.
+**Purpose**: Implements the project loading engine and Primary orchestrator.
 
 **Context Files**:
 - `CLAUDE.md`
@@ -157,7 +157,7 @@ one needs to change, write an ADR first.
 **Scope**: `src/apme_engine/engine/`, `src/apme_engine/daemon/primary_server.py`, `src/apme_engine/runner.py`
 
 **Capabilities**:
-- Integrate with the vendored ARI engine (ADR-003)
+- Integrate with the vendored project loader engine (ADR-003)
 - Parse → annotate → hierarchy pipeline
 - Fan-out to validators via `asyncio.gather()` with `return_exceptions=True`
 - Manage `VenvSessionManager` (session-scoped venvs)
@@ -329,7 +329,7 @@ src/
 │   ├── cli/                      # apme: check, remediate, format, health-check
 │   ├── daemon/                   # gRPC servers: primary, native, opa, ansible, gitleaks
 │   │   └── sinks/                # Event sinks (grpc_reporting)
-│   ├── engine/                   # ARI-backed: parser, scanner, models, annotators
+│   ├── engine/                   # Project loader: parser, models, annotators, graph
 │   ├── remediation/              # Convergence engine, transforms, AI provider
 │   ├── validators/               # Rule implementations (native/, opa/, ansible/, gitleaks/)
 │   └── venv_manager/             # Session-scoped venvs

@@ -6,7 +6,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from apme_engine.engine.scanner import ARIScanner
+from apme_engine.engine.scanner import AnsibleProjectLoader
 from apme_engine.validators.base import EngineDiagnostics, ScanContext
 
 logger = logging.getLogger("apme.engine")
@@ -46,16 +46,16 @@ def run_scan(
 ) -> ScanContext:
     """Run the engine on target_path and return a ScanContext for validators.
 
-    ARI never downloads collections. When a session venv is available,
-    pass its site-packages as ``dependency_dir`` so ARI can resolve
+    The loader never downloads collections. When a session venv is available,
+    pass its site-packages as ``dependency_dir`` so the loader can resolve
     external collection definitions.
 
     Args:
         target_path: Path to playbook file, taskfile, or project directory.
         project_root: Root directory for the scan (data dir).
-        include_scandata: If True, attach the SingleScan to context for ARI native validator.
+        include_scandata: If True, attach the SingleScan to context for native validator.
         dependency_dir: Pre-installed dependency directory (e.g. session venv
-            site-packages).  ARI reads from this path but never writes to it.
+            site-packages).  The loader reads from this path but never writes to it.
 
     Returns:
         ScanContext with hierarchy_payload and optionally scandata.
@@ -65,9 +65,8 @@ def run_scan(
 
     """
     root_dir = project_root or os.path.expanduser("~/.apme-data")
-    scanner = ARIScanner(
+    loader = AnsibleProjectLoader(
         root_dir=root_dir,
-        rules_dir="",  # no native rules at scan time; ARI validator runs rules
         silent=True,
     )
     path = Path(target_path).resolve()
@@ -82,9 +81,9 @@ def run_scan(
         base_dir = str(path)
         scan_type = "project"
 
-    logger.info("Engine: ARI evaluate start (%s, type=%s)", Path(name).name, scan_type)
+    logger.info("Engine: loader start (%s, type=%s)", Path(name).name, scan_type)
     t0 = time.monotonic()
-    scanner.evaluate(
+    loader.load(
         type=scan_type,
         name=name,
         path=name,
@@ -95,9 +94,9 @@ def run_scan(
         include_test_contents=True,
     )
     engine_total_ms = (time.monotonic() - t0) * 1000
-    logger.info("Engine: ARI evaluate done (%.0fms)", engine_total_ms)
+    logger.info("Engine: loader done (%.0fms)", engine_total_ms)
 
-    scandata = scanner._current
+    scandata = loader._current
     diag = _extract_engine_diagnostics(scandata, engine_total_ms)
 
     if not scandata or not getattr(scandata, "hierarchy_payload", None):

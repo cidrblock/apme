@@ -1,4 +1,4 @@
-"""SingleScan state container and graph construction helpers for the ARI scanner."""
+"""SingleScan state container and graph construction helpers for the project loader."""
 
 from __future__ import annotations
 
@@ -17,11 +17,9 @@ from .loader import (
 )
 from .model_loader import load_object
 from .models import (
-    ARIResult,
     Load,
     LoadType,
     Object,
-    Rule,
     YAMLDict,
     YAMLList,
     YAMLValue,
@@ -38,7 +36,7 @@ from .utils import (
 
 @dataclass
 class SingleScan:
-    """State for a single ARI scan (collection, role, playbook, or taskfile).
+    """State for a single scan (collection, role, playbook, or taskfile).
 
     Attributes:
         type: Scan target type (collection, role, playbook, taskfile).
@@ -76,14 +74,10 @@ class SingleScan:
         extra_requirements: Extra Galaxy requirements to install.
         resolve_failures: Dict tracking variable resolution failures.
         findings: Findings object with scan results.
-        result: ARIResult summary object.
         hierarchy_payload: OPA input payload with hierarchy and annotations.
         content_graph: ContentGraph (ADR-044); always built during tree construction.
         graph_scan_report: Results from running GraphRule evaluation on the content graph.
-        root_dir: Root data directory from scanner config.
-        rules_dir: Directory containing rule definitions.
-        rules: List of rule IDs or paths to enable.
-        rules_cache: Cached Rule objects.
+        root_dir: Root data directory from loader config.
         persist_dependency_cache: Whether to keep the dependency cache after scan.
         use_ansible_doc: Whether to use ansible-doc for module specs.
         do_save: Whether to save scan artifacts to disk.
@@ -141,20 +135,16 @@ class SingleScan:
     resolve_failures: YAMLDict = field(default_factory=dict)
 
     findings: Findings | None = None
-    result: ARIResult | None = None
 
-    # OPA input: hierarchy + annotations (set by build_hierarchy_payload when native rules are disabled)
+    # OPA input: hierarchy + annotations (set by build_hierarchy_payload)
     hierarchy_payload: YAMLDict = field(default_factory=dict)
 
     # ContentGraph (ADR-044) — always populated during tree construction
     content_graph: ContentGraph | None = None
     graph_scan_report: GraphScanReport | None = None
 
-    # the following are set by ARIScanner
+    # the following are set by AnsibleProjectLoader
     root_dir: str = ""
-    rules_dir: str = ""
-    rules: list[str] = field(default_factory=list)
-    rules_cache: list[Rule] = field(default_factory=list)
     persist_dependency_cache: bool = False
     use_ansible_doc: bool = True
     do_save: bool = False
@@ -525,8 +515,7 @@ class SingleScan:
         return self.hierarchy_payload
 
     def apply_rules(self) -> None:
-        """Build hierarchy payload and create Findings for OPA (engine-only mode, no native rules)."""
-        # Engine-only mode: no native ARI rules; build hierarchy+annotations for OPA.
+        """Build hierarchy payload and create Findings for OPA."""
         self.build_hierarchy_payload()
         target_name = self.name
         if self.collection_name:
@@ -554,7 +543,6 @@ class SingleScan:
             summary_txt="",
             scan_time=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f"),
         )
-        self.result = None
         return
 
     def add_time_records(self, time_records: dict[str, object]) -> None:

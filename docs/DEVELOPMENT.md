@@ -130,8 +130,8 @@ src/apme_engine/
 ├── formatter.py            YAML formatter (format_content)
 ├── opa_client.py           OPA eval (Podman or local binary)
 │
-├── engine/                 ARI-based scanner
-│   ├── scanner.py          ARIScanner.evaluate() pipeline
+├── engine/                 project loader
+│   ├── scanner.py          AnsibleProjectLoader.load() pipeline
 │   ├── parser.py           YAML/Ansible content parser
 │   ├── models.py           SingleScan, TaskCall, RiskAnnotation, etc.
 │   ├── findings.py         Finding/violation structures

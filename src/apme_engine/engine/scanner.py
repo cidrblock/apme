@@ -1,11 +1,11 @@
-"""ARI scanner: evaluates collections, roles, playbooks, and taskfiles against rules."""
+"""Ansible project loader: parses collections, roles, playbooks, and taskfiles into definitions."""
 
 from __future__ import annotations
 
 import datetime
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import cast
 
 import jsonpickle
@@ -15,35 +15,30 @@ from . import logger
 from .findings import Findings
 from .models import (
     LoadType,
-    Rule,
     YAMLDict,
     YAMLValue,
 )
 from .parser import Parser
 from .risk_assessment_model import RAMClient
 from .scan_state import SingleScan as SingleScan
-from .scanner_config import Config as Config
 from .utils import (
     is_local_path,
     summarize_findings,
 )
 
-config = Config()
-
-logger.set_logger_channel(config.logger_key)
-logger.set_log_level(config.log_level)
+logger.set_logger_channel("apme.loader")
+logger.set_log_level("info")
 
 
 @dataclass
-class ARIScanner:
-    """ARI scanner that evaluates collections, roles, playbooks, and taskfiles.
+class AnsibleProjectLoader:
+    """Load and parse Ansible project content into raw definitions.
+
+    Parses collections, roles, playbooks, and taskfiles into definition
+    structures that ``GraphBuilder`` transforms into a ``ContentGraph``.
 
     Attributes:
-        config: Scanner configuration object.
         root_dir: Root data directory for RAM and dependencies.
-        rules_dir: Directory containing rule definitions.
-        rules: List of rule IDs or paths to enable.
-        rules_cache: Cached Rule objects.
         ram_client: Risk Assessment Model client for caching.
         read_ram: Whether to read from RAM cache.
         read_ram_for_dependency: Whether to read dependency data from RAM.
@@ -60,12 +55,7 @@ class ARIScanner:
 
     """
 
-    config: Config | None = None
-
     root_dir: str = ""
-    rules_dir: str = ""
-    rules: list[str] = field(default_factory=list)
-    rules_cache: list[Rule] = field(default_factory=list)
 
     ram_client: RAMClient | None = None
     read_ram: bool = True
@@ -90,16 +80,7 @@ class ARIScanner:
     _current: SingleScan | None = None
 
     def __post_init__(self) -> None:
-        """Initialize config, root dir, rules, RAM client, and parser from config."""
-        if not self.config:
-            self.config = config
-
-        if not self.root_dir:
-            self.root_dir = self.config.data_dir
-        if not self.rules_dir:
-            self.rules_dir = self.config.rules_dir
-        if not self.rules:
-            self.rules = self.config.rules
+        """Initialize RAM client and parser."""
         if not self.ram_client:
             self.ram_client = RAMClient(root_dir=self.root_dir)
         self._parser = Parser(
@@ -109,10 +90,7 @@ class ARIScanner:
             skip_task_format_error=self.skip_task_format_error,
         )
 
-        if not self.silent:
-            logger.debug(f"config: {self.config}")
-
-    def evaluate(
+    def load(
         self,
         type: str,
         name: str = "",
@@ -142,7 +120,7 @@ class ARIScanner:
         objects: bool = False,
         out_dir: str = "",
     ) -> SingleScan | None:
-        """Run a full ARI scan for the given target.
+        """Load, parse, and build a ContentGraph for the given target.
 
         Args:
             type: Load type (collection, role, playbook, project, taskfile).
@@ -215,9 +193,6 @@ class ARIScanner:
             yaml_label_list=yaml_label_list or [],
             out_dir=out_dir,
             root_dir=self.root_dir,
-            rules_dir=self.rules_dir,
-            rules=self.rules,
-            rules_cache=self.rules_cache,
             persist_dependency_cache=self.persist_dependency_cache,
             use_ansible_doc=self.use_ansible_doc,
             do_save=self.do_save,
@@ -310,10 +285,8 @@ class ARIScanner:
                         if not os.path.exists(ext_target_path):
                             continue
 
-                        dep_scanner = ARIScanner(
+                        dep_scanner = AnsibleProjectLoader(
                             root_dir=self.root_dir,
-                            rules_dir="",
-                            rules=[],
                             ram_client=self.ram_client,
                             read_ram=read_ram_for_dependency,
                             read_ram_for_dependency=self.read_ram_for_dependency,
@@ -322,7 +295,7 @@ class ARIScanner:
                             do_save=self.do_save,
                             silent=True,
                         )
-                        dep_scanner.evaluate(
+                        dep_scanner.load(
                             type=ext_type,
                             name=ext_name,
                             version=ext_ver,
@@ -401,9 +374,6 @@ class ARIScanner:
         if not self.silent:
             logger.debug("apply_rules() done")
 
-        if scandata.rules_cache:
-            self.rules_cache = scandata.rules_cache
-
         scandata.add_time_records(time_records=time_records)
 
         dep_num, ext_counts, root_counts = scandata.count_definitions()
@@ -442,7 +412,7 @@ class ARIScanner:
                 data_str = yaml.safe_dump(data)
             print(data_str)
 
-        return cast(SingleScan | None, findings.report.get("ari_result", None)) if findings is not None else None
+        return self._current
 
     def load_metadata_from_ram(
         self, type: str, name: str, version: str
@@ -549,7 +519,7 @@ class ARIScanner:
         save_definitions(definitions, out_dir)
 
     def get_last_scandata(self) -> SingleScan | None:
-        """Return the most recent SingleScan from evaluate, or None.
+        """Return the most recent SingleScan from load, or None.
 
         Returns:
             Most recent SingleScan or None if no scan has been run.

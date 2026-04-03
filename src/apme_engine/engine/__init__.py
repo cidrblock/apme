@@ -1,7 +1,7 @@
-"""Engine package: scanner and models."""
+"""Engine package: Ansible project loader and models."""
 
 from __future__ import annotations
 
-from .scanner import ARIScanner, Config
+from .scanner import AnsibleProjectLoader
 
-__all__ = ["ARIScanner", "Config", "models"]
+__all__ = ["AnsibleProjectLoader", "models"]

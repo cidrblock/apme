@@ -28,7 +28,7 @@ class Findings:
         extra_requirements: Additional requirements.
         resolve_failures: FQCN resolution failures.
         prm: PRM (policy/risk model) data.
-        report: Rule evaluation report including ari_result.
+        report: Rule evaluation report (hierarchy_payload).
         summary_txt: Human-readable summary.
         scan_time: Timestamp of the scan.
     """
@@ -87,7 +87,7 @@ class Findings:
         return str(json_str)
 
     def save_rule_result(self, fpath: str = "") -> str:
-        """Save only the ari_result from report as JSON to a file.
+        """Save the rule result from report as JSON to a file.
 
         Creates parent directories if needed. Uses standard JSON (not jsonpickle).
 
@@ -95,7 +95,7 @@ class Findings:
             fpath: Path to write the rule result JSON. If empty, only returns string.
 
         Returns:
-            JSON string of the ari_result.
+            JSON string of the rule result.
         """
         json_str: str = jsonpickle.encode(self.report.get("ari_result", {}), make_refs=False, unpicklable=False)
         if fpath:

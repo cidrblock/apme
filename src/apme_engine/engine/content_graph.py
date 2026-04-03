@@ -1,6 +1,6 @@
 """ContentGraph — DAG-backed model for Ansible content (ADR-044).
 
-Replaces the stateless ARI snapshot with a stable identity + relationship
+Replaces the stateless snapshot with a stable identity + relationship
 graph.  Built on ``networkx.MultiDiGraph`` so that the same role included
 from three playbooks exists once with three incoming edges, not three copies.
 
@@ -9,7 +9,7 @@ Public API
 - ``NodeIdentity`` — stable YAML-path-based ID for a content unit
 - ``ContentNode``  — immutable snapshot of a node's content + metadata
 - ``ContentGraph`` — top-level graph container with query helpers
-- ``GraphBuilder`` — constructs a ``ContentGraph`` from ARI definitions
+- ``GraphBuilder`` — constructs a ``ContentGraph`` from parsed project definitions
 """
 
 from __future__ import annotations
@@ -1364,10 +1364,10 @@ def _has_template(value: str) -> bool:
 
 
 class GraphBuilder:
-    """Constructs a ``ContentGraph`` from ARI definitions.
+    """Constructs a ``ContentGraph`` from parsed project definitions.
 
     Consumes ``root_definitions`` and ``ext_definitions`` dicts produced
-    by the ARI parser.  After ``.build()`` completes, ``resolve_failures``
+    by the project parser.  After ``.build()`` completes, ``resolve_failures``
     is populated with resolution bookkeeping.  ``extra_requirements`` is
     reserved for future use and currently remains empty.
     """
@@ -1379,10 +1379,10 @@ class GraphBuilder:
         *,
         scan_root: str = "",
     ) -> None:
-        """Create a builder for graph construction from ARI definition maps.
+        """Create a builder for graph construction from project definition maps.
 
         Args:
-            root_definitions: Primary project definitions from the ARI parser.
+            root_definitions: Primary project definitions from the project parser.
             ext_definitions: External/referenced definitions merged after roots.
             scan_root: Optional filesystem root for path normalization (reserved).
         """
@@ -1427,7 +1427,7 @@ class GraphBuilder:
                             self._object_by_key[item.key] = item
 
         # Register handler taskfiles (handlers are stored on Role objects
-        # but excluded from the flat definitions dict by ARI).
+        # but excluded from the flat definitions dict by the project loader).
         roles_list = root_loaded.get("roles", ObjectList())
         if isinstance(roles_list, ObjectList):
             for obj in roles_list.items:
@@ -1449,10 +1449,10 @@ class GraphBuilder:
         return self._graph
 
     def _resolve_key(self, key: str, expected_type: type | None = None) -> object | None:
-        """Resolve an ARI string key to the actual definition object.
+        """Resolve a definition key string to the actual definition object.
 
         Args:
-            key: ARI key string (e.g. ``play playbook:site.yml#play:[0]``).
+            key: Definition key string (e.g. ``play playbook:site.yml#play:[0]``).
             expected_type: If set, only return the object when it matches.
 
         Returns:
@@ -1505,9 +1505,9 @@ class GraphBuilder:
     # -- Collection ---------------------------------------------------------
 
     def _build_collection(self, coll: Collection, scope: NodeScope) -> str:
-        """Build a COLLECTION graph node from an ARI Collection object.
+        """Build a COLLECTION graph node from a parsed Collection object.
 
-        Normalizes ARI's raw data structures:
+        Normalizes the parser's raw data structures:
 
         - ``coll.metadata`` may be ``MANIFEST.json`` (galaxy.yml fields nested
           under ``collection_info``) or a flat ``galaxy.yml`` dict.  We store
@@ -1519,7 +1519,7 @@ class GraphBuilder:
         - ``coll.meta_runtime`` is already parsed ``meta/runtime.yml``.
 
         Args:
-            coll: Parsed collection ARI object.
+            coll: Parsed collection object.
             scope: Ownership scope for the created node.
 
         Returns:
@@ -1575,14 +1575,14 @@ class GraphBuilder:
         return nid
 
     def _build_module(self, mod: Module, scope: NodeScope) -> str:
-        """Build a MODULE graph node from an ARI Module object.
+        """Build a MODULE graph node from a parsed Module object.
 
         Reads the plugin ``.py`` file (if accessible) to populate
         ``module_line_count`` and ``module_functions_without_return_type``
         for L089/L090 rules.
 
         Args:
-            mod: Parsed module ARI object.
+            mod: Parsed module object.
             scope: Ownership scope for the created node.
 
         Returns:
@@ -1622,7 +1622,7 @@ class GraphBuilder:
         """Build graph nodes for a playbook and its plays.
 
         Args:
-            pb: Parsed playbook ARI object.
+            pb: Parsed playbook object.
             scope: Ownership scope for created nodes.
 
         Returns:
@@ -1707,7 +1707,7 @@ class GraphBuilder:
         """Build graph nodes for a play and its children.
 
         Args:
-            play: Parsed play ARI object.
+            play: Parsed play object.
             playbook_nid: Parent playbook node id.
             file_path: Playbook file path on disk.
             play_index: Zero-based index in ``pb.plays``.
@@ -1827,7 +1827,7 @@ class GraphBuilder:
         """Build a task node and wire executable edges.
 
         Args:
-            task: Parsed task ARI object.
+            task: Parsed task object.
             parent_nid: Immediate parent node id (play, block, or taskfile).
             file_path: Source file path for location metadata.
             play_index: Play index when under a play (used for line context).
@@ -1977,7 +1977,7 @@ class GraphBuilder:
         """Build a handler node.
 
         Args:
-            task: Parsed handler task ARI object.
+            task: Parsed handler task object.
             parent_nid: Containing play or role node id.
             file_path: Source file path.
             play_index: Play index when the parent is a play.
@@ -2078,7 +2078,7 @@ class GraphBuilder:
         """Build graph nodes for a role.
 
         Args:
-            role: Parsed role ARI object.
+            role: Parsed role object.
             scope: Ownership scope for role and child nodes.
 
         Returns:
@@ -2181,7 +2181,7 @@ class GraphBuilder:
         """Build graph nodes for a taskfile and its tasks.
 
         Args:
-            tf: Parsed task file ARI object.
+            tf: Parsed task file object.
             parent_nid: Optional parent role/play node for containment edges from caller.
             scope: Ownership scope for the taskfile and tasks.
             is_handler_file: If True, children are built as handlers not play tasks.
@@ -2423,14 +2423,14 @@ _DEFINITION_TYPES = ["collections", "roles", "taskfiles", "modules", "playbooks"
 
 
 def _load_all_definitions(definitions: dict[str, object]) -> dict[str, ObjectList]:
-    """Load all definition types from an ARI definitions structure.
+    """Load all definition types from a project definitions structure.
 
     Normalizes the input (handles ``mappings`` wrapper vs flat dict),
     then merges per-artifact definitions into a single ``ObjectList``
     per type key.
 
     Args:
-        definitions: Root definitions dict from ARI scanner output.
+        definitions: Root definitions dict from project loader output.
 
     Returns:
         Dict mapping type keys to merged ``ObjectList`` instances.
@@ -2498,14 +2498,14 @@ def _analyze_python_file(path: str) -> tuple[int, list[str]]:
 
 
 def _normalize_collection_files(files_raw: object) -> list[str]:
-    """Normalize ARI's ``Collection.files`` into a flat list of relative paths.
+    """Normalize the parser's ``Collection.files`` into a flat list of relative paths.
 
     ``FILES.json`` is a dict like ``{"files": [{"name": "...", ...}, ...], "format": 1}``.
     A source-tree collection may instead have a plain list of strings or a dict
     whose keys are paths.  We handle all variants.
 
     Args:
-        files_raw: The raw ``Collection.files`` value from ARI.
+        files_raw: The raw ``Collection.files`` value from the parsed collection.
 
     Returns:
         Sorted list of relative file-path strings.
@@ -2537,7 +2537,7 @@ def _safe_dict(v: object) -> YAMLDict:
     """Return ``v`` if it is a dict, otherwise an empty dict.
 
     Args:
-        v: Arbitrary value from ARI/YAML parsing.
+        v: Arbitrary value from project or YAML parsing.
 
     Returns:
         ``v`` when it is a ``dict``, else ``{}``.
@@ -2546,7 +2546,7 @@ def _safe_dict(v: object) -> YAMLDict:
 
 
 def _extract_lines(obj: object) -> tuple[int, int]:
-    """Extract start and end line numbers from an ARI object.
+    """Extract start and end line numbers from a parsed object.
 
     Args:
         obj: Model instance that may expose ``line_num_in_file``.
@@ -2700,7 +2700,7 @@ def _apply_parsed_fields(node: ContentNode, parsed: dict[str, object]) -> None:
     """Update a ContentNode's typed fields from a parsed YAML dict.
 
     Mirrors the field extraction logic in ``GraphBuilder._build_task``
-    but operates on a plain dict instead of an ARI object.
+    but operates on a plain dict instead of a parsed object.
 
     Args:
         node: ContentNode to update in place.

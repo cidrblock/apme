@@ -1,1 +1,1 @@
-"""APME Engine: ARI-based scanner + OPA policy evaluation."""
+"""APME Engine: Ansible project loader + OPA policy evaluation."""

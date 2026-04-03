@@ -40,7 +40,7 @@ User runs:  apme check /path/to/project
 │                                                                  │
 │  5. run_scan(temp_dir, project_root):                            │
 │     ┌────────────────────────────────────────────────────┐       │
-│     │  Engine (engine/scanner.py — ARIScanner.evaluate)  │       │
+│     │  Engine (engine/scanner.py — AnsibleProjectLoader.load)  │       │
 │     │                                                    │       │
 │     │  a. load_definitions_root()                        │       │
 │     │     Parser.run() → playbooks, roles, taskfiles,    │       │
@@ -134,7 +134,7 @@ User runs:  apme check /path/to/project
 
 ## Engine pipeline detail
 
-The engine (`ARIScanner.evaluate()`) runs four stages in sequence. All stages operate on the same in-memory model; there is no intermediate serialization between stages.
+The engine (`AnsibleProjectLoader.load()`) runs four stages in sequence. All stages operate on the same in-memory model; there is no intermediate serialization between stages.
 
 ### Stage 1: Load definitions
 

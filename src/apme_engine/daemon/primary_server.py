@@ -565,9 +565,9 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
 
         Every scan gets a session-scoped venv.  The flow is:
 
-        1. **ARI tree build** — if a warm session venv exists its
-           ``site-packages`` is passed as ``dependency_dir`` so ARI can
-           resolve pre-installed collections.
+        1. **Project load** — if a warm session venv exists its
+           ``site-packages`` is passed as ``dependency_dir`` so the
+           loader can resolve pre-installed collections.
         2. **Collection discovery** — FQCNs from files + hierarchy payload.
         3. **Venv acquire** — ``VenvSessionManager.acquire()`` creates the
            venv (cold start) or incrementally installs new collections
@@ -617,16 +617,16 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
         core_version = ansible_core_version or DEFAULT_VERSION
         sid = session_id or uuid.uuid4().hex[:12]
 
-        # Check for warm session venv so ARI can resolve pre-installed collections
-        ari_dependency_dir = ""
+        # Check for warm session venv so the loader can resolve pre-installed collections
+        dependency_dir = ""
         warm = self._get_venv_manager().get(sid, core_version)
         if warm and warm.venv_root.is_dir():
             with contextlib.suppress(FileNotFoundError):
-                ari_dependency_dir = str(_venv_site_packages(warm.venv_root))
-            if ari_dependency_dir:
-                logger.debug("Session(%s): warm venv, ARI dependency_dir=%s", sid, ari_dependency_dir)
+                dependency_dir = str(_venv_site_packages(warm.venv_root))
+            if dependency_dir:
+                logger.debug("Session(%s): warm venv, dependency_dir=%s", sid, dependency_dir)
 
-        # 1. ARI tree build
+        # 1. Project load (parse + build ContentGraph)
         ctx = contextvars.copy_context()
         context_obj = await asyncio.get_event_loop().run_in_executor(
             None,
@@ -635,7 +635,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                 str(temp_dir),
                 str(temp_dir),
                 include_scandata=include_scandata,
-                dependency_dir=ari_dependency_dir,
+                dependency_dir=dependency_dir,
             ),
         )
 

@@ -1,4 +1,4 @@
-"""Disk I/O helpers for saving ARI scan artifacts (definitions, rule results)."""
+"""Disk I/O helpers for saving scan artifacts (definitions, rule results)."""
 
 from __future__ import annotations
 

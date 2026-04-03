@@ -397,7 +397,7 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the full tox environment refe
 proto/apme/v1/          gRPC service definitions (.proto)
 src/apme/v1/            generated Python gRPC stubs
 src/apme_engine/
-  ├── engine/           ARI-based scanner (parse, annotate, hierarchy)
+  ├── engine/           project loader (parse, annotate, hierarchy)
   │   └── annotators/   per-module risk annotators
   ├── validators/
   │   ├── base.py       Validator protocol + ScanContext
