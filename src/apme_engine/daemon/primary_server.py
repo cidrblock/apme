@@ -1620,8 +1620,10 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
                 patch_abs = temp_dir / patch_abs
             patch_abs.write_text(patch.patched, encoding="utf-8")
 
-        # 4. Remaining violations — sourced from the graph (authoritative)
-        remaining = graph_report.remaining_violations
+        # 4. Remaining violations — sourced from the graph (authoritative).
+        # Copy before enrichment so classification metadata does not mutate
+        # the graph-owned NodeState snapshot objects.
+        remaining = [dict(v) for v in graph_report.remaining_violations]
         add_classification_to_violations(remaining, registry)  # type: ignore[arg-type]
 
         from apme_engine.remediation.partition import count_by_remediation_class

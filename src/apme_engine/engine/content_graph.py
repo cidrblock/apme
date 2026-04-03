@@ -1228,9 +1228,9 @@ def _node_state_from_dict(d: dict[str, object]) -> NodeState:
         Reconstructed frozen NodeState.
     """
     violations_raw = d.get("violations", ())
-    violations = tuple(str(v) for v in violations_raw) if isinstance(violations_raw, list | tuple) else ()
+    violations = tuple(str(v) for v in violations_raw) if isinstance(violations_raw, (list, tuple)) else ()
     vdicts_raw = d.get("violation_dicts", ())
-    vdicts = tuple(vdicts_raw) if isinstance(vdicts_raw, list | tuple) else ()
+    vdicts = tuple(vdicts_raw) if isinstance(vdicts_raw, (list, tuple)) else ()
     return NodeState(
         id=str(d.get("id", "")),
         pass_number=int(cast(int, d.get("pass_number", 0))),
