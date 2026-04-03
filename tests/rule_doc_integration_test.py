@@ -17,6 +17,14 @@ from tests.rule_doc_parser import discover_rule_docs
 
 _GRAPH_RULE_KNOWN_FAILURES: dict[str, str] = {
     "L037": "requires module resolution from Ansible validator convergence loop",
+    "L061": "ARI engine normalizes quoted truthy strings to native booleans",
+    "L062": "ARI engine expands free-form key=value into separate module options",
+    "L063": "content graph does not emit blockcall nodes for block: directives",
+    "L064": "meta tasks not represented as standard taskcall nodes in content graph",
+    "L066": "play-level roles/tasks not in OPA serializer options whitelist",
+    "M018": "play-level connection and task-level vars not in OPA serializer",
+    "M025": "play-level strategy not in OPA serializer options whitelist",
+    "M028": "first_found is a lookup plugin; terms live inside Jinja2 expressions",
     "R402": "informational listing rule (no GraphRule equivalent yet)",
 }
 
