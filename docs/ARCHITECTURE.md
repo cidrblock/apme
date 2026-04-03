@@ -19,7 +19,7 @@ All gRPC servers use **`grpc.aio`** (fully async). Blocking work (engine scan, s
 │  │          │  │          │  │          │  │          │  │          │ │
 │  │ engine + │  │ Python   │  │ OPA bin  │  │ ansible- │  │ gitleaks │ │
 │  │ orchestr │  │ rules on │  │ + gRPC   │  │ core     │  │ + gRPC   │ │
-│  │ session  │  │ scandata │  │ wrapper  │  │ venvs    │  │ wrapper  │ │
+│  │ session  │  │ graph    │  │ wrapper  │  │ venvs    │  │ wrapper  │ │
 │  │  venvs   │  │          │  │          │  │ (ro)     │  │          │ │
 │  └────┬─────┘  └──────────┘  └──────────┘  └──────────┘  └──────────┘ │
 │       │                                                               │
@@ -47,7 +47,7 @@ All gRPC servers use **`grpc.aio`** (fully async). Blocking work (engine scan, s
 | Service | Image | Port | Role |
 |---------|-------|------|------|
 | **Primary** | `apme-primary` | 50051 | Runs the engine (parse → annotate → hierarchy); manages session-scoped venvs (`VenvSessionManager`); fans out `ValidateRequest` to all validators in parallel; merges, deduplicates, and returns violations. Pushes `FixCompletedEvent` to the Gateway via gRPC. |
-| **Native** | `apme-native` | 50055 | Python rules operating on deserialized `scandata` (the full in-memory model). Rules L026–L060, M005/M010, P001–P004, R101–R501 |
+| **Native** | `apme-native` | 50055 | Python graph rules operating on the deserialized `ContentGraph` (via `content_graph_data`). Rules L026–L060, M005/M010, P001–P004, R101–R501 |
 | **OPA** | `apme-opa` | 50054 | OPA binary (REST on 8181 internally) + Python gRPC wrapper. Rego rules L003–L025, M006/M008/M009/M011, R118 on the hierarchy JSON |
 | **Ansible** | `apme-ansible` | 50053 | Ansible-runtime checks using session-scoped venvs (shared read-only via `/sessions` volume). Rules L057–L059, M001–M004 |
 | **Gitleaks** | `apme-gitleaks` | 50056 | Gitleaks binary + Python gRPC wrapper. Scans raw files for hardcoded secrets, API keys, private keys. Filters vault-encrypted content and Jinja2 expressions. Rules SEC:* (800+ patterns) |
@@ -92,12 +92,22 @@ Every validator container implements this service. The `ValidateRequest` carries
 | `project_root` | `string` | All |
 | `files` | `repeated File` | Ansible (writes to temp dir), Gitleaks (writes to temp dir) |
 | `hierarchy_payload` | `bytes` (JSON) | OPA, Ansible |
-| `scandata` | `bytes` (jsonpickle) | Native |
+| `content_graph_data` | `bytes` (JSON) | Native (graph rules via `ContentGraph.from_dict()`) |
 | `ansible_core_version` | `string` | Ansible |
 | `collection_specs` | `repeated string` | Ansible |
 | `request_id` | `string` | All (correlation ID for logging/tracing) |
+| `session_id` | `string` | Ansible (venv reuse) |
+| `venv_path` | `string` | Ansible (resolved venv path, read-only) |
 
-The `ValidateResponse` echoes back `request_id` for correlation and includes a `ValidatorDiagnostics` message with timing data, violation counts, and validator-specific metadata. Each validator ignores the data fields it doesn't need. This keeps the contract uniform — adding a new validator means implementing one RPC and choosing which fields to consume.
+Three distinct serialization methods serve different validator needs:
+
+| Serialization | Format | Consumers | Why |
+|--------------|--------|-----------|-----|
+| **`hierarchy_payload`** | JSON (`json.dumps`) | OPA, Ansible | Flat hierarchy structure consumable by Rego rules and ansible-core introspection |
+| **`content_graph_data`** | JSON (`ContentGraph.to_dict(slim=True)`) | Native | Full graph topology with node identity; `slim=True` strips progression/state to reduce wire size |
+| **`files`** | Protobuf `File` messages | Ansible, Gitleaks | Raw file content for filesystem-based tools (ansible-lint, gitleaks binary) |
+
+Each validator ignores the fields it doesn't need. This keeps the contract uniform — adding a new validator means implementing one RPC and choosing which fields to consume.
 
 ### Reporting (`reporting.proto`)
 
@@ -175,11 +185,13 @@ All validator logs are prefixed with `[req=xxx]` for end-to-end correlation acro
 | Data | Format | Wire type | Producer | Consumer |
 |------|--------|-----------|----------|----------|
 | Hierarchy payload | JSON (`json.dumps`) | `bytes` in protobuf | Engine (Primary) | OPA, Ansible |
-| Scandata | jsonpickle (`jsonpickle.encode`) | `bytes` in protobuf | Engine (Primary) | Native |
+| ContentGraph | JSON (`ContentGraph.to_dict(slim=True)`) | `bytes` in protobuf | Engine (Primary) | Native |
 | Violations | Protobuf `Violation` messages | gRPC | All validators | Primary |
-| Project files | Protobuf `File` messages | gRPC | CLI | Primary, Ansible |
+| Project files | Protobuf `File` messages | gRPC | CLI | Primary, Ansible, Gitleaks |
 
-**jsonpickle** is used for scandata because the engine's in-memory model (`SingleScan`) contains complex Python objects (trees, contexts, specs, annotations) that standard JSON cannot represent. jsonpickle preserves types for round-trip deserialization.
+The engine produces three serialization formats from a single scan run. The **hierarchy payload** is a flat JSON structure designed for Rego evaluation and ansible-core introspection. The **ContentGraph** is a graph-based JSON representation (ADR-044) with node identity, types, edges, and YAML content — `slim=True` omits progression/state snapshots to reduce wire size. Native deserializes it via `ContentGraph.from_dict()` and runs graph rules against it.
+
+**Note:** jsonpickle is still used internally by the ARI engine for the `ScanContext.scandata` in-process object, but it is **not** sent over the wire to validators. The ContentGraph is extracted from `scandata.content_graph` in Primary and serialized as plain JSON.
 
 ## OPA container internals
 
