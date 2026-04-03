@@ -101,7 +101,7 @@ The `AIProvider` protocol has been updated to graph-native:
 - **`AIProposal`** and **`AIPatch`** are replaced by **`AINodeFix`** (single-node fix) and **`AINodeProposal`** (result with before/after YAML)
 - **`AINodeContext`** (in `ai_context.py`) bundles the node's YAML, violations, parent context, sibling snippets, and best-practice guidance from the `ContentGraph`
 - Engine wiring: `GraphRemediationEngine.__init__(ai_provider: AIProvider | None = None)`
-- Primary resolves the provider via `_resolve_ai_provider()` with graceful degradation (returns `None` if unreachable)
+- Primary resolves the provider via `_resolve_ai_provider()` with graceful degradation (returns `None` when prerequisites are missing: no daemon address, no model, or no `abbenay_grpc` install); if the daemon is unreachable at runtime, `propose_node_fix()` raises and the graph engine catches/skips
 
 ## Implementation Notes
 

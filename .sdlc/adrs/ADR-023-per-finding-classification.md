@@ -179,7 +179,7 @@ Classification happens server-side in `primary_server.py` before proto serializa
 - `RemediationClass` and `RemediationResolution` are `str, Enum` (not `StrEnum`) for Python 3.10 compatibility
 - `add_classification_to_violations()` mutates the violation list in place and returns `None` — callers should not capture the return value
 - The `_to_str_value()` helper in `partition.py` handles both enum members and plain strings when extracting values for dict lookups (necessary because `str(enum_member)` returns `"ClassName.MEMBER"` with `str, Enum`)
-- The engine sets `TRANSFORM_FAILED` when `registry.apply_node()` returns `False` and reclassifies to `AI_CANDIDATE`
+- Tier 1 transforms are attempted via `ContentGraph.apply_transform()`; when a transform cannot be applied, the result is "not applied" (there is no automatic `remediation_resolution` update to `TRANSFORM_FAILED` or reclassification to `AI_CANDIDATE` — the violation remains in its original state)
 - The engine sets `OSCILLATION` on remaining Tier 1 violations when the convergence loop detects non-decreasing fixable counts
 
 ## Related Decisions

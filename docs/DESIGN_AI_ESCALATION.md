@@ -107,9 +107,9 @@ class AISkipped:
 class AINodeFix:
     """AI-generated fix for a single graph node."""
     fixed_snippet: str
-    rule_ids: list[str]
-    explanation: str
-    confidence: float
+    rule_ids: list[str] = field(default_factory=list)
+    explanation: str = ""
+    confidence: float = 0.85
     skipped: list[AISkipped] = field(default_factory=list)
 
 class AIProvider(Protocol):
@@ -537,7 +537,7 @@ Future MCP integration (when implemented) would allow the LLM to autonomously ca
 
 ### Graceful Degradation
 
-If `--ai` is set but the daemon is unreachable, `_resolve_ai_provider` logs a warning and returns `None`. AI escalation is disabled gracefully and Tier 2 violations fall to Tier 3 (manual review). Without `--ai`, Tier 2 violations are reported as "AI-candidate" with no proposals.
+`_resolve_ai_provider()` returns `None` only when AI configuration or prerequisites are missing (no daemon address, no model configured, or the optional client import is unavailable). In that case, AI escalation is not activated. If `--ai` is set and a provider is resolved but the daemon is unreachable at proposal time, `propose_node_fix()` raises; the graph engine catches that failure and skips proposal generation for the affected node. Remaining Tier 2 violations are still reported as "AI-candidate", but with no proposals. Without `--ai`, Tier 2 violations are also reported as "AI-candidate" with no proposals.
 
 ---
 

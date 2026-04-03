@@ -286,7 +286,7 @@ AI fixes are applied via `node.update_from_yaml(fix.fixed_snippet)` on the `Cont
 
 ### Graceful Degradation
 
-Without `--ai`, Tier 2 violations are reported as "AI-candidate" with a note about `--ai`. With `--ai`, if the Abbenay daemon is unreachable, the provider logs a warning and returns `None` — AI escalation is skipped gracefully and remaining violations fall to Tier 3 (manual review).
+Without `--ai`, Tier 2 violations are reported as "AI-candidate" with a note about `--ai`. With `--ai`, AI escalation is only disabled up front when no Abbenay address can be resolved, no model is configured, or the `abbenay_grpc` client is unavailable, in which case no provider is created. If a provider is created but the Abbenay daemon is unreachable at runtime, node-level proposal attempts raise and are caught by the graph remediation engine, which skips those nodes. In that case, the affected violations remain unresolved / "AI-candidate" rather than being reclassified to Tier 3 (manual review).
 
 ## Convergence Loop
 

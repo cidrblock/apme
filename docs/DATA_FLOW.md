@@ -67,14 +67,14 @@ User runs:  apme check /path/to/project
 │  6. Build ValidateRequest:                                       │
 │     - hierarchy_payload = json.dumps(ctx.hierarchy_payload,      │
 │                                      default=str)                │
-│     - scandata = jsonpickle.encode(ctx.scandata)                 │
+│     - content_graph_data = graph.to_dict(slim=True)              │
 │     - files, ansible_core_version, collection_specs              │
 │                                                                  │
 │  7. Parallel fan-out (asyncio.gather):                           │
 │     ┌─────────────────────────────────────────────────────┐      │
 │     │                                                     │      │
 │     │  ┌─► Native :50055                                  │      │
-│     │  │   - Deserialize ContentGraph from scandata       │      │
+│     │  │   - Deserialize ContentGraph from graph data      │      │
 │     │  │   - GraphRule evaluation via graph_scanner.scan() │      │
 │     │  │   → violations[] + ValidatorDiagnostics          │      │
 │     │  │                                                  │      │

@@ -106,7 +106,7 @@ Three distinct serialization methods serve different validator needs:
 | Serialization | Format | Consumers | Why |
 |--------------|--------|-----------|-----|
 | **`hierarchy_payload`** | JSON (`json.dumps`) | OPA, Ansible | Flat hierarchy structure consumable by Rego rules and ansible-core introspection |
-| **`content_graph_data`** | JSON (`ContentGraph.to_dict(slim=True)`) | Native | Full graph topology with node identity; `slim=True` strips progression/state to reduce wire size |
+| **`content_graph_data`** | JSON (`ContentGraph.to_dict(slim=True)`) | Native, Ansible, Gitleaks | Full graph topology with node identity for graph rules, file/line→node lookup, and finding attribution; `slim=True` strips progression/state to reduce wire size |
 | **`files`** | Protobuf `File` messages | Ansible, Gitleaks | Raw file content for filesystem-based tools (ansible-lint, gitleaks binary) |
 
 Each validator ignores the fields it doesn't need. This keeps the contract uniform — adding a new validator means implementing one RPC and choosing which fields to consume.
