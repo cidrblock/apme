@@ -97,17 +97,17 @@ commits fixes (requires write permissions).
 This lets CI distinguish actionable results from infrastructure failures:
 
 ```yaml
-- run: apme check .
-  id: scan
-  continue-on-error: true
-
-- if: steps.scan.outcome == 'failure'
+- id: scan
   run: |
-    if [ "${{ steps.scan.outputs.exit-code }}" = "2" ]; then
-      echo "::error::APME infrastructure failure"
-      exit 1
-    fi
-    echo "::warning::APME found violations"
+    apme check . && echo "rc=0" >> "$GITHUB_OUTPUT" || echo "rc=$?" >> "$GITHUB_OUTPUT"
+
+- if: steps.scan.outputs.rc == '2'
+  run: |
+    echo "::error::APME infrastructure failure"
+    exit 1
+
+- if: steps.scan.outputs.rc == '1'
+  run: echo "::warning::APME found violations"
 ```
 
 ## Caching
