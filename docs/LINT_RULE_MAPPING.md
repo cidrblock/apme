@@ -104,6 +104,26 @@ L058 and L059 both check module arguments but use different extraction methods:
 
 Both can run simultaneously; each has a unique rule ID so users can enable/disable independently.
 
+## OPA content graph rules — L061+
+
+These rules operate on the content graph hierarchy JSON via OPA/Rego.
+
+| Rule ID | File | Description |
+|---------|------|-------------|
+| L061 | L061.rego | Use true/false for booleans, not yes/no/True/False |
+| L062 | L062.rego | Use YAML-style module arguments, not key=value one-liners |
+| L063 | L063.rego | Block should have a name |
+| L064 | L064.rego | Avoid meta end_play; prefer meta end_host |
+| L065 | L065.rego | Play names should not contain Jinja expressions |
+| L066 | L066.rego | Do not mix roles and tasks in the same play |
+| L067 | L067.rego | Set verbosity on debug tasks |
+| L068 | L068.rego | Avoid lineinfile; prefer template, ini_file, or blockinfile |
+| L069 | L069.rego | Batch package names in a list instead of looping |
+| L070 | L070.rego | Jinja in task names should only appear at the end |
+| L071 | L071.rego | Consider using template instead of copy with Jinja content |
+| L072 | L072.rego | Consider setting backup true on template/copy tasks |
+| L106 | L106.rego | set_fact + loop + when scaling anti-pattern |
+
 ## Modernize rules — M001-M004 (ansible validator)
 
 These rules use ansible-core's plugin loader (`find_plugin_with_context()`) to resolve modules against the actual runtime metadata (`ansible_builtin_runtime.yml` and collection `meta/runtime.yml`). They stay current with whichever ansible-core version is in the venv.

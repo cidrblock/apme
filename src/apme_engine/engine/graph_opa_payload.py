@@ -180,8 +180,7 @@ def content_node_to_opa_dict(node: ContentNode) -> YAMLDict:
                 anns.append(annotation_to_dict(cast(Annotation, an)))
         d["annotations"] = anns
 
-        opts: YAMLDict = {}
-        for key in (
+        _OPTION_KEYS = (
             "when",
             "tags",
             "ignore_errors",
@@ -192,24 +191,11 @@ def content_node_to_opa_dict(node: ContentNode) -> YAMLDict:
             "become_user",
             "run_once",
             "local_action",
-            "with_items",
-            "with_dict",
-            "with_fileglob",
-            "with_subelements",
-            "with_sequence",
-            "with_nested",
-            "with_first_found",
-            "with_indexed_items",
-            "with_flattened",
-            "with_together",
-            "with_random_choice",
-            "with_lines",
-            "with_ini",
-            "with_inventory_hostnames",
-            "with_cartesian",
-        ):
-            val = node.options.get(key)
-            if val is not None:
+            "loop",
+        )
+        opts: YAMLDict = {}
+        for key, val in node.options.items():
+            if key in _OPTION_KEYS or key.startswith("with_"):
                 with contextlib.suppress(Exception):
                     opts[key] = json_safe(val)
         d["options"] = opts

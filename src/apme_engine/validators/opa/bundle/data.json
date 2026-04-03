@@ -37,7 +37,8 @@
       "command_shell_modules": ["ansible.builtin.command", "ansible.builtin.shell", "ansible.builtin.raw", "ansible.legacy.command", "ansible.legacy.shell", "ansible.legacy.raw", "command", "shell", "raw"],
       "package_modules": ["ansible.builtin.apt", "ansible.builtin.dnf", "ansible.builtin.yum", "ansible.builtin.package", "ansible.legacy.apt", "ansible.legacy.dnf", "ansible.legacy.yum", "ansible.legacy.package", "apt", "dnf", "yum", "package"],
       "copy_template_modules": ["ansible.builtin.copy", "ansible.builtin.template", "ansible.legacy.copy", "ansible.legacy.template", "copy", "template", "win_copy", "win_template"],
-      "file_permission_modules": ["ansible.builtin.copy", "ansible.builtin.file", "ansible.builtin.template", "ansible.builtin.lineinfile", "ansible.builtin.replace", "ansible.builtin.synchronize", "ansible.builtin.unarchive", "ansible.legacy.copy", "ansible.legacy.file", "ansible.legacy.template", "ansible.legacy.lineinfile", "ansible.legacy.replace", "ansible.legacy.synchronize", "ansible.legacy.unarchive", "copy", "file", "template", "lineinfile", "replace", "synchronize", "unarchive", "assemble"]
+      "file_permission_modules": ["ansible.builtin.copy", "ansible.builtin.file", "ansible.builtin.template", "ansible.builtin.lineinfile", "ansible.builtin.replace", "ansible.builtin.synchronize", "ansible.builtin.unarchive", "ansible.legacy.copy", "ansible.legacy.file", "ansible.legacy.template", "ansible.legacy.lineinfile", "ansible.legacy.replace", "ansible.legacy.synchronize", "ansible.legacy.unarchive", "copy", "file", "template", "lineinfile", "replace", "synchronize", "unarchive", "assemble"],
+      "set_fact_modules": ["ansible.builtin.set_fact", "ansible.legacy.set_fact", "set_fact"]
     }
   }
 }

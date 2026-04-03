@@ -11,19 +11,10 @@ violations contains v if {
 	v := deprecated_with_loop(tree, node)
 }
 
-_with_keys := [
-	"with_items", "with_dict", "with_fileglob", "with_subelements",
-	"with_sequence", "with_nested", "with_first_found",
-	"with_indexed_items", "with_flattened", "with_together",
-	"with_random_choice", "with_lines", "with_ini",
-	"with_inventory_hostnames", "with_cartesian",
-]
-
 deprecated_with_loop(tree, node) := v if {
 	node.type == "taskcall"
 	opts := object.get(node, "options", {})
-	some wk in _with_keys
-	opts[wk] != null
+	wk := has_with_loop(opts)
 	count(node.line) > 0
 	v := {
 		"rule_id": "M009",

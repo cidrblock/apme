@@ -1,4 +1,4 @@
-# Shared helpers for APME OPA rules. Used by L004, L006, L012, L013, L017, L020, L021.
+# Shared helpers for APME OPA rules.
 # Package must match rule files so they can reference these definitions.
 
 package apme.rules
@@ -27,4 +27,14 @@ copy_template_modules[m] if {
 
 file_permission_modules[m] if {
 	m := data.apme.ansible.file_permission_modules[_]
+}
+
+set_fact_modules[m] if {
+	m := data.apme.ansible.set_fact_modules[_]
+}
+
+has_with_loop(opts) := key if {
+	some key in object.keys(opts)
+	startswith(key, "with_")
+	opts[key] != null
 }
