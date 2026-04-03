@@ -67,23 +67,23 @@ Return the COMPLETE corrected YAML for this task/block in "fixed_snippet".
 Do NOT return line numbers — just the corrected YAML text.
 
 Respond with ONLY this JSON (no markdown fences, no explanation outside JSON):
-{{{{
+{{
   "fixed_snippet": "<the entire corrected YAML for this task/block>",
   "changes": [
-    {{{{
+    {{
       "rule_id": "<rule ID fixed>",
       "explanation": "<one-sentence explanation>",
       "confidence": 0.95
-    }}}}
+    }}
   ],
   "skipped": [
-    {{{{
+    {{
       "rule_id": "<rule ID that could not be fixed>",
       "reason": "<why this cannot be auto-fixed>",
       "suggestion": "<how the user can fix this manually>"
-    }}}}
+    }}
   ]
-}}}}
+}}
 
 Rules:
 - CRITICAL: Fix ONLY the violations listed above. Do NOT make any other changes,

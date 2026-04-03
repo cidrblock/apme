@@ -240,24 +240,26 @@ class GraphRemediationEngine:
                     pass_num,
                 )
 
-                if applied_this_pass > 0:
-                    violations = await self._rescan_and_record(graph, pass_num)
-                    new_tier1, _, _ = partition_violations(violations, registry)
-                    new_fixable = len(new_tier1)
+                if applied_this_pass == 0:
+                    break
 
-                    if new_fixable >= prev_count:
-                        logger.warning(
-                            "Graph remediation: oscillation at pass %d (%d >= %d)",
-                            pass_num,
-                            new_fixable,
-                            prev_count,
-                        )
-                        oscillation = True
-                        break
+                violations = await self._rescan_and_record(graph, pass_num)
+                new_tier1, _, _ = partition_violations(violations, registry)
+                new_fixable = len(new_tier1)
 
-                    prev_count = new_fixable
-                    if new_fixable > 0:
-                        continue
+                if new_fixable >= prev_count:
+                    logger.warning(
+                        "Graph remediation: oscillation at pass %d (%d >= %d)",
+                        pass_num,
+                        new_fixable,
+                        prev_count,
+                    )
+                    oscillation = True
+                    break
+
+                prev_count = new_fixable
+                if new_fixable > 0:
+                    continue
 
             # Phase B: Tier 2 AI transforms
             if not tier1 and tier2 and self._ai_provider is not None and ai_attempts < self._max_ai_attempts:

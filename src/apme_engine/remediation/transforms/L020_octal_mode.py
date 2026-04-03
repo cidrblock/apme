@@ -12,9 +12,9 @@ from __future__ import annotations
 import re
 
 from ruamel.yaml.comments import CommentedMap
-from ruamel.yaml.scalarint import ScalarInt
 
 from apme_engine.engine.models import ViolationDict
+from apme_engine.engine.yaml_utils import OctalIntYAML11
 from apme_engine.remediation.transforms._helpers import get_module_key
 
 _OCTAL_DIGITS = re.compile(r"^[0-7]{3,4}$")
@@ -52,11 +52,13 @@ def fix_octal_mode(task: CommentedMap, violation: ViolationDict) -> bool:
         return False
 
     if isinstance(mode_val, int):
-        if isinstance(mode_val, ScalarInt) and type(mode_val).__name__ == "OctalIntYAML11":
+        if isinstance(mode_val, OctalIntYAML11):
             octal_digits = format(int(mode_val), "o")
             normalized = octal_digits if octal_digits.startswith("0") else f"0{octal_digits}"
         else:
             decimal_digits = str(mode_val)
+            if not _OCTAL_DIGITS.match(decimal_digits):
+                return False
             normalized = f"0{decimal_digits}" if not decimal_digits.startswith("0") else decimal_digits
         container["mode"] = normalized
         return True
