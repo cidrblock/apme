@@ -340,15 +340,15 @@ An oscillation occurs when a fix introduces a new violation that triggers anothe
 ```python
 @dataclass
 class GraphFixReport:
-    passes: int = 0                                    # convergence passes executed
-    fixed: int = 0                                     # count of violations fixed
-    applied_patches: list[FilePatch] = []              # file-level patches (caller-filled)
-    remaining_violations: list[ViolationDict] = []     # all remaining (Tier 2 + 3)
-    fixed_violations: list[ViolationDict] = []         # violations resolved by transforms
-    oscillation_detected: bool = False                 # True if bailed due to oscillation
-    nodes_modified: int = 0                            # count of ContentNodes modified
-    step_diffs: list[dict[str, object]] = []           # per-progression-step diffs
-    ai_proposals: list[AINodeProposal] = []            # AI-proposed node fixes
+    passes: int = 0
+    fixed: int = 0
+    applied_patches: list[FilePatch] = field(default_factory=list)
+    remaining_violations: list[ViolationDict] = field(default_factory=list)
+    fixed_violations: list[ViolationDict] = field(default_factory=list)
+    oscillation_detected: bool = False
+    nodes_modified: int = 0
+    step_diffs: list[dict[str, object]] = field(default_factory=list)
+    ai_proposals: list[AINodeProposal] = field(default_factory=list)
 ```
 
 ## Progress Streaming

@@ -136,7 +136,7 @@ class AIProvider(Protocol):
 Responsibilities:
 
 - **Auto-discovery**: find the Abbenay daemon via `$XDG_RUNTIME_DIR/abbenay/daemon.sock`, `/run/user/<uid>/abbenay/daemon.sock`, or `/tmp/abbenay/daemon.sock`
-- **Preflight**: call `health_check()` before starting; if unreachable, logs a warning and returns `None` (graceful degradation)
+- **Provider resolution**: `_resolve_ai_provider()` does not preflight the daemon; it returns `None` only when AI is disabled or required configuration is missing (address, model, import). Runtime failures surface during `propose_node_fix()` and the graph engine catches/skips those nodes
 - **Prompt construction**: build a graph-native prompt from `AINodeContext` (node YAML, violations, parent context, sibling snippets, best practices)
 - **Inline policy**: send policy on every request (temperature: 0.0, json_only format, max_tokens: 8192, timeout: 60000)
 - **Response parsing**: extract `fixed_snippet`, `changes[]`, `skipped[]` from structured JSON response; aggregate confidence from `changes`

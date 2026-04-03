@@ -93,6 +93,7 @@ Every validator container implements this service. The `ValidateRequest` carries
 | `project_root` | `string` | All |
 | `files` | `repeated File` | Ansible (writes to temp dir), Gitleaks (writes to temp dir) |
 | `hierarchy_payload` | `bytes` (JSON) | OPA, Ansible |
+| `scandata` | `bytes` | Legacy/deprecated — defined in proto but no longer populated by Primary. Retained for backward compatibility. |
 | `content_graph_data` | `bytes` (JSON) | Native (graph rules via `ContentGraph.from_dict()`) |
 | `ansible_core_version` | `string` | Ansible |
 | `collection_specs` | `repeated string` | Ansible |
