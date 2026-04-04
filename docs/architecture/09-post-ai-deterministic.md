@@ -5,15 +5,15 @@
 ## Purpose
 
 AI-generated fixes can introduce new Tier 1 violations. For example, an AI
-fix that rewrites a task may introduce a naming convention violation (L013) or
+fix that rewrites a task may introduce a task naming violation (L025) or
 a YAML formatting issue (L007). The post-AI deterministic pass catches and
 fixes these automatically.
 
 ## Why This Stage Exists
 
 Consider an AI fix for a module FQCN violation (M001). The AI rewrites the
-task, but the new name it gives the task violates the naming convention rule
-(L013). Without this cleanup pass, the user would see a new violation that
+task, but the new name it gives the task violates the task naming rule
+(L025). Without this cleanup pass, the user would see a new violation that
 was not present before the AI fix.
 
 The post-AI pass ensures that AI changes are as clean as possible before

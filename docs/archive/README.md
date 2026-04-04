@@ -1,7 +1,8 @@
 # Archive
 
 This directory contains **superseded documents** kept for historical
-reference. Nothing in the active codebase links here.
+reference. No runtime code links here; some SDLC artifacts (ADRs, specs)
+reference archived files as decision context.
 
 Documents are moved here when their content has been replaced by more
 current documentation — typically the [architecture series](../architecture/)

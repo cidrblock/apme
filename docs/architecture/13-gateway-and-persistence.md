@@ -49,7 +49,7 @@ Configuration is environment-variable driven:
 |----------|---------|---------|
 | `APME_GATEWAY_GRPC_LISTEN` | `0.0.0.0:50060` | gRPC bind address |
 | `APME_GATEWAY_HTTP_PORT` | `8080` | HTTP bind port |
-| `APME_GATEWAY_DB_PATH` | `data/apme.db` | SQLite database path |
+| `APME_DB_PATH` | `/data/apme.db` | SQLite database path |
 
 ## gRPC Reporting Servicer
 

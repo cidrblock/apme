@@ -7,7 +7,7 @@
 | Metric | Count |
 |--------|-------|
 | Implemented | 144/153 |
-| Tested | 91/153 |
+| Tested | 92/153 |
 | Documented | 152/153 |
 | Deterministic fixer | 24/153 |
 
@@ -167,7 +167,7 @@
 | R402 | Native | medium | Report variables used at end of sequence. | — | Yes | Yes | — |
 | R404 | Native | medium | Expose variable_set for the task. | — | — | Yes | — |
 | R501 | Native | medium | Suggest collection/role dependency. | — | — | Yes | — |
-| SEC:* | Gitleaks | critical | Secret/credential detection (delegated to Gitleaks binary). | Yes | — | — | — |
+| SEC:* | Gitleaks | critical | Secret/credential detection (delegated to Gitleaks binary). | Yes | Yes | — | — |
 
 ## By Validator
 
@@ -338,11 +338,11 @@
 | M003 | high | Module redirect — module name was redirected to a new FQCN. | Yes | Yes | Yes | Yes |
 | M004 | error | Removed module — tombstoned module that raises AnsiblePluginRemovedError. | Yes | — | Yes | Yes |
 
-### Gitleaks (1 rules, 1 impl, 0 tested, 0 fixers)
+### Gitleaks (1 rules, 1 impl, 1 tested, 0 fixers)
 
 | Rule ID | Severity | Description | Impl | Tested | Doc | Fixer |
 |---------|----------|-------------|------|--------|-----|-------|
-| SEC:* | critical | Secret/credential detection (delegated to Gitleaks binary). | Yes | — | — | — |
+| SEC:* | critical | Secret/credential detection (delegated to Gitleaks binary). | Yes | Yes | — | — |
 
 ## Coverage Gaps
 
@@ -358,7 +358,7 @@
 - **R404** (Native): Expose variable_set for the task.
 - **R501** (Native): Suggest collection/role dependency.
 
-### Implemented but untested — 56
+### Implemented but untested — 55
 
 - **L032** (Native): Variable redefinition may cause confusion.
 - **L033** (Native): Overriding vars without conditions.
@@ -415,7 +415,6 @@
 - **R115** (Native): File deletion (annotation-based).
 - **R117** (Native): Role is from Galaxy/external source.
 - **R401** (Native): Report inbound transfer sources.
-- **SEC:*** (Gitleaks): Secret/credential detection (delegated to Gitleaks binary).
 
 ### Implemented but undocumented — 1
 

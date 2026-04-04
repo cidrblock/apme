@@ -164,7 +164,7 @@ def _get_test_cache() -> dict[str, list[str]]:
         _TEST_CACHE = cache
         return cache
 
-    all_rule_id_pat = re.compile(r'["\']((?:L|M|R|P|SEC:)\d+)["\']')
+    all_rule_id_pat = re.compile(r'["\']((?:L|M|R|P)\d+|SEC:[a-zA-Z0-9_*-]+)["\']')
     for py in sorted(TESTS_DIR.rglob("*.py")):
         if py.name.startswith("_"):
             continue
@@ -358,7 +358,7 @@ def _collect_gitleaks_rules() -> list[Rule]:
             has_impl=True,
             impl_file="scanner.py",
             has_doc=False,
-            has_test=bool(_get_test_cache().get("SEC:", [])),
+            has_test=any(k.startswith("SEC:") for k in _get_test_cache()),
         )
     ]
 

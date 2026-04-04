@@ -138,7 +138,7 @@ With `-vv`, `print_diagnostics_vv()` adds per-rule timing breakdowns.
 
 | Code | Constant | Meaning |
 |------|----------|---------|
-| 0 | `EXIT_OK` | No violations (or all fixed) |
+| 0 | `EXIT_SUCCESS` | No violations (or all fixed) |
 | 1 | `EXIT_VIOLATIONS` | Violations remain |
 | 2 | `EXIT_ERROR` | Runtime error (gRPC failure, file not found, etc.) |
 
@@ -150,7 +150,7 @@ With `-vv`, `print_diagnostics_vv()` adds per-rule timing breakdowns.
 | `src/apme_engine/cli/check.py` | JSON output, diff output, exit codes |
 | `src/apme_engine/cli/remediate.py` | `_render_tier1()`, `_write_patches()`, `_safe_write()`, `_render_remaining()` |
 | `src/apme_engine/cli/ansi.py` | ANSI color helpers, box/table/badge formatters |
-| `src/apme_engine/cli/_exit_codes.py` | `EXIT_OK`, `EXIT_VIOLATIONS`, `EXIT_ERROR` |
+| `src/apme_engine/cli/_exit_codes.py` | `EXIT_SUCCESS`, `EXIT_VIOLATIONS`, `EXIT_ERROR` |
 
 ---
 

@@ -97,8 +97,9 @@ Rule ID prefixes: **L** (lint), **M** (modernize), **R** (risk).
 Runs `opa eval` via subprocess on the hierarchy JSON payload. Rego policy
 rules live in the OPA bundle shipped with the container image.
 
-Rule ID prefix: **P** (policy). No HTTP REST server — OPA is invoked
-as a subprocess (architectural invariant 9).
+Rule IDs follow the bundled Rego rules and use **L**, **M**, and **R**
+prefixes. No HTTP REST server — OPA is invoked as a subprocess
+(architectural invariant 9).
 
 ### Ansible Validator (:50053)
 
