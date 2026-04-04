@@ -40,7 +40,7 @@ User runs:  apme check /path/to/project
 │                                                                  │
 │  5. run_scan(temp_dir, project_root):                            │
 │     ┌────────────────────────────────────────────────────┐       │
-│     │  Engine (engine/scanner.py — AnsibleProjectLoader.load)  │       │
+│     │  Engine (AnsibleProjectLoader.load)                │       │
 │     │                                                    │       │
 │     │  a. load_definitions_root()                        │       │
 │     │     Parser.run() → playbooks, roles, taskfiles,    │       │

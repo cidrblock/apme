@@ -81,6 +81,8 @@ class AnsibleProjectLoader:
 
     def __post_init__(self) -> None:
         """Initialize RAM client and parser."""
+        if not self.root_dir:
+            self.root_dir = os.path.expanduser("~/.apme-data")
         if not self.ram_client:
             self.ram_client = RAMClient(root_dir=self.root_dir)
         self._parser = Parser(

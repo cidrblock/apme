@@ -77,7 +77,7 @@ class SingleScan:
         hierarchy_payload: OPA input payload with hierarchy and annotations.
         content_graph: ContentGraph (ADR-044); always built during tree construction.
         graph_scan_report: Results from running GraphRule evaluation on the content graph.
-        root_dir: Root data directory from loader config.
+        root_dir: Root data directory passed to the loader.
         persist_dependency_cache: Whether to keep the dependency cache after scan.
         use_ansible_doc: Whether to use ansible-doc for module specs.
         do_save: Whether to save scan artifacts to disk.
