@@ -1694,7 +1694,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
             session.status = 4  # AWAITING_APPROVAL
 
             yield SessionEvent(
-                proposals_ready=ProposalsReady(proposals=list(proposals)),
+                proposals=ProposalsReady(proposals=list(proposals)),
             )
         else:
             session.status = 3  # COMPLETE

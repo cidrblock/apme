@@ -489,6 +489,45 @@ class AbbenayProvider:
         self._client = self._make_client()
         await self._client.connect()  # type: ignore[attr-defined]
 
+    async def _chat_with_reconnect(
+        self,
+        model: str,
+        prompt: str,
+        policy: dict[str, object],
+    ) -> str:
+        """Call chat, reconnecting once on connection failure.
+
+        Args:
+            model: Model identifier.
+            prompt: User prompt text.
+            policy: Sampling/output policy dict.
+
+        Returns:
+            Concatenated response text from the model.
+
+        Raises:
+            Exception: If the chat call fails after one reconnect retry.
+        """
+        for attempt in range(2):
+            try:
+                response_text = ""
+                async for chunk in self._client.chat(  # type: ignore[attr-defined]
+                    model=model,
+                    message=prompt,
+                    policy=policy,
+                    token=self._token,
+                ):
+                    if hasattr(chunk, "text") and chunk.text:
+                        response_text += chunk.text
+                return response_text
+            except Exception:
+                if attempt == 0:
+                    logger.debug("Chat failed, reconnecting to Abbenay and retrying")
+                    await self.reconnect()
+                else:
+                    raise
+        return ""  # unreachable but satisfies mypy
+
     async def propose_node_fix(
         self,
         context: AINodeContext,
@@ -522,15 +561,11 @@ class AbbenayProvider:
         }
 
         try:
-            response_text = ""
-            async for chunk in self._client.chat(  # type: ignore[attr-defined]
-                model=effective_model or "",
-                message=prompt,
-                policy=policy,
-                token=self._token,
-            ):
-                if hasattr(chunk, "text") and chunk.text:
-                    response_text += chunk.text
+            response_text = await self._chat_with_reconnect(
+                effective_model or "",
+                prompt,
+                policy,
+            )
         except Exception:
             logger.exception(
                 "Abbenay node call failed for %d violations on %s",
