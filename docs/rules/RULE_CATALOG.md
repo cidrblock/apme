@@ -90,7 +90,7 @@
 | L077 | Native | low | Roles should have meta/argument_specs.yml for fail-fast parameter validation. | Yes | Yes | Yes | — |
 | L078 | Native | low | Use bracket notation for dict key access in Jinja. | Yes | Yes | Yes | — |
 | L079 | Native | low | Role defaults/vars should be prefixed with the role name. | Yes | — | Yes | — |
-| L080 | Native | low | Internal role variables should be prefixed with __ (double underscore). | Yes | Yes | Yes | — |
+| L080 | Native | low | Internal role variables should be prefixed with _ (underscore). | Yes | Yes | Yes | — |
 | L081 | Native | low | Do not number roles or playbooks. | Yes | Yes | Yes | — |
 | L082 | Native | low | Template source files should use .j2 extension. | Yes | — | Yes | — |
 | L083 | Native | low | Do not hardcode host group names in roles. | Yes | Yes | Yes | — |
@@ -106,7 +106,7 @@
 | L093 | Native | low | Do not override role defaults/vars with set_fact. | Yes | — | Yes | — |
 | L094 | Native | low | Do not put dynamic dates in templates; breaks change detection. | Yes | — | Yes | — |
 | L095 | Native | error | YAML file does not match expected schema structure. | Yes | Yes | Yes | — |
-| L096 | Native | high | meta/runtime.yml requires_ansible must be a valid version specifier. | Yes | Yes | Yes | — |
+| L096 | Native | high | meta/runtime.yml should declare requires_ansible. | Yes | Yes | Yes | — |
 | L097 | Native | low | Task names should be unique within a play. | Yes | — | Yes | — |
 | L098 | Native | error | YAML files should not have duplicate mapping keys. | Yes | Yes | Yes | — |
 | L099 | Native | info | Prefer double quotes for YAML string values. | Yes | Yes | Yes | — |
@@ -266,7 +266,7 @@
 | L077 | low | Roles should have meta/argument_specs.yml for fail-fast parameter validation. | Yes | Yes | Yes | — |
 | L078 | low | Use bracket notation for dict key access in Jinja. | Yes | Yes | Yes | — |
 | L079 | low | Role defaults/vars should be prefixed with the role name. | Yes | — | Yes | — |
-| L080 | low | Internal role variables should be prefixed with __ (double underscore). | Yes | Yes | Yes | — |
+| L080 | low | Internal role variables should be prefixed with _ (underscore). | Yes | Yes | Yes | — |
 | L081 | low | Do not number roles or playbooks. | Yes | Yes | Yes | — |
 | L082 | low | Template source files should use .j2 extension. | Yes | — | Yes | — |
 | L083 | low | Do not hardcode host group names in roles. | Yes | Yes | Yes | — |
@@ -282,7 +282,7 @@
 | L093 | low | Do not override role defaults/vars with set_fact. | Yes | — | Yes | — |
 | L094 | low | Do not put dynamic dates in templates; breaks change detection. | Yes | — | Yes | — |
 | L095 | error | YAML file does not match expected schema structure. | Yes | Yes | Yes | — |
-| L096 | high | meta/runtime.yml requires_ansible must be a valid version specifier. | Yes | Yes | Yes | — |
+| L096 | high | meta/runtime.yml should declare requires_ansible. | Yes | Yes | Yes | — |
 | L097 | low | Task names should be unique within a play. | Yes | — | Yes | — |
 | L098 | error | YAML files should not have duplicate mapping keys. | Yes | Yes | Yes | — |
 | L099 | info | Prefer double quotes for YAML string values. | Yes | Yes | Yes | — |

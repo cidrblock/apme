@@ -1345,8 +1345,8 @@ class TestInternalVarPrefixGraphRule:
         assert isinstance(variables, list)
         assert "temp_value" in variables
 
-    def test_pass_prefixed_var(self, rule: InternalVarPrefixGraphRule) -> None:
-        """set_fact with underscore-prefixed key passes.
+    def test_pass_double_underscore_prefixed_var(self, rule: InternalVarPrefixGraphRule) -> None:
+        """set_fact with double-underscore-prefixed key passes.
 
         Args:
             rule: Rule instance under test.
@@ -1354,6 +1354,21 @@ class TestInternalVarPrefixGraphRule:
         g, nid = _make_task(
             module="ansible.builtin.set_fact",
             module_options={"__temp_value": "something"},
+            file_path="roles/myrole/tasks/main.yml",
+        )
+        result = rule.process(g, nid)
+        assert result is not None
+        assert result.verdict is False
+
+    def test_pass_single_underscore_prefixed_var(self, rule: InternalVarPrefixGraphRule) -> None:
+        """set_fact with single-underscore-prefixed key also passes.
+
+        Args:
+            rule: Rule instance under test.
+        """
+        g, nid = _make_task(
+            module="ansible.builtin.set_fact",
+            module_options={"_temp_value": "something"},
             file_path="roles/myrole/tasks/main.yml",
         )
         result = rule.process(g, nid)

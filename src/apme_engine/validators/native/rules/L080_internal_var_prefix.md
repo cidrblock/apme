@@ -1,15 +1,15 @@
 ---
 rule_id: L080
 validator: native
-description: Internal role variables should be prefixed with __ (double underscore).
+description: Internal role variables should be prefixed with _ (underscore).
 scope: task
 ---
 
 ## Internal variable prefix (L080)
 
-Internal role variables (from `set_fact` or `register`) should be prefixed with `__` to signal they are private.
+Internal role variables set via `set_fact` should be prefixed with `_` to signal they are private to the role.
 
-Only fires inside `roles/` directories. Checks `set_fact` keys for missing `__` prefix.
+Only fires inside `roles/` directories. Checks `set_fact` keys for a missing leading underscore.
 
 ### Example: violation
 
@@ -24,5 +24,5 @@ Only fires inside `roles/` directories. Checks `set_fact` keys for missing `__` 
 ```yaml
 - name: Set prefixed variable in role
   ansible.builtin.set_fact:
-    __temp_value: "something"
+    _temp_value: "something"
 ```

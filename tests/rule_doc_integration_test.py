@@ -30,7 +30,7 @@ _GRAPH_RULE_KNOWN_FAILURES: dict[str, str] = {
     "L080": "requires file_path under roles/; single-file harness uses a temp path",
     "L081": "checks file basename pattern; single-file harness uses a generated temp filename",
     "L083": "requires file_path under roles/; single-file harness uses a temp path",
-    "L085": "requires file_path under roles/ with include_tasks; single-file harness uses a temp path",
+    "L085": "requires file_path under roles/ with include modules; single-file harness uses a temp path",
     "L077": "role metadata rule; example shows meta/main.yml, not playbook YAML",
     "L095": "collection metadata rule; example shows galaxy.yml, not playbook YAML",
     "L096": "collection metadata rule; example shows meta/runtime.yml, not playbook YAML",

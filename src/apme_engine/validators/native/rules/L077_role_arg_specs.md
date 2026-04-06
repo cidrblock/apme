@@ -7,7 +7,7 @@ scope: role
 
 ## Role argument specs (L077)
 
-Roles should have `meta/argument_specs.yml` (Ansible 2.11+) for fail-fast parameter validation.
+Roles should declare `argument_specs` for fail-fast parameter validation (Ansible 2.11+). This can be inline in `meta/main.yml` or in a standalone `meta/argument_specs.yml` file.
 
 ### Example: violation
 

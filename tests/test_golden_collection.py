@@ -336,7 +336,7 @@ class TestL074NoDashesInRoleName:
 
 
 class TestL080InternalVarPrefix:
-    """L080: internal role variables set via set_fact should use ``_`` prefix."""
+    """L080: internal role variables set via set_fact should use a leading underscore prefix."""
 
     def test_fires_with_unprefixed_set_fact(self, collection_root: Path) -> None:
         """Adding an unprefixed ``set_fact`` in a role task causes L080 to fire.
