@@ -8,6 +8,7 @@ import pytest
 
 from apme_engine.engine.model_loader import (
     _safe_int,
+    load_collection,
     load_file,
     load_play,
     load_playbook,
@@ -17,6 +18,7 @@ from apme_engine.engine.model_loader import (
     load_taskfile,
 )
 from apme_engine.engine.models import (
+    Collection,
     File,
     Play,
     Playbook,
@@ -486,3 +488,157 @@ class TestLoadRequirements:
         """
         result = load_requirements(str(tmp_path / "missing_dir"))
         assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# Source-tree collection helpers
+# ---------------------------------------------------------------------------
+
+GALAXY_YML_CONTENT = (
+    "namespace: testns\n"
+    "name: testcol\n"
+    "version: 1.0.0\n"
+    "readme: README.md\n"
+    "dependencies:\n"
+    "  ansible.utils: '>=2.0.0'\n"
+    "repository: https://github.com/example/testcol\n"
+)
+
+
+def _make_source_collection(tmp_path: Path, *, galaxy_yml: bool = True) -> Path:
+    """Create a minimal source-tree collection layout under ``tmp_path``.
+
+    Returns the collection root (``tmp_path/testns/testcol``).
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        galaxy_yml: Whether to write a ``galaxy.yml`` file.
+
+    Returns:
+        Path to the collection root directory.
+    """
+    col_root = tmp_path / "testns" / "testcol"
+    col_root.mkdir(parents=True)
+    if galaxy_yml:
+        (col_root / "galaxy.yml").write_text(GALAXY_YML_CONTENT)
+    (col_root / "README.md").write_text("# Test Collection\n")
+    (col_root / "LICENSE").write_text("MIT\n")
+    plugins_dir = col_root / "plugins" / "modules"
+    plugins_dir.mkdir(parents=True)
+    (plugins_dir / "my_module.py").write_text("def main(): pass\n")
+    meta_dir = col_root / "meta"
+    meta_dir.mkdir()
+    (meta_dir / "runtime.yml").write_text("requires_ansible: '>=2.14'\n")
+    roles_dir = col_root / "roles" / "myrole" / "tasks"
+    roles_dir.mkdir(parents=True)
+    (roles_dir / "main.yml").write_text("---\n- name: Hello\n  ansible.builtin.debug:\n    msg: hi\n")
+    return col_root
+
+
+class TestLoadCollection:
+    """Tests for load_collection on source-tree collections."""
+
+    def test_galaxy_yml_populates_metadata(self, tmp_path: Path) -> None:
+        """galaxy.yml is loaded as metadata when MANIFEST.json is absent.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+        """
+        col_root = _make_source_collection(tmp_path)
+        coll = load_collection(str(col_root), basedir=str(tmp_path), load_children=False)
+        assert isinstance(coll, Collection)
+        assert isinstance(coll.metadata, dict)
+        assert coll.metadata.get("namespace") == "testns"
+        assert coll.metadata.get("name") == "testcol"
+        assert coll.metadata.get("version") == "1.0.0"
+
+    def test_galaxy_yml_populates_dependencies(self, tmp_path: Path) -> None:
+        """Dependencies from galaxy.yml are wired into colObj.dependency.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+        """
+        col_root = _make_source_collection(tmp_path)
+        coll = load_collection(str(col_root), basedir=str(tmp_path), load_children=False)
+        deps = coll.dependency.get("collections", {})
+        assert isinstance(deps, dict)
+        assert "ansible.utils" in deps
+
+    def test_manifest_json_takes_precedence(self, tmp_path: Path) -> None:
+        """When MANIFEST.json exists, galaxy.yml is not loaded.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+        """
+        col_root = _make_source_collection(tmp_path)
+        manifest = {
+            "collection_info": {
+                "namespace": "from_manifest",
+                "name": "testcol",
+                "version": "2.0.0",
+                "dependencies": {},
+            }
+        }
+        import json
+
+        (col_root / "MANIFEST.json").write_text(json.dumps(manifest))
+        coll = load_collection(str(col_root), basedir=str(tmp_path), load_children=False)
+        ci = coll.metadata.get("collection_info", {})
+        assert isinstance(ci, dict)
+        assert ci.get("namespace") == "from_manifest"
+
+    def test_directory_walk_populates_files(self, tmp_path: Path) -> None:
+        """Collection files are discovered via directory walk when FILES.json is absent.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+        """
+        col_root = _make_source_collection(tmp_path)
+        coll = load_collection(str(col_root), basedir=str(tmp_path), load_children=False)
+        assert coll.files, "files should be populated from directory walk"
+        raw_entries = coll.files.get("files", [])
+        assert isinstance(raw_entries, list)
+        names = [e["name"] for e in raw_entries if isinstance(e, dict)]
+        assert "galaxy.yml" in names
+        assert "README.md" in names
+        assert "LICENSE" in names
+        assert "plugins/modules/my_module.py" in names
+
+    def test_files_json_takes_precedence(self, tmp_path: Path) -> None:
+        """When FILES.json exists, directory walk is not used.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+        """
+        col_root = _make_source_collection(tmp_path)
+        import json
+
+        files_json = {"files": [{"name": "from_files_json.txt"}], "format": 1}
+        (col_root / "FILES.json").write_text(json.dumps(files_json))
+        coll = load_collection(str(col_root), basedir=str(tmp_path), load_children=False)
+        raw_entries = coll.files.get("files", [])
+        assert isinstance(raw_entries, list)
+        names = [e["name"] for e in raw_entries if isinstance(e, dict)]
+        assert "from_files_json.txt" in names
+        assert "galaxy.yml" not in names
+
+    def test_no_galaxy_yml_leaves_metadata_empty(self, tmp_path: Path) -> None:
+        """Without galaxy.yml or MANIFEST.json, metadata stays empty.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+        """
+        col_root = _make_source_collection(tmp_path, galaxy_yml=False)
+        coll = load_collection(str(col_root), basedir=str(tmp_path), load_children=False)
+        assert not coll.metadata
+
+    def test_meta_runtime_loaded(self, tmp_path: Path) -> None:
+        """meta/runtime.yml is still loaded (unrelated to this change, sanity check).
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+        """
+        col_root = _make_source_collection(tmp_path)
+        coll = load_collection(str(col_root), basedir=str(tmp_path), load_children=False)
+        assert coll.meta_runtime
+        assert coll.meta_runtime.get("requires_ansible") == ">=2.14"

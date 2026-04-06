@@ -6,12 +6,15 @@ and plugin/schema rules (L089, L090, L095).
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from apme_engine.engine.content_graph import (
     ContentGraph,
     ContentNode,
     EdgeType,
+    GraphBuilder,
     NodeIdentity,
     NodeScope,
     NodeType,
@@ -1045,3 +1048,160 @@ class TestPhase2JKScanner:
         report = scan(g, [ListAllInboundSrcGraphRule()])
         violations = [rr for nr in report.node_results for rr in nr.rule_results if rr.verdict]
         assert len(violations) == 1
+
+
+# ===========================================================================
+# Source-tree collection loader → graph rule integration tests
+# ===========================================================================
+
+
+def _build_graph_from_collection(col_root: Path) -> ContentGraph:
+    """Load a collection via model_loader and build a ContentGraph.
+
+    Args:
+        col_root: Path to the collection root on disk.
+
+    Returns:
+        ContentGraph with the collection node populated from disk.
+    """
+    from apme_engine.engine.model_loader import load_collection
+
+    coll = load_collection(str(col_root), basedir=str(col_root.parent.parent), load_children=False)
+    defs: dict[str, object] = {
+        "root": {
+            "definitions": {
+                "collections": [coll],
+            },
+        },
+    }
+    builder = GraphBuilder(defs, {})
+    return builder.build()
+
+
+def _make_source_collection(tmp_path: Path, *, with_license: bool = True, with_changelog: bool = True) -> Path:
+    """Create a minimal source-tree collection layout.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        with_license: Whether to include a LICENSE file.
+        with_changelog: Whether to include a CHANGELOG file.
+
+    Returns:
+        Path to the collection root directory.
+    """
+    col_root = tmp_path / "testns" / "testcol"
+    col_root.mkdir(parents=True)
+    (col_root / "galaxy.yml").write_text(
+        "namespace: testns\nname: testcol\nversion: 1.0.0\nrepository: https://github.com/example/testcol\n"
+    )
+    (col_root / "README.md").write_text("# Test Collection\n")
+    if with_license:
+        (col_root / "LICENSE").write_text("MIT\n")
+    if with_changelog:
+        (col_root / "CHANGELOG.md").write_text("# Changelog\n")
+    (col_root / "meta").mkdir()
+    (col_root / "meta" / "runtime.yml").write_text("requires_ansible: '>=2.14'\n")
+    return col_root
+
+
+class TestSourceTreeCollectionRules:
+    """Verify collection rules fire on graphs built from source-tree collections."""
+
+    def test_l087_fires_without_license(self, tmp_path: Path) -> None:
+        """L087 fires when LICENSE is missing from a source-tree collection.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+        """
+        col_root = _make_source_collection(tmp_path, with_license=False)
+        graph = _build_graph_from_collection(col_root)
+        report = scan(graph, [CollectionLicenseGraphRule()], owned_only=False)
+        violations = [rr for nr in report.node_results for rr in nr.rule_results if rr.verdict]
+        assert violations, "L087 should fire when LICENSE is missing"
+
+    def test_l087_passes_with_license(self, tmp_path: Path) -> None:
+        """L087 passes when LICENSE exists in a source-tree collection.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+        """
+        col_root = _make_source_collection(tmp_path, with_license=True)
+        graph = _build_graph_from_collection(col_root)
+        report = scan(graph, [CollectionLicenseGraphRule()], owned_only=False)
+        violations = [rr for nr in report.node_results for rr in nr.rule_results if rr.verdict]
+        assert not violations, "L087 should pass when LICENSE is present"
+
+    def test_l088_fires_without_readme(self, tmp_path: Path) -> None:
+        """L088 fires when README is missing from a source-tree collection.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+        """
+        col_root = _make_source_collection(tmp_path)
+        (col_root / "README.md").unlink()
+        graph = _build_graph_from_collection(col_root)
+        report = scan(graph, [CollectionReadmeGraphRule()], owned_only=False)
+        violations = [rr for nr in report.node_results for rr in nr.rule_results if rr.verdict]
+        assert violations, "L088 should fire when README is missing"
+
+    def test_l103_fires_without_changelog(self, tmp_path: Path) -> None:
+        """L103 fires when CHANGELOG is missing from a source-tree collection.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+        """
+        col_root = _make_source_collection(tmp_path, with_changelog=False)
+        graph = _build_graph_from_collection(col_root)
+        report = scan(graph, [GalaxyChangelogGraphRule()], owned_only=False)
+        violations = [rr for nr in report.node_results for rr in nr.rule_results if rr.verdict]
+        assert violations, "L103 should fire when CHANGELOG is missing"
+
+    def test_l103_passes_with_changelog(self, tmp_path: Path) -> None:
+        """L103 passes when CHANGELOG exists in a source-tree collection.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+        """
+        col_root = _make_source_collection(tmp_path, with_changelog=True)
+        graph = _build_graph_from_collection(col_root)
+        report = scan(graph, [GalaxyChangelogGraphRule()], owned_only=False)
+        violations = [rr for nr in report.node_results for rr in nr.rule_results if rr.verdict]
+        assert not violations, "L103 should pass when CHANGELOG is present"
+
+    def test_l105_passes_with_repository(self, tmp_path: Path) -> None:
+        """L105 passes when galaxy.yml has a repository key.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+        """
+        col_root = _make_source_collection(tmp_path)
+        graph = _build_graph_from_collection(col_root)
+        report = scan(graph, [GalaxyRepositoryGraphRule()], owned_only=False)
+        violations = [rr for nr in report.node_results for rr in nr.rule_results if rr.verdict]
+        assert not violations, "L105 should pass when repository key is present"
+
+    def test_l105_fires_without_repository(self, tmp_path: Path) -> None:
+        """L105 fires when galaxy.yml lacks a repository key.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+        """
+        col_root = _make_source_collection(tmp_path)
+        (col_root / "galaxy.yml").write_text("namespace: testns\nname: testcol\nversion: 1.0.0\n")
+        graph = _build_graph_from_collection(col_root)
+        report = scan(graph, [GalaxyRepositoryGraphRule()], owned_only=False)
+        violations = [rr for nr in report.node_results for rr in nr.rule_results if rr.verdict]
+        assert violations, "L105 should fire when repository key is missing"
+
+    def test_l095_collection_schema(self, tmp_path: Path) -> None:
+        """L095 validates required galaxy.yml keys from source-tree metadata.
+
+        Args:
+            tmp_path: Pytest temporary directory fixture.
+        """
+        col_root = _make_source_collection(tmp_path)
+        (col_root / "galaxy.yml").write_text("name: testcol\nversion: 1.0.0\n")
+        graph = _build_graph_from_collection(col_root)
+        report = scan(graph, [SchemaValidationGraphRule()], owned_only=False)
+        violations = [rr for nr in report.node_results for rr in nr.rule_results if rr.verdict]
+        assert violations, "L095 should fire when namespace is missing from galaxy.yml"

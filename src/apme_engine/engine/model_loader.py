@@ -2362,10 +2362,35 @@ def load_collection(
             deps = ci.get("dependencies", {}) if isinstance(ci, dict) else {}
             colObj.dependency["collections"] = deps
 
+    if not colObj.metadata:
+        galaxy_yml_path = os.path.join(fullpath, "galaxy.yml")
+        if os.path.exists(galaxy_yml_path):
+            with open(galaxy_yml_path) as file:
+                try:
+                    colObj.metadata = yaml.load(file, Loader=Loader)
+                except Exception as e:
+                    logger.debug(f"failed to load galaxy.yml; {e.args[0]}")
+            if colObj.metadata is not None and isinstance(colObj.metadata, dict):
+                deps = colObj.metadata.get("dependencies", {})
+                if isinstance(deps, dict) and deps:
+                    colObj.dependency["collections"] = deps
+
     files_file_path = os.path.join(fullpath, "FILES.json")
     if os.path.exists(files_file_path):
         with open(files_file_path) as file:
             colObj.files = cast(YAMLDict, json.load(file))
+
+    if not colObj.files:
+        file_list: list[str] = []
+        for dirpath, _dirnames, filenames in os.walk(fullpath):
+            for fname in filenames:
+                rel = os.path.relpath(os.path.join(dirpath, fname), fullpath)
+                file_list.append(rel.replace(os.sep, "/"))
+        if file_list:
+            colObj.files = cast(
+                YAMLDict,
+                {"files": [{"name": p} for p in sorted(file_list)]},
+            )
 
     meta_runtime_file_path = os.path.join(fullpath, "meta", "runtime.yml")
     if os.path.exists(meta_runtime_file_path):
