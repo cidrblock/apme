@@ -11,8 +11,26 @@ Roles should have `meta/argument_specs.yml` (Ansible 2.11+) for fail-fast parame
 
 ### Example: violation
 
-A role directory without `meta/argument_specs.yml`.
+```yaml
+# roles/myrole/meta/main.yml
+galaxy_info:
+  author: acme
+dependencies: []
+```
 
 ### Example: pass
 
-A role directory with `meta/argument_specs.yml` defining expected parameters.
+```yaml
+# roles/myrole/meta/main.yml
+galaxy_info:
+  author: acme
+dependencies: []
+argument_specs:
+  main:
+    short_description: Configure the service.
+    options:
+      service_port:
+        type: int
+        description: Port to listen on.
+        default: 8080
+```

@@ -11,4 +11,18 @@ Internal role variables (from `set_fact` or `register`) should be prefixed with 
 
 Only fires inside `roles/` directories. Checks `set_fact` keys for missing `__` prefix.
 
-**Violation:** `set_fact: temp_value: ...` inside a role — **Pass:** `set_fact: __temp_value: ...`
+### Example: violation
+
+```yaml
+- name: Set unprefixed variable in role
+  ansible.builtin.set_fact:
+    temp_value: "something"
+```
+
+### Example: pass
+
+```yaml
+- name: Set prefixed variable in role
+  ansible.builtin.set_fact:
+    __temp_value: "something"
+```
