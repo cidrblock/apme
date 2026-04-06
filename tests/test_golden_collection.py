@@ -55,7 +55,9 @@ def _build_graph(col_root: Path) -> ContentGraph:
     from apme_engine.engine.model_loader import load_collection
     from apme_engine.engine.models import Role
 
-    coll = load_collection(str(col_root), basedir=str(col_root.parent.parent), load_children=True)
+    coll = load_collection(
+        str(col_root), basedir=str(col_root.parent.parent), load_children=True, use_ansible_doc=False
+    )
     roles = [r for r in getattr(coll, "roles", []) if isinstance(r, Role)]
     defs: dict[str, object] = {
         "root": {
