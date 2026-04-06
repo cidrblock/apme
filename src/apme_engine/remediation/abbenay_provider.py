@@ -489,6 +489,11 @@ class AbbenayProvider:
         self._client = self._make_client()
         await self._client.connect()  # type: ignore[attr-defined]
 
+    async def _ensure_connected(self) -> None:
+        """Connect the client if not already connected."""
+        if getattr(self._client, "_channel", None) is None:
+            await self.reconnect()
+
     async def propose_node_fix(
         self,
         context: AINodeContext,
@@ -522,6 +527,7 @@ class AbbenayProvider:
         }
 
         try:
+            await self._ensure_connected()
             response_text = ""
             async for chunk in self._client.chat(  # type: ignore[attr-defined]
                 model=effective_model or "",
