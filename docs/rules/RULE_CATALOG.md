@@ -7,7 +7,7 @@
 | Metric | Count |
 |--------|-------|
 | Implemented | 144/153 |
-| Tested | 92/153 |
+| Tested | 98/153 |
 | Documented | 152/153 |
 | Deterministic fixer | 24/153 |
 
@@ -97,25 +97,25 @@
 | L084 | Native | low | Task names in included sub-task files should use a prefix. | Yes | — | Yes | — |
 | L085 | Native | low | Use explicit role_path prefix in include paths within roles. | Yes | — | Yes | — |
 | L086 | Native | low | Avoid playbook/play vars for routine config; use inventory vars. | Yes | — | Yes | — |
-| L087 | Native | low | Collection root should have a LICENSE or COPYING file. | Yes | — | Yes | — |
-| L088 | Native | low | Collection README should document supported ansible-core versions. | Yes | — | Yes | — |
+| L087 | Native | low | Collection root should have a LICENSE or COPYING file. | Yes | Yes | Yes | — |
+| L088 | Native | low | Collection README should document supported ansible-core versions. | Yes | Yes | Yes | — |
 | L089 | Native | low | Plugin Python files should include type hints. | Yes | — | Yes | — |
 | L090 | Native | low | Plugin entry files should be small; move helpers to module_utils. | Yes | — | Yes | — |
 | L091 | Native | low | Use | bool for bare variables in when conditions. | Yes | — | Yes | — |
 | L092 | Native | low | Avoid loop variable references in task names. | Yes | — | Yes | — |
 | L093 | Native | low | Do not override role defaults/vars with set_fact. | Yes | — | Yes | — |
 | L094 | Native | low | Do not put dynamic dates in templates; breaks change detection. | Yes | — | Yes | — |
-| L095 | Native | error | YAML file does not match expected schema structure. | Yes | — | Yes | — |
-| L096 | Native | high | meta/runtime.yml requires_ansible must be a valid version specifier. | Yes | — | Yes | — |
+| L095 | Native | error | YAML file does not match expected schema structure. | Yes | Yes | Yes | — |
+| L096 | Native | high | meta/runtime.yml requires_ansible must be a valid version specifier. | Yes | Yes | Yes | — |
 | L097 | Native | low | Task names should be unique within a play. | Yes | — | Yes | — |
 | L098 | Native | error | YAML files should not have duplicate mapping keys. | Yes | Yes | Yes | — |
 | L099 | Native | info | Prefer double quotes for YAML string values. | Yes | Yes | Yes | — |
 | L100 | Native | medium | Variable names must not be Python or Ansible keywords. | Yes | Yes | Yes | — |
 | L101 | Native | medium | Variable names must not collide with Ansible reserved names. | Yes | — | Yes | — |
 | L102 | Native | medium | Do not set read-only Ansible variables. | Yes | — | Yes | — |
-| L103 | Native | low | Collection should have a CHANGELOG file. | Yes | — | Yes | — |
+| L103 | Native | low | Collection should have a CHANGELOG file. | Yes | Yes | Yes | — |
 | L104 | Native | low | Collection should have meta/runtime.yml. | Yes | — | Yes | — |
-| L105 | Native | low | galaxy.yml should have a repository key. | Yes | — | Yes | — |
+| L105 | Native | low | galaxy.yml should have a repository key. | Yes | Yes | Yes | — |
 | L106 | OPA | medium | set_fact with loop and when is a scaling anti-pattern. | Yes | Yes | Yes | — |
 | M001 | Ansible | high | FQCN resolution — module resolved to a different canonical name. | Yes | Yes | Yes | Yes |
 | M002 | Ansible | high | Deprecated module — module has deprecation metadata. | Yes | Yes | Yes | Yes |
@@ -225,7 +225,7 @@
 | M028 | high | first_found lookup auto-splitting paths on delimiters is deprecated (2.23) | Yes | Yes | Yes | — |
 | R118 | info | Task downloads from an external source (inbound transfer). | Yes | Yes | Yes | — |
 
-### Native (96 rules, 87 impl, 36 tested, 3 fixers)
+### Native (96 rules, 87 impl, 42 tested, 3 fixers)
 
 | Rule ID | Severity | Description | Impl | Tested | Doc | Fixer |
 |---------|----------|-------------|------|--------|-----|-------|
@@ -273,25 +273,25 @@
 | L084 | low | Task names in included sub-task files should use a prefix. | Yes | — | Yes | — |
 | L085 | low | Use explicit role_path prefix in include paths within roles. | Yes | — | Yes | — |
 | L086 | low | Avoid playbook/play vars for routine config; use inventory vars. | Yes | — | Yes | — |
-| L087 | low | Collection root should have a LICENSE or COPYING file. | Yes | — | Yes | — |
-| L088 | low | Collection README should document supported ansible-core versions. | Yes | — | Yes | — |
+| L087 | low | Collection root should have a LICENSE or COPYING file. | Yes | Yes | Yes | — |
+| L088 | low | Collection README should document supported ansible-core versions. | Yes | Yes | Yes | — |
 | L089 | low | Plugin Python files should include type hints. | Yes | — | Yes | — |
 | L090 | low | Plugin entry files should be small; move helpers to module_utils. | Yes | — | Yes | — |
 | L091 | low | Use | bool for bare variables in when conditions. | Yes | — | Yes | — |
 | L092 | low | Avoid loop variable references in task names. | Yes | — | Yes | — |
 | L093 | low | Do not override role defaults/vars with set_fact. | Yes | — | Yes | — |
 | L094 | low | Do not put dynamic dates in templates; breaks change detection. | Yes | — | Yes | — |
-| L095 | error | YAML file does not match expected schema structure. | Yes | — | Yes | — |
-| L096 | high | meta/runtime.yml requires_ansible must be a valid version specifier. | Yes | — | Yes | — |
+| L095 | error | YAML file does not match expected schema structure. | Yes | Yes | Yes | — |
+| L096 | high | meta/runtime.yml requires_ansible must be a valid version specifier. | Yes | Yes | Yes | — |
 | L097 | low | Task names should be unique within a play. | Yes | — | Yes | — |
 | L098 | error | YAML files should not have duplicate mapping keys. | Yes | Yes | Yes | — |
 | L099 | info | Prefer double quotes for YAML string values. | Yes | Yes | Yes | — |
 | L100 | medium | Variable names must not be Python or Ansible keywords. | Yes | Yes | Yes | — |
 | L101 | medium | Variable names must not collide with Ansible reserved names. | Yes | — | Yes | — |
 | L102 | medium | Do not set read-only Ansible variables. | Yes | — | Yes | — |
-| L103 | low | Collection should have a CHANGELOG file. | Yes | — | Yes | — |
+| L103 | low | Collection should have a CHANGELOG file. | Yes | Yes | Yes | — |
 | L104 | low | Collection should have meta/runtime.yml. | Yes | — | Yes | — |
-| L105 | low | galaxy.yml should have a repository key. | Yes | — | Yes | — |
+| L105 | low | galaxy.yml should have a repository key. | Yes | Yes | Yes | — |
 | M005 | high | Registered variable used in Jinja template may be untrusted in 2.19+. | Yes | — | Yes | — |
 | M010 | high | ansible_python_interpreter set to Python 2; dropped in 2.18+. | Yes | Yes | Yes | — |
 | M014 | medium | Use ansible_facts["name"] instead of injected ansible_* fact variables (removed in 2.24) | Yes | — | Yes | — |
@@ -358,7 +358,7 @@
 - **R404** (Native): Expose variable_set for the task.
 - **R501** (Native): Suggest collection/role dependency.
 
-### Implemented but untested — 55
+### Implemented but untested — 49
 
 - **L032** (Native): Variable redefinition may cause confusion.
 - **L033** (Native): Overriding vars without conditions.
@@ -381,22 +381,16 @@
 - **L084** (Native): Task names in included sub-task files should use a prefix.
 - **L085** (Native): Use explicit role_path prefix in include paths within roles.
 - **L086** (Native): Avoid playbook/play vars for routine config; use inventory vars.
-- **L087** (Native): Collection root should have a LICENSE or COPYING file.
-- **L088** (Native): Collection README should document supported ansible-core versions.
 - **L089** (Native): Plugin Python files should include type hints.
 - **L090** (Native): Plugin entry files should be small; move helpers to module_utils.
 - **L091** (Native): Use | bool for bare variables in when conditions.
 - **L092** (Native): Avoid loop variable references in task names.
 - **L093** (Native): Do not override role defaults/vars with set_fact.
 - **L094** (Native): Do not put dynamic dates in templates; breaks change detection.
-- **L095** (Native): YAML file does not match expected schema structure.
-- **L096** (Native): meta/runtime.yml requires_ansible must be a valid version specifier.
 - **L097** (Native): Task names should be unique within a play.
 - **L101** (Native): Variable names must not collide with Ansible reserved names.
 - **L102** (Native): Do not set read-only Ansible variables.
-- **L103** (Native): Collection should have a CHANGELOG file.
 - **L104** (Native): Collection should have meta/runtime.yml.
-- **L105** (Native): galaxy.yml should have a repository key.
 - **M004** (Ansible): Removed module — tombstoned module that raises AnsiblePluginRemovedError.
 - **M005** (Native): Registered variable used in Jinja template may be untrusted in 2.19+.
 - **M014** (Native): Use ansible_facts["name"] instead of injected ansible_* fact variables (removed in 2.24)
