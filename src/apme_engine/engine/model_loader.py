@@ -2369,7 +2369,7 @@ def load_collection(
                 try:
                     colObj.metadata = yaml.load(file, Loader=Loader)
                 except Exception as e:
-                    logger.debug(f"failed to load galaxy.yml; {e.args[0]}")
+                    logger.debug(f"failed to load galaxy.yml; {e}")
             if colObj.metadata is not None and isinstance(colObj.metadata, dict):
                 deps = colObj.metadata.get("dependencies", {})
                 if isinstance(deps, dict) and deps:
@@ -2382,7 +2382,9 @@ def load_collection(
 
     if not colObj.files:
         file_list: list[str] = []
-        for dirpath, _dirnames, filenames in os.walk(fullpath):
+        _excluded = {".git", "node_modules", "__pycache__", ".tox"}
+        for dirpath, dirnames, filenames in os.walk(fullpath, followlinks=False):
+            dirnames[:] = [d for d in dirnames if d not in _excluded]
             for fname in filenames:
                 rel = os.path.relpath(os.path.join(dirpath, fname), fullpath)
                 file_list.append(rel.replace(os.sep, "/"))
