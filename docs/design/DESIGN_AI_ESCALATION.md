@@ -550,14 +550,14 @@ Currently pinned via direct wheel URL with SHA256 verification:
 ```toml
 [project.optional-dependencies]
 ai = [
-    "abbenay-client @ https://github.com/redhat-developer/abbenay/releases/download/v2026.3.7-alpha/abbenay_client-2026.3.7a0-py3-none-any.whl#sha256=44b502...",
+    "abbenay-client @ https://github.com/redhat-developer/abbenay/releases/download/v2026.4.1-alpha/abbenay_client-2026.4.1a0-py3-none-any.whl#sha256=8a4730...",
 ]
 ```
 
 Once `abbenay-client` is published to PyPI, this can be simplified to:
 
 ```toml
-ai = ["abbenay-client>=2026.3.7a0"]
+ai = ["abbenay-client>=2026.4.1a0"]
 ```
 
 Install with: `pip install apme-engine[ai]`
