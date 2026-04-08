@@ -251,6 +251,7 @@ export function ActivityDetailPage() {
           onRuleChange={setRuleFilters}
           onScopeChange={setScopeFilters}
           onFixChange={setFixFilters}
+          isRemediate={isRemediate}
           filteredCount={filtered.length}
           totalCount={projectViolations.length}
         />

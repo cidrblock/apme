@@ -26,6 +26,7 @@ interface ViolationOutputToolbarProps {
   onRuleChange: (next: Set<string>) => void;
   onScopeChange: (next: Set<number>) => void;
   onFixChange: (next: Set<number>) => void;
+  isRemediate?: boolean;
   filteredCount: number;
   totalCount: number;
 }
@@ -45,6 +46,7 @@ export function ViolationOutputToolbar({
   onRuleChange,
   onScopeChange,
   onFixChange,
+  isRemediate = false,
   filteredCount,
   totalCount,
 }: ViolationOutputToolbarProps) {
@@ -66,6 +68,8 @@ export function ViolationOutputToolbar({
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [filterMenuOpen]);
+
+  const fixLabelFor = (rc: number) => (rc === 1 && isRemediate) ? 'Fixed' : (FIX_LABELS[rc] || `Fix ${rc}`);
 
   const hasFilters = sevFilters.size > 0 || ruleFilters.size > 0 || scopeFilters.size > 0 || fixFilters.size > 0 || searchText.length > 0;
   const clearAll = () => {
@@ -205,7 +209,7 @@ export function ViolationOutputToolbar({
                       return (
                         <label key={rc} className="apme-filter-option">
                           <input type="checkbox" checked={fixFilters.has(rc)} onChange={() => toggleFix(rc)} />
-                          <span style={{ flex: 1 }}>{FIX_LABELS[rc]}</span>
+                          <span style={{ flex: 1 }}>{fixLabelFor(rc)}</span>
                           <span style={{ opacity: 0.6, fontSize: 12 }}>{count}</span>
                         </label>
                       );
@@ -259,7 +263,7 @@ export function ViolationOutputToolbar({
                 ))}
                 {Array.from(fixFilters).map(rc => (
                   <Label key={rc} onClose={() => toggleFix(rc)} isCompact variant="outline">
-                    {FIX_LABELS[rc] || `Fix ${rc}`}
+                    {fixLabelFor(rc)}
                   </Label>
                 ))}
                 {Array.from(ruleFilters).map(r => (

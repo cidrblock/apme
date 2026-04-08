@@ -94,7 +94,7 @@ export function ViolationDetailModal({ isOpen, onClose, violation, diff, getRule
   const isCombinedFixed = !!mergedViolations;
 
   const hasSource = !!violation.original_yaml;
-  const startLine = violation.node_line_start ?? 1;
+  const startLine = violation.node_line_start || 1;
 
   const violationDiff = useMemo(() => {
     if (violation.original_yaml && violation.fixed_yaml) {
