@@ -19,6 +19,8 @@ class GatewayConfig:
         feedback_enabled: Enable the user feedback endpoint (POC feature).
         feedback_github_repo: GitHub repo for issue creation (e.g. ``owner/repo``).
         feedback_github_token: GitHub token with ``issues:write`` for feedback.
+        scm_token: Global SCM token fallback for PR creation (ADR-050).
+        github_api_url: GitHub API base URL (ADR-050). Default ``https://api.github.com``.
     """
 
     db_path: str = field(default_factory=lambda: os.environ.get("APME_DB_PATH", "/data/apme.db"))
@@ -34,6 +36,12 @@ class GatewayConfig:
     )
     feedback_github_token: str = field(
         default_factory=lambda: os.environ.get("APME_FEEDBACK_GITHUB_TOKEN", ""),
+    )
+    scm_token: str = field(
+        default_factory=lambda: os.environ.get("APME_SCM_TOKEN", ""),
+    )
+    github_api_url: str = field(
+        default_factory=lambda: os.environ.get("APME_GITHUB_API_URL", "https://api.github.com"),
     )
 
 

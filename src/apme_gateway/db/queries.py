@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 
 from apme_gateway.db.models import (
     GalaxyServer,
+    PatchedFile,
     Project,
     Proposal,
     Rule,
@@ -71,6 +72,8 @@ async def create_project(
     name: str,
     repo_url: str,
     branch: str = "main",
+    scm_token: str | None = None,
+    scm_provider: str | None = None,
 ) -> Project:
     """Insert a new project.
 
@@ -80,12 +83,22 @@ async def create_project(
         name: Display label.
         repo_url: SCM clone URL.
         branch: Target branch.
+        scm_token: Per-project SCM token (ADR-050).
+        scm_provider: Explicit SCM provider type (ADR-050).
 
     Returns:
         The newly created Project.
     """
     now = datetime.now(tz=timezone.utc).isoformat()
-    project = Project(id=project_id, name=name, repo_url=repo_url, branch=branch, created_at=now)
+    project = Project(
+        id=project_id,
+        name=name,
+        repo_url=repo_url,
+        branch=branch,
+        created_at=now,
+        scm_token=scm_token or None,
+        scm_provider=scm_provider or None,
+    )
     db.add(project)
     await db.commit()
     await db.refresh(project)
@@ -156,13 +169,13 @@ async def resolve_project(db: AsyncSession, id_or_name: str) -> Project | None:
     return cast("Project | None", result.scalar_one_or_none())
 
 
-async def update_project(db: AsyncSession, project_id: str, **fields: str) -> Project | None:
+async def update_project(db: AsyncSession, project_id: str, **fields: str | None) -> Project | None:
     """Partial-update a project.
 
     Args:
         db: Active async database session.
         project_id: UUID or name of the project.
-        **fields: Column-value pairs to update.
+        **fields: Column-value pairs to update.  ``None`` clears nullable fields.
 
     Returns:
         Updated Project or None if not found.
@@ -171,7 +184,7 @@ async def update_project(db: AsyncSession, project_id: str, **fields: str) -> Pr
     if project is None:
         return None
     for key, value in fields.items():
-        if value is not None and hasattr(project, key):
+        if hasattr(project, key):
             setattr(project, key, value)
     await db.commit()
     await db.refresh(project)
@@ -1591,6 +1604,80 @@ async def get_rule_stats(db: AsyncSession) -> dict[str, object]:
         "by_source": by_source,
         "override_count": override_count,
     }
+
+
+# ---------------------------------------------------------------------------
+# Patched file queries (ADR-050)
+# ---------------------------------------------------------------------------
+
+
+async def store_patched_files(
+    db: AsyncSession,
+    scan_id: str,
+    files: dict[str, bytes],
+) -> int:
+    """Persist full patched file content for async PR creation (ADR-050).
+
+    Args:
+        db: Active async database session.
+        scan_id: UUID of the owning scan (activity).
+        files: Mapping of relative path → file content bytes.
+
+    Returns:
+        Number of files stored.
+    """
+    count = 0
+    for path, content in files.items():
+        db.add(PatchedFile(scan_id=scan_id, path=path, content=content))
+        count += 1
+    await db.commit()
+    return count
+
+
+async def get_patched_files(
+    db: AsyncSession,
+    scan_id: str,
+) -> list[PatchedFile]:
+    """Return all patched files for a scan.
+
+    Args:
+        db: Active async database session.
+        scan_id: UUID of the scan.
+
+    Returns:
+        List of PatchedFile rows.
+    """
+    stmt = select(PatchedFile).where(PatchedFile.scan_id == scan_id).order_by(PatchedFile.path)
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def set_scan_pr_url(
+    db: AsyncSession,
+    scan_id: str,
+    pr_url: str,
+) -> bool:
+    """Atomically record the PR URL on an activity (ADR-050).
+
+    Uses a compare-and-set update (``WHERE pr_url IS NULL``) so that
+    concurrent requests cannot both succeed — the second caller gets
+    ``False`` and should return 409.
+
+    Args:
+        db: Active async database session.
+        scan_id: UUID of the scan (activity).
+        pr_url: Web URL of the created pull request.
+
+    Returns:
+        True if the scan row was found and updated, False if it was
+        already set or the scan does not exist.
+    """
+    from sqlalchemy import update
+
+    stmt = update(Scan).where(Scan.scan_id == scan_id, Scan.pr_url.is_(None)).values(pr_url=pr_url)
+    result = await db.execute(stmt)
+    await db.commit()
+    return bool(result.rowcount)
 
 
 # ---------------------------------------------------------------------------
