@@ -801,7 +801,7 @@ class ContentGraph:
                     status="open",
                     discovered_in_pass=pass_number,
                 )
-            elif existing.status == "fixed":
+            elif existing.status in ("fixed", "proposed", "declined"):
                 existing.status = "open"
                 existing.violation = v
                 existing.fixed_by = None
@@ -907,7 +907,8 @@ class ContentGraph:
         """Query violations across all nodes with optional filters.
 
         Args:
-            status: Filter by ``"open"`` or ``"fixed"`` (``None`` = all).
+            status: Filter by status: ``"open"``, ``"fixed"``,
+                ``"proposed"``, or ``"declined"`` (``None`` = all).
             fixed_by: Filter by attribution (``None`` = all).
 
         Returns:
@@ -1489,7 +1490,10 @@ def _violation_record_from_dict(d: dict[str, object]) -> ViolationRecord:
         Reconstructed ViolationRecord.
     """
     raw_key = d.get("key", ("", ""))
-    key: ViolationKey = (str(raw_key[0]), str(raw_key[1])) if isinstance(raw_key, (list, tuple)) else ("", "")
+    if isinstance(raw_key, (list, tuple)) and len(raw_key) >= 2:
+        key: ViolationKey = (str(raw_key[0]), str(raw_key[1]))
+    else:
+        key = ("", "")
     raw_violation = d.get("violation", {})
     violation: ViolationDict = dict(raw_violation) if isinstance(raw_violation, dict) else {}
     fixed_in_raw = d.get("fixed_in_pass")

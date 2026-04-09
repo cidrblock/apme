@@ -1635,7 +1635,7 @@ class PrimaryServicer(primary_pb2_grpc.PrimaryServicer):
             graph=graph,
             rules=rules,
             max_passes=max_passes,
-            max_ai_concurrency=int(os.environ.get("APME_AI_CONCURRENCY", "4")),
+            max_ai_concurrency=max(1, int(os.environ.get("APME_AI_CONCURRENCY", "4"))),
             progress_callback=progress_callback,
             rescan_fn=_rescan_bridge,
             ai_provider=ai_provider,  # type: ignore[arg-type]

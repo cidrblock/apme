@@ -176,7 +176,7 @@ class GraphRemediationEngine:
         self._rules = rules
         self._max_passes = max_passes
         self._max_ai_attempts = max_ai_attempts
-        self._max_ai_concurrency = max_ai_concurrency
+        self._max_ai_concurrency = max(1, max_ai_concurrency)
         self._progress_cb = progress_callback
         self._rescan_fn = rescan_fn
         self._ai_provider = ai_provider
@@ -559,7 +559,10 @@ class GraphRemediationEngine:
         proposals: list[AINodeProposal] = []
         for r in results:
             if isinstance(r, BaseException):
-                logger.exception("AI proposal failed", exc_info=r)
+                logger.error(
+                    "AI proposal failed",
+                    exc_info=(type(r), r, r.__traceback__),
+                )
                 continue
             if r is None:
                 continue
