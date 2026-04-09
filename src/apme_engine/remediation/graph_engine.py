@@ -320,10 +320,13 @@ class GraphRemediationEngine:
                     dirty_ids = graph.dirty_nodes
                     rescan_violations = await self._rescan_and_record(graph, pass_num)
 
-                    rescan_keys = {(str(v.get("path", "")), str(v.get("rule_id", ""))) for v in rescan_violations}
+                    rescan_keys = {
+                        (str(v.get("path", "")), normalize_rule_id(str(v.get("rule_id", ""))))
+                        for v in rescan_violations
+                    }
                     for v in violations:
                         if str(v.get("path", "")) in dirty_ids:
-                            key = (str(v.get("path", "")), str(v.get("rule_id", "")))
+                            key = (str(v.get("path", "")), normalize_rule_id(str(v.get("rule_id", ""))))
                             if key not in rescan_keys:
                                 all_fixed.append(dict(v))
 

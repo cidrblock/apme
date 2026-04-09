@@ -50,8 +50,8 @@ function makeUnifiedDiff(original: string, fixed: string, filename: string): str
   return lines.join('\n');
 }
 
-function tierLabel(rc: number): string {
-  if (rc === 1) return 'Fixable';
+function tierLabel(rc: number, isRemediate: boolean): string {
+  if (rc === 1) return isRemediate ? 'Fixed' : 'Fixable';
   if (rc === 2) return 'AI';
   if (rc === 3) return 'Manual';
   return 'Unknown';
@@ -80,16 +80,18 @@ interface ViolationDetailModalProps {
   violation: ViolationRecord;
   diff?: string;
   getRuleDescription?: (ruleId: string) => string | undefined;
+  scanType?: string;
   scanId?: string;
   feedbackEnabled?: boolean;
 }
 
-export function ViolationDetailModal({ isOpen, onClose, violation, diff, getRuleDescription, scanId, feedbackEnabled }: ViolationDetailModalProps) {
+export function ViolationDetailModal({ isOpen, onClose, violation, diff, getRuleDescription, scanType, scanId, feedbackEnabled }: ViolationDetailModalProps) {
   const [activeTab, setActiveTab] = useState(0);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const ruleDesc = getRuleDescription?.(violation.rule_id);
   const cls = severityClass(violation.level, violation.rule_id);
   const source = ruleSource(violation.rule_id);
+  const isRemediate = scanType === 'fix' || scanType === 'remediate';
 
   const hasSource = !!violation.original_yaml;
   const startLine = violation.node_line_start || 1;
@@ -142,7 +144,7 @@ export function ViolationDetailModal({ isOpen, onClose, violation, diff, getRule
                   {violation.line}
                 </PageDetail>
                 <PageDetail label="Remediation">
-                  {tierLabel(violation.remediation_class)}
+                  {tierLabel(violation.remediation_class, isRemediate)}
                 </PageDetail>
                 <PageDetail label="Message">
                   {violation.message}

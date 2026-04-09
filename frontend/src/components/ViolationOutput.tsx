@@ -242,6 +242,7 @@ export function ViolationOutput({ violations, hasFilters, scanType, getRuleDescr
           onClose={() => setSelectedViolation(null)}
           violation={selectedViolation}
           getRuleDescription={getRuleDescription}
+          scanType={scanType}
           scanId={scanId}
           feedbackEnabled={feedbackEnabled}
         />
