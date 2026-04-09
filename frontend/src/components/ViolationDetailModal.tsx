@@ -80,18 +80,16 @@ interface ViolationDetailModalProps {
   violation: ViolationRecord;
   diff?: string;
   getRuleDescription?: (ruleId: string) => string | undefined;
-  mergedViolations?: ViolationRecord[];
   scanId?: string;
   feedbackEnabled?: boolean;
 }
 
-export function ViolationDetailModal({ isOpen, onClose, violation, diff, getRuleDescription, mergedViolations, scanId, feedbackEnabled }: ViolationDetailModalProps) {
+export function ViolationDetailModal({ isOpen, onClose, violation, diff, getRuleDescription, scanId, feedbackEnabled }: ViolationDetailModalProps) {
   const [activeTab, setActiveTab] = useState(0);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const ruleDesc = getRuleDescription?.(violation.rule_id);
   const cls = severityClass(violation.level, violation.rule_id);
   const source = ruleSource(violation.rule_id);
-  const isCombinedFixed = !!mergedViolations;
 
   const hasSource = !!violation.original_yaml;
   const startLine = violation.node_line_start || 1;
@@ -110,7 +108,7 @@ export function ViolationDetailModal({ isOpen, onClose, violation, diff, getRule
       aria-label="Violation details"
       width="75%"
     >
-      <ModalHeader title={isCombinedFixed ? 'Fixed Violations' : 'Violation Details'} />
+      <ModalHeader title="Violation Details" />
       <ModalBody>
         <Tabs
           aria-label="Violation detail tabs"
@@ -118,37 +116,6 @@ export function ViolationDetailModal({ isOpen, onClose, violation, diff, getRule
           onSelect={(_e, key) => setActiveTab(key as number)}
         >
           <Tab eventKey={0} title={<TabTitleText>Details</TabTitleText>} aria-label="Details tab">
-            {isCombinedFixed ? (
-              <div style={{ paddingTop: 12 }}>
-                <p style={{ marginBottom: 12, opacity: 0.8 }}>
-                  {mergedViolations.length} violation{mergedViolations.length !== 1 ? 's' : ''} fixed in <strong>{violation.file}</strong>
-                </p>
-                <table className="pf-v6-c-table pf-m-compact" role="grid">
-                  <thead>
-                    <tr role="row">
-                      <th role="columnheader">Rule</th>
-                      <th role="columnheader">Severity</th>
-                      <th role="columnheader">Line</th>
-                      <th role="columnheader">Message</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {mergedViolations.map((v) => (
-                      <tr key={v.id} role="row">
-                        <td role="cell"><span className="apme-rule-id">{bareRuleId(v.rule_id)}</span></td>
-                        <td role="cell">
-                          <span className={`apme-severity ${severityClass(v.level, v.rule_id)}`}>
-                            {severityLabel(v.level, v.rule_id)}
-                          </span>
-                        </td>
-                        <td role="cell">{v.line ?? ''}</td>
-                        <td role="cell">{v.message}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
               <PageDetails>
                 <PageDetail label="Rule">
                   <span className="apme-rule-id">{bareRuleId(violation.rule_id)}</span>
@@ -191,7 +158,6 @@ export function ViolationDetailModal({ isOpen, onClose, violation, diff, getRule
                   </PageDetail>
                 )}
               </PageDetails>
-            )}
           </Tab>
           {hasSource ? (
             <Tab eventKey={1} title={<TabTitleText>Source</TabTitleText>} aria-label="Source tab">
@@ -230,7 +196,7 @@ export function ViolationDetailModal({ isOpen, onClose, violation, diff, getRule
           ) : null}
           <Tab eventKey={(hasSource ? 1 : 0) + (violationDiff ? 1 : 0) + 1} title={<TabTitleText>Data</TabTitleText>} aria-label="Data tab">
             <div className="apme-modal-diff">
-              <pre>{JSON.stringify(isCombinedFixed ? mergedViolations : violation, null, 2)}</pre>
+              <pre>{JSON.stringify(violation, null, 2)}</pre>
             </div>
           </Tab>
         </Tabs>
