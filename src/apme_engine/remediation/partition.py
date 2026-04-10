@@ -141,11 +141,15 @@ def classify_violation(violation: ViolationDict) -> RemediationClass:
 def add_classification_to_violations(
     violations: list[ViolationDict],
 ) -> None:
-    """Add remediation_class and remediation_resolution to each *remaining* violation.
+    """Add ``remediation_class`` to each *remaining* violation.
 
     Called after the convergence loop on violations that were **not** fixed.
-    These are classified as AI_CANDIDATE or MANUAL_REVIEW — never
-    AUTO_FIXABLE (the loop already tried all deterministic transforms).
+    These are classified as ``AI_CANDIDATE`` or ``MANUAL_REVIEW`` — never
+    ``AUTO_FIXABLE`` (the loop already tried all deterministic transforms).
+
+    ``remediation_resolution`` is **not** set here — it is stamped by
+    :meth:`~apme_engine.engine.content_graph.ContentGraph.query_violations`
+    based on the authoritative ``ViolationRecord.status``.
 
     Args:
         violations: List of remaining violation dicts.

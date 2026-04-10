@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from apme_gateway.db.models import Base
@@ -22,6 +23,29 @@ async def init_db(db_path: str) -> None:
     _session_factory = async_sessionmaker(_engine, expire_on_commit=False)
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_migrate_violations_table)
+
+
+def _migrate_violations_table(conn: object) -> None:
+    """Add columns introduced after the initial schema.
+
+    ``create_all`` only creates missing *tables* — it does not add columns
+    to existing tables.  This function inspects the ``violations`` table
+    and ``ALTER TABLE ADD COLUMN`` for any that are missing.
+
+    Args:
+        conn: Synchronous SQLAlchemy connection (from ``run_sync``).
+    """
+    from sqlalchemy.engine import Connection  # noqa: PLC0415
+
+    if not isinstance(conn, Connection):
+        return
+    insp = inspect(conn)
+    if not insp.has_table("violations"):
+        return
+    existing = {c["name"] for c in insp.get_columns("violations")}
+    if "remediation_resolution" not in existing:
+        conn.execute(text("ALTER TABLE violations ADD COLUMN remediation_resolution INTEGER NOT NULL DEFAULT 0"))
 
 
 async def close_db() -> None:

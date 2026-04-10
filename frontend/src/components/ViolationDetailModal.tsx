@@ -50,7 +50,7 @@ function makeUnifiedDiff(original: string, fixed: string, filename: string): str
   return lines.join('\n');
 }
 
-const RESOLUTION_AI_ABSTAINED = 11;
+import { RESOLUTION_AI_ABSTAINED } from '../types/constants';
 
 function tierLabel(rc: number, isRemediate: boolean, resolution?: number): string {
   if (resolution === RESOLUTION_AI_ABSTAINED) return 'AI Tried';

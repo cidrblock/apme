@@ -980,10 +980,11 @@ class ContentGraph:
                     continue
                 if fixed_by is not None and record.fixed_by != fixed_by:
                     continue
+                vdict = dict(record.violation)
                 mapped = _status_resolution.get(record.status)
                 if mapped is not None:
-                    record.violation["remediation_resolution"] = mapped
-                result.append(record.violation)
+                    vdict["remediation_resolution"] = mapped
+                result.append(vdict)
         return result
 
     # -- Approval tracking (ADR-044 Phase 3) --------------------------------
