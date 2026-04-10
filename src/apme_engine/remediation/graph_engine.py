@@ -608,7 +608,7 @@ class GraphRemediationEngine:
                 skipped_reasons = {normalize_rule_id(s.rule_id): (s.reason, s.suggestion) for s in fix.skipped}
                 graph.abstain_violations(
                     node_id,
-                    frozenset(skipped_reasons),
+                    frozenset(skipped_reasons.keys()),
                     reasons=skipped_reasons,
                 )
 
