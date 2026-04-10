@@ -152,7 +152,6 @@ def add_classification_to_violations(
     """
     for v in violations:
         v["remediation_class"] = classify_violation(v)
-        v["remediation_resolution"] = RemediationResolution.UNRESOLVED
 
 
 def _to_str_value(val: object, default: str) -> str:
