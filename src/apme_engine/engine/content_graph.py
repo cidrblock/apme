@@ -805,7 +805,7 @@ class ContentGraph:
                     discovered_in_pass=pass_number,
                 )
             elif existing.status == "ai_abstained":
-                pass
+                existing.violation = v
             elif existing.status in ("fixed", "proposed", "declined"):
                 existing.status = "open"
                 existing.violation = v
@@ -861,13 +861,15 @@ class ContentGraph:
         self,
         node_id: str,
         rule_ids: frozenset[str],
-        *,
-        pass_number: int,
     ) -> int:
         """Transition ``open`` violations to ``ai_abstained`` on a node.
 
         Called when the AI attempted violations on this node but could
         not produce a fix (returned ``None`` or ``AISkipped``).
+
+        ``fixed_in_pass`` is intentionally **not** set because
+        ``ai_abstained`` is not a resolution — the violation remains
+        open for manual review.
 
         The ``remediation_resolution`` is stamped by
         :meth:`query_violations` at query time based on
@@ -876,7 +878,6 @@ class ContentGraph:
         Args:
             node_id: Graph node whose violations to mark.
             rule_ids: Set of normalized rule IDs the AI abstained from.
-            pass_number: Convergence pass in which AI abstained.
 
         Returns:
             Number of violations transitioned to ``ai_abstained``.
@@ -891,7 +892,6 @@ class ContentGraph:
             _, rule_id = record.key
             if rule_id in rule_ids:
                 record.status = "ai_abstained"
-                record.fixed_in_pass = pass_number
                 count += 1
         return count
 

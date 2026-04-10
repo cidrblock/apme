@@ -561,6 +561,8 @@ class GraphRemediationEngine:
             return_exceptions=True,
         )
 
+        from apme_engine.remediation.partition import normalize_rule_id  # noqa: PLC0415
+
         # Apply accepted fixes serially (graph mutations are not thread-safe)
         proposals: list[AINodeProposal] = []
         proposed_node_ids: set[str] = set()
@@ -603,12 +605,8 @@ class GraphRemediationEngine:
             )
 
             if fix.skipped:
-                skipped_ids = frozenset(s.rule_id for s in fix.skipped)
-                graph.abstain_violations(
-                    node_id,
-                    skipped_ids,
-                    pass_number=pass_num,
-                )
+                skipped_ids = frozenset(normalize_rule_id(s.rule_id) for s in fix.skipped)
+                graph.abstain_violations(node_id, skipped_ids)
 
             logger.info(
                 "AI transform applied to %s (rules: %s, confidence: %.2f)",
@@ -617,14 +615,12 @@ class GraphRemediationEngine:
                 fix.confidence,
             )
 
-        from apme_engine.remediation.partition import normalize_rule_id  # noqa: PLC0415
-
         abstained_total = 0
         for nid, nvs in by_node.items():
             if nid in proposed_node_ids or nid in failed_node_ids:
                 continue
             rule_ids = frozenset(normalize_rule_id(str(v.get("rule_id", ""))) for v in nvs)
-            abstained_total += graph.abstain_violations(nid, rule_ids, pass_number=pass_num)
+            abstained_total += graph.abstain_violations(nid, rule_ids)
 
         if abstained_total > 0:
             logger.info("AI abstained: %d violations marked ai_abstained", abstained_total)
