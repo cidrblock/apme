@@ -14,7 +14,8 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { DiffView } from './DiffView';
 import { FeedbackModal, type FeedbackPayload } from './FeedbackModal';
-import { severityClass, severityLabel, bareRuleId, ruleSource, scopeLabel } from './severity';
+import { severityClass, severityLabel, ruleSource, scopeLabel } from './severity';
+import { RuleId } from './RuleId';
 
 function makeUnifiedDiff(original: string, fixed: string, filename: string): string {
   const a = original.split('\n');
@@ -126,7 +127,7 @@ export function ViolationDetailModal({ isOpen, onClose, violation, diff, getRule
           <Tab eventKey={0} title={<TabTitleText>Details</TabTitleText>} aria-label="Details tab">
               <PageDetails>
                 <PageDetail label="Rule">
-                  <span className="apme-rule-id">{bareRuleId(violation.rule_id)}</span>
+                  <RuleId ruleId={violation.rule_id} />
                 </PageDetail>
                 {source && (
                   <PageDetail label="Source">

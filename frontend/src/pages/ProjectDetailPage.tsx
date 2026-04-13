@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { PageLayout, PageHeader } from '@ansible/ansible-ui-framework';
-import { severityClass, severityLabel, severityOrder, SEVERITY_LABELS, bareRuleId, healthColor } from '../components/severity';
+import { severityClass, severityLabel, severityOrder, SEVERITY_LABELS, healthColor } from '../components/severity';
+import { RuleId } from '../components/RuleId';
 import {
   Badge,
   Button,
@@ -607,7 +608,7 @@ function ViolationsTab({ violations }: { violations: ViolationDetail[] }) {
               return (
                 <tr key={v.id} role="row">
                   <td role="cell">
-                    <span className="apme-rule-id">{bareRuleId(v.rule_id)}</span>
+                    <RuleId ruleId={v.rule_id} />
                   </td>
                   <td role="cell">
                     <span
