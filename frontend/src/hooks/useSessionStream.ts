@@ -11,7 +11,7 @@
  * ``?resume=<session_id>`` gateway endpoint.
  */
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -111,6 +111,53 @@ const RECONNECTABLE_PHASES: ReadonlySet<SessionStatus> = new Set([
   "awaiting_approval",
 ]);
 
+// ── Session persistence ────────────────────────────────────────────
+
+const SESSION_STORAGE_KEY = "apme_active_session";
+
+interface PersistedSession {
+  sessionId: string;
+  scanId: string;
+  timestamp: number;
+}
+
+function persistSession(sessionId: string, scanId: string): void {
+  try {
+    const data: PersistedSession = { sessionId, scanId, timestamp: Date.now() };
+    sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(data));
+  } catch {
+    // sessionStorage may be unavailable (private browsing, quota)
+  }
+}
+
+function clearPersistedSession(): void {
+  try {
+    sessionStorage.removeItem(SESSION_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Check for an active session persisted across navigation.
+ * Returns null if none exists or if it's older than the server TTL.
+ */
+export function getPersistedSession(): PersistedSession | null {
+  try {
+    const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw) as PersistedSession;
+    const SESSION_TTL_MS = 1800 * 1000; // matches APME_SESSION_TTL default
+    if (Date.now() - data.timestamp > SESSION_TTL_MS) {
+      clearPersistedSession();
+      return null;
+    }
+    return data;
+  } catch {
+    return null;
+  }
+}
+
 // ── Hook ───────────────────────────────────────────────────────────
 
 export function useSessionStream() {
@@ -147,6 +194,7 @@ export function useSessionStream() {
     setError(null);
     setCanReconnect(false);
     sessionIdRef.current = null;
+    clearPersistedSession();
   }, [updateStatus]);
 
   /** Wire shared WS event handlers (used by both start and resume). */
@@ -165,6 +213,7 @@ export function useSessionStream() {
             setSessionId(msg.session_id as string);
             sessionIdRef.current = msg.session_id as string;
             setScanId(msg.scan_id as string);
+            persistSession(msg.session_id as string, msg.scan_id as string);
             updateStatus("checking");
             break;
 
@@ -199,6 +248,7 @@ export function useSessionStream() {
           case "result":
             setResult(msg as unknown as SessionResult);
             setCanReconnect(false);
+            clearPersistedSession();
             updateStatus("complete");
             if (ws.readyState === WebSocket.OPEN) {
               ws.send(JSON.stringify({ type: "close" }));
@@ -370,8 +420,20 @@ export function useSessionStream() {
 
   const cancel = useCallback(() => {
     wsRef.current?.close();
+    clearPersistedSession();
     updateStatus("idle");
   }, [updateStatus]);
+
+  // Close WebSocket on unmount (navigation away) but keep the persisted
+  // session reference so the user can resume when they navigate back.
+  useEffect(() => {
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, []);
 
   return {
     status,
