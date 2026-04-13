@@ -16,7 +16,6 @@ import json
 import logging
 import threading
 from collections import OrderedDict
-from pathlib import Path
 from typing import Literal
 
 logger = logging.getLogger(__name__)
@@ -38,10 +37,7 @@ def _collection_version(venv_root: str, namespace: str, name: str) -> str:
     Returns:
         Version string, or ``""`` if the manifest cannot be read.
     """
-    pattern = (
-        f"{venv_root}/lib/python*/site-packages/"
-        f"ansible_collections/{namespace}/{name}/MANIFEST.json"
-    )
+    pattern = f"{venv_root}/lib/python*/site-packages/ansible_collections/{namespace}/{name}/MANIFEST.json"
     for path in sorted(_glob.glob(pattern)):
         try:
             with open(path) as fh:

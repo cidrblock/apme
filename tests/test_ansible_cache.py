@@ -5,12 +5,8 @@ in M001_M004_introspect, L058_argspec_doc, and L059_argspec_mock.
 """
 
 import json
-import os
-import textwrap
 from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 from apme_engine.validators.ansible.cache import (
     PluginCache,
@@ -380,33 +376,39 @@ class TestM001M004CachedPath:
         venv = self._make_venv_with_python(tmp_path)
         fresh_cache = PluginCache()
 
-        subprocess_result = json.dumps({
-            "community.general.ping": {
-                "fqcn": "community.general.ping",
-                "deprecated": False,
-                "warnings": [],
-                "redirects": [],
-                "removed": False,
-                "removal_msg": "",
-                "plugin_path": "/some/path",
+        subprocess_result = json.dumps(
+            {
+                "community.general.ping": {
+                    "fqcn": "community.general.ping",
+                    "deprecated": False,
+                    "warnings": [],
+                    "redirects": [],
+                    "removed": False,
+                    "removal_msg": "",
+                    "plugin_path": "/some/path",
+                }
             }
-        })
+        )
 
-        with patch.object(M001_M004_introspect, "plugin_cache", fresh_cache):
-            with patch("subprocess.run") as mock_run:
-                mock_run.return_value = type("Result", (), {"returncode": 0, "stdout": subprocess_result, "stderr": ""})()
+        with (
+            patch.object(M001_M004_introspect, "plugin_cache", fresh_cache),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = type("Result", (), {"returncode": 0, "stdout": subprocess_result, "stderr": ""})()
 
-                result1 = M001_M004_introspect._run_introspection(
-                    ["community.general.ping"], venv,
-                )
-                assert "community.general.ping" in result1
-                assert mock_run.call_count == 1
+            result1 = M001_M004_introspect._run_introspection(
+                ["community.general.ping"],
+                venv,
+            )
+            assert "community.general.ping" in result1
+            assert mock_run.call_count == 1
 
-                result2 = M001_M004_introspect._run_introspection(
-                    ["community.general.ping"], venv,
-                )
-                assert "community.general.ping" in result2
-                assert mock_run.call_count == 1  # no additional call
+            result2 = M001_M004_introspect._run_introspection(
+                ["community.general.ping"],
+                venv,
+            )
+            assert "community.general.ping" in result2
+            assert mock_run.call_count == 1  # no additional call
 
     def test_short_form_backfills_fqcn(self, tmp_path: Path) -> None:
         """Short-form names always go to subprocess but FQCN gets backfilled.
@@ -424,28 +426,32 @@ class TestM001M004CachedPath:
         (release_dir / "release.py").write_text("__version__ = '2.16.3'\n")
 
         fresh_cache = PluginCache()
-        subprocess_result = json.dumps({
-            "ping": {
-                "fqcn": "ansible.builtin.ping",
-                "deprecated": False,
-                "warnings": [],
-                "redirects": [],
-                "removed": False,
-                "removal_msg": "",
-                "plugin_path": "/some/path",
+        subprocess_result = json.dumps(
+            {
+                "ping": {
+                    "fqcn": "ansible.builtin.ping",
+                    "deprecated": False,
+                    "warnings": [],
+                    "redirects": [],
+                    "removed": False,
+                    "removal_msg": "",
+                    "plugin_path": "/some/path",
+                }
             }
-        })
+        )
 
-        with patch.object(M001_M004_introspect, "plugin_cache", fresh_cache):
-            with patch("subprocess.run") as mock_run:
-                mock_run.return_value = type("Result", (), {"returncode": 0, "stdout": subprocess_result, "stderr": ""})()
+        with (
+            patch.object(M001_M004_introspect, "plugin_cache", fresh_cache),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = type("Result", (), {"returncode": 0, "stdout": subprocess_result, "stderr": ""})()
 
-                M001_M004_introspect._run_introspection(["ping"], venv)
+            M001_M004_introspect._run_introspection(["ping"], venv)
 
-                hit = fresh_cache.get("introspect", str(venv), "ansible.builtin.ping")
-                assert hit is not None
-                assert isinstance(hit, dict)
-                assert hit["fqcn"] == "ansible.builtin.ping"
+            hit = fresh_cache.get("introspect", str(venv), "ansible.builtin.ping")
+            assert hit is not None
+            assert isinstance(hit, dict)
+            assert hit["fqcn"] == "ansible.builtin.ping"
 
     def test_mixed_cached_and_uncached(self, tmp_path: Path) -> None:
         """Partition splits modules; only uncached ones go to subprocess.
@@ -459,30 +465,51 @@ class TestM001M004CachedPath:
         venv = self._make_venv_with_python(tmp_path)
         fresh_cache = PluginCache()
 
-        pre_cached = {"fqcn": "community.general.ping", "deprecated": False, "warnings": [], "redirects": [], "removed": False, "removal_msg": "", "plugin_path": ""}
+        pre_cached = {
+            "fqcn": "community.general.ping",
+            "deprecated": False,
+            "warnings": [],
+            "redirects": [],
+            "removed": False,
+            "removal_msg": "",
+            "plugin_path": "",
+        }
         fresh_cache.put("introspect", str(venv), "community.general.ping", pre_cached)
 
-        subprocess_result = json.dumps({
-            "community.general.uri": {"fqcn": "community.general.uri", "deprecated": False, "warnings": [], "redirects": [], "removed": False, "removal_msg": "", "plugin_path": ""}
-        })
+        subprocess_result = json.dumps(
+            {
+                "community.general.uri": {
+                    "fqcn": "community.general.uri",
+                    "deprecated": False,
+                    "warnings": [],
+                    "redirects": [],
+                    "removed": False,
+                    "removal_msg": "",
+                    "plugin_path": "",
+                }
+            }
+        )
 
-        with patch.object(M001_M004_introspect, "plugin_cache", fresh_cache):
-            with patch("subprocess.run") as mock_run:
-                mock_run.return_value = type("Result", (), {"returncode": 0, "stdout": subprocess_result, "stderr": ""})()
+        with (
+            patch.object(M001_M004_introspect, "plugin_cache", fresh_cache),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = type("Result", (), {"returncode": 0, "stdout": subprocess_result, "stderr": ""})()
 
-                result = M001_M004_introspect._run_introspection(
-                    ["community.general.ping", "community.general.uri"], venv,
-                )
+            result = M001_M004_introspect._run_introspection(
+                ["community.general.ping", "community.general.uri"],
+                venv,
+            )
 
-                assert "community.general.ping" in result
-                assert "community.general.uri" in result
-                assert mock_run.call_count == 1
+            assert "community.general.ping" in result
+            assert "community.general.uri" in result
+            assert mock_run.call_count == 1
 
-                call_input = mock_run.call_args[1].get("input") or mock_run.call_args[0][0] if mock_run.call_args[0] else ""
-                if isinstance(call_input, str):
-                    sent = json.loads(call_input)
-                    assert "community.general.ping" not in sent["modules"]
-                    assert "community.general.uri" in sent["modules"]
+            call_input = mock_run.call_args[1].get("input") or mock_run.call_args[0][0] if mock_run.call_args[0] else ""
+            if isinstance(call_input, str):
+                sent = json.loads(call_input)
+                assert "community.general.ping" not in sent["modules"]
+                assert "community.general.uri" in sent["modules"]
 
 
 class TestL058HostSideChecking:
@@ -662,14 +689,16 @@ class TestL058CachedRun:
             },
         ]
 
-        with patch.object(L058_argspec_doc, "plugin_cache", fresh_cache):
-            with patch("subprocess.run") as mock_run:
-                violations = L058_argspec_doc.run(task_nodes, venv)
+        with (
+            patch.object(L058_argspec_doc, "plugin_cache", fresh_cache),
+            patch("subprocess.run") as mock_run,
+        ):
+            violations = L058_argspec_doc.run(task_nodes, venv)
 
-                assert mock_run.call_count == 0
-                assert len(violations) == 1
-                assert violations[0]["rule_id"] == "L058"
-                assert "Unsupported parameters" in str(violations[0]["message"])
+            assert mock_run.call_count == 0
+            assert len(violations) == 1
+            assert violations[0]["rule_id"] == "L058"
+            assert "Unsupported parameters" in str(violations[0]["message"])
 
 
 class TestL059CachedRun:
@@ -709,11 +738,13 @@ class TestL059CachedRun:
             },
         ]
 
-        with patch.object(L059_argspec_mock, "plugin_cache", fresh_cache):
-            with patch("subprocess.run") as mock_run:
-                violations = L059_argspec_mock.run(task_nodes, venv)
+        with (
+            patch.object(L059_argspec_mock, "plugin_cache", fresh_cache),
+            patch("subprocess.run") as mock_run,
+        ):
+            violations = L059_argspec_mock.run(task_nodes, venv)
 
-                assert mock_run.call_count == 0
-                assert len(violations) == 1
-                assert violations[0]["rule_id"] == "L059"
-                assert "Unsupported parameters" in str(violations[0]["message"])
+            assert mock_run.call_count == 0
+            assert len(violations) == 1
+            assert violations[0]["rule_id"] == "L059"
+            assert "Unsupported parameters" in str(violations[0]["message"])
