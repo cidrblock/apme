@@ -201,6 +201,11 @@ class AnsibleValidatorServicer(validate_pb2_grpc.ValidatorServicer):
                     )
                     for rt in result.run_result.rule_timings
                 ]
+                diag_metadata: dict[str, str] = {
+                    "ansible_core_version": result.ansible_core_version,
+                }
+                for mk, mv in result.run_result.metadata.items():
+                    diag_metadata[mk] = str(mv)
                 diag = ValidatorDiagnostics(
                     validator_name="ansible",
                     request_id=req_id,
@@ -208,9 +213,7 @@ class AnsibleValidatorServicer(validate_pb2_grpc.ValidatorServicer):
                     files_received=len(request.files),
                     violations_found=len(result.run_result.violations),
                     rule_timings=rule_timings,
-                    metadata={
-                        "ansible_core_version": result.ansible_core_version,
-                    },
+                    metadata=diag_metadata,
                 )
 
                 for v in result.run_result.violations:

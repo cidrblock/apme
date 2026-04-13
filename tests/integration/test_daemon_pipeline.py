@@ -16,6 +16,7 @@ Run with::
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import subprocess
 import sys
@@ -536,3 +537,50 @@ def test_scan_persisted_to_gateway(scan_data: YAMLDict, infrastructure: object) 
     )
     for entry in top_resp:
         assert entry.get("count", 0) > 0, f"Rule {entry.get('rule_id')} in /violations/top should have count>0"
+
+
+# ---------------------------------------------------------------------------
+# Ansible introspection cache: second scan should get cache hits
+# ---------------------------------------------------------------------------
+
+_CACHE_HIT_SESSION = "cache-hit-test"
+
+
+@pytest.mark.integration  # type: ignore[untyped-decorator]
+def test_ansible_cache_hits_on_second_scan(
+    scan_data: YAMLDict,
+    infrastructure: object,
+) -> None:
+    """Second scan of the same project gets plugin introspection cache hits.
+
+    The first scan (via ``scan_result`` fixture) warms the daemon's
+    in-memory PluginCache. A second scan of the same fixture with the
+    same session reuses the same venv and collection versions, so
+    M001-M004/L058/L059 should get cache hits. We verify by reading
+    the daemon log file.
+
+    Args:
+        scan_data: Parsed scan data from the first scan (ensures it ran first).
+        infrastructure: Daemon infrastructure (provides data_dir for daemon.log).
+    """
+    data_dir = getattr(infrastructure, "data_dir", "")
+    assert data_dir, "data_dir not set on Infrastructure"
+    daemon_log = Path(data_dir) / "daemon.log"
+
+    _scan_json(FIXTURE_DIR)
+
+    assert daemon_log.is_file(), f"daemon.log not found at {daemon_log}"
+    log_text = daemon_log.read_text()
+
+    cache_lines = [
+        line for line in log_text.splitlines() if "Ansible validator: total" in line and "cache introspect=" in line
+    ]
+    assert len(cache_lines) >= 2, (
+        f"Expected at least 2 Ansible validator cache log lines (first scan + second scan), "
+        f"found {len(cache_lines)}.\nAll cache lines:\n" + "\n".join(cache_lines)
+    )
+
+    last_line = cache_lines[-1]
+    hit_counts = re.findall(r"(\d+)h/", last_line)
+    total_hits = sum(int(h) for h in hit_counts)
+    assert total_hits > 0, f"Second scan should have cache hits but found 0.\nLast cache line: {last_line}"

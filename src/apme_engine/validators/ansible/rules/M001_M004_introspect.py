@@ -13,7 +13,8 @@ import subprocess
 import sys
 import textwrap
 from pathlib import Path
-from typing import cast
+
+from apme_engine.validators.ansible.cache import plugin_cache
 
 _SCRIPT = textwrap.dedent("""\
 import json, sys
@@ -61,6 +62,9 @@ def _run_introspection(
 ) -> dict[str, object]:
     """Run plugin introspection in the venv's Python. Returns {name: info_dict}.
 
+    Uses the plugin cache to skip subprocess calls for modules whose
+    collection version is already cached from a prior scan.
+
     Args:
         module_names: List of module names to introspect.
         venv_root: Path to ansible venv root.
@@ -72,17 +76,23 @@ def _run_introspection(
     if not module_names:
         return {}
 
+    venv_str = str(venv_root)
+    cached_results, uncached = plugin_cache.partition("introspect", venv_str, module_names)
+
+    if not uncached:
+        return cached_results
+
     python = venv_root / "bin" / "python"
     if not python.is_file():
         sys.stderr.write(f"M001-M004: venv python not found at {python}, skipping introspection\n")
-        return {}
+        return cached_results
 
     env = dict(os.environ)
     env.pop("PYTHONPATH", None)
     if env_extra:
         env.update(env_extra)
 
-    payload: dict[str, object] = {"modules": module_names}
+    payload: dict[str, object] = {"modules": uncached}
 
     try:
         result = subprocess.run(
@@ -95,17 +105,28 @@ def _run_introspection(
         )
     except subprocess.TimeoutExpired:
         sys.stderr.write("Plugin introspection timed out\n")
-        return {}
+        return cached_results
 
     if result.returncode != 0:
         sys.stderr.write(f"Plugin introspection failed: {result.stderr[:500]}\n")
-        return {}
+        return cached_results
 
     try:
-        return cast(dict[str, object], json.loads(result.stdout))
+        fresh: dict[str, object] = json.loads(result.stdout)
     except json.JSONDecodeError:
         sys.stderr.write(f"Plugin introspection returned invalid JSON: {result.stdout[:200]}\n")
-        return {}
+        return cached_results
+
+    for name, info in fresh.items():
+        resolved_fqcn = ""
+        if isinstance(info, dict):
+            resolved_fqcn = str(info.get("fqcn", ""))
+        plugin_cache.put("introspect", venv_str, name, info, resolved_fqcn=resolved_fqcn)
+
+    merged: dict[str, object] = {}
+    merged.update(cached_results)
+    merged.update(fresh)
+    return merged
 
 
 def run(
