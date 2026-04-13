@@ -14,6 +14,7 @@ Rule `.md` files describe a single rule and provide examples that can be used bo
    - `rule_id` — Rule identifier (e.g. `L026`, `R102`, `L024`).
    - `validator` — `native` or `opa`.
    - `description` — One-line description.
+   - `ai_prompt` — *(optional)* Per-rule guidance injected into the AI remediation prompt. Use YAML literal block (`|`) for multiline text. Tells the AI how to handle this rule — e.g., when to add `# noqa` instead of modifying code, or domain context about when the flagged pattern is legitimate. See `src/apme_engine/remediation/abbenay_provider.py` for how hints are loaded and injected.
 
 2. **Title and prose** — Human-readable explanation of what the rule checks.
 
