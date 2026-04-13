@@ -547,7 +547,6 @@ def test_scan_persisted_to_gateway(scan_data: YAMLDict, infrastructure: object) 
 @pytest.mark.integration  # type: ignore[untyped-decorator]
 def test_ansible_cache_hits_on_second_scan(
     scan_data: YAMLDict,
-    infrastructure: object,
 ) -> None:
     """Second scan of the same project gets plugin introspection cache hits.
 
@@ -557,20 +556,21 @@ def test_ansible_cache_hits_on_second_scan(
     M001-M004/L058/L059 should get cache hits. We verify by reading
     the daemon log file.
 
+    Uses the launcher module's resolved ``_DATA_DIR`` to find
+    ``daemon.log`` — the module-level path is fixed at import time and
+    may differ from the conftest's ``data_dir`` when the env var was
+    set after import.
+
     Args:
         scan_data: Parsed scan data from the first scan (ensures it ran first).
-        infrastructure: Daemon infrastructure (provides data_dir for daemon.log).
     """
-    data_dir = getattr(infrastructure, "data_dir", "")
-    assert data_dir, "data_dir not set on Infrastructure"
-    daemon_log = Path(data_dir) / "daemon.log"
+    from apme_engine.daemon.launcher import _DATA_DIR
+
+    daemon_log = _DATA_DIR / "daemon.log"
 
     _scan_json(FIXTURE_DIR)
 
-    if not daemon_log.is_file():
-        pytest.skip(
-            f"daemon.log not found at {daemon_log} (APME_DATA_DIR may have been resolved before conftest set it)"
-        )
+    assert daemon_log.is_file(), f"daemon.log not found at {daemon_log}"
     log_text = daemon_log.read_text()
 
     cache_lines = [
