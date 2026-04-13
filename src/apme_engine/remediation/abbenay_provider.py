@@ -96,10 +96,10 @@ Respond with ONLY this JSON (no markdown fences, no explanation outside JSON):
 }}
 
 Rules:
-- CRITICAL: Fix ONLY the violations listed above. Do NOT make any other changes,
-  improvements, or best-practice adjustments beyond what is required to resolve the
-  listed violations. If a line is not related to a listed violation, preserve it
-  exactly as-is — same quoting, same structure, same values.
+- CRITICAL: Fix ONLY the violations listed above. Every change you make MUST be
+  directly traceable to a specific listed violation. Do not make cosmetic, stylistic,
+  defensive, or "just in case" changes. If a line is not related to a listed
+  violation, preserve it exactly as-is — same quoting, same structure, same values.
 - Do NOT add new YAML keys, variables, blocks, or structural elements that were not
   in the original snippet. Do NOT add default() filters, vars blocks, or register
   variables unless a listed violation specifically requires it.
