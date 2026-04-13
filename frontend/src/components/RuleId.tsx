@@ -5,8 +5,19 @@ import { bareRuleId } from './severity';
 function SingleRuleId({ ruleId, className }: { ruleId: string; className?: string }) {
   const desc = getRuleDescription(ruleId);
   const bare = bareRuleId(ruleId);
-  const span = <span className={className ?? 'apme-rule-id'}>{bare}</span>;
-  return desc ? <Tooltip content={desc}>{span}</Tooltip> : span;
+  const spanClassName = className ?? 'apme-rule-id';
+
+  if (!desc) {
+    return <span className={spanClassName}>{bare}</span>;
+  }
+
+  return (
+    <Tooltip content={desc}>
+      <span className={spanClassName} tabIndex={0}>
+        {bare}
+      </span>
+    </Tooltip>
+  );
 }
 
 export function RuleId({ ruleId, className }: { ruleId: string; className?: string }) {
@@ -17,7 +28,7 @@ export function RuleId({ ruleId, className }: { ruleId: string; className?: stri
   return (
     <>
       {ids.map((id, i) => (
-        <span key={id}>
+        <span key={`${id}-${i}`}>
           {i > 0 && ','}
           <SingleRuleId ruleId={id} className={className} />
         </span>

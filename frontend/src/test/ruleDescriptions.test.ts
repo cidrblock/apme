@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { bareRuleId, getRuleDescription } from "../data/ruleDescriptions";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { bareRuleId } from "../data/ruleDescriptions";
 
 describe("bareRuleId", () => {
   it("strips validator prefix", () => {
@@ -19,13 +19,53 @@ describe("bareRuleId", () => {
   });
 });
 
-describe("getRuleDescription", () => {
-  it("returns empty string when API has not loaded", () => {
-    expect(getRuleDescription("L003")).toBe("");
+describe("getRuleDescription (dynamic fetch)", () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.resetModules();
+    fetchSpy = vi.spyOn(globalThis, "fetch");
   });
 
-  it("returns empty string for unknown rules", () => {
-    expect(getRuleDescription("ZZZZ999")).toBe("");
-    expect(getRuleDescription("native:ZZZZ999")).toBe("");
+  afterEach(() => {
+    fetchSpy.mockRestore();
+  });
+
+  it("populates descriptions from /api/v1/rules and resolves prefixed IDs", async () => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      json: () =>
+        Promise.resolve([
+          { rule_id: "L042", description: "Test rule description" },
+          { rule_id: "M010", description: "Python 2 interpreter" },
+        ]),
+    } as Response);
+
+    const mod = await import("../data/ruleDescriptions");
+
+    await vi.waitFor(() => {
+      expect(mod.getRuleDescription("L042")).toBe("Test rule description");
+    });
+
+    expect(mod.getRuleDescription("native:L042")).toBe(
+      "Test rule description",
+    );
+    expect(mod.getRuleDescription("M010")).toBe("Python 2 interpreter");
+    expect(mod.getRuleDescription("ZZZZ999")).toBe("");
+  });
+
+  it("logs a warning on fetch failure", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    fetchSpy.mockRejectedValueOnce(new Error("network error"));
+
+    await import("../data/ruleDescriptions");
+
+    await vi.waitFor(() => {
+      expect(warnSpy).toHaveBeenCalledWith(
+        "Failed to load rule descriptions from /api/v1/rules:",
+        expect.any(Error),
+      );
+    });
+    warnSpy.mockRestore();
   });
 });

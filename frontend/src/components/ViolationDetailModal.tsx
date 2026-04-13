@@ -16,6 +16,7 @@ import { DiffView } from './DiffView';
 import { FeedbackModal, type FeedbackPayload } from './FeedbackModal';
 import { severityClass, severityLabel, ruleSource, scopeLabel } from './severity';
 import { RuleId } from './RuleId';
+import { getRuleDescription as globalGetRuleDescription } from '../data/ruleDescriptions';
 
 function makeUnifiedDiff(original: string, fixed: string, filename: string): string {
   const a = original.split('\n');
@@ -86,16 +87,15 @@ interface ViolationDetailModalProps {
   onClose: () => void;
   violation: ViolationRecord;
   diff?: string;
-  getRuleDescription?: (ruleId: string) => string | undefined;
   scanType?: string;
   scanId?: string;
   feedbackEnabled?: boolean;
 }
 
-export function ViolationDetailModal({ isOpen, onClose, violation, diff, getRuleDescription, scanType, scanId, feedbackEnabled }: ViolationDetailModalProps) {
+export function ViolationDetailModal({ isOpen, onClose, violation, diff, scanType, scanId, feedbackEnabled }: ViolationDetailModalProps) {
   const [activeTab, setActiveTab] = useState(0);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
-  const ruleDesc = getRuleDescription?.(violation.rule_id);
+  const ruleDesc = globalGetRuleDescription(violation.rule_id);
   const cls = severityClass(violation.level, violation.rule_id);
   const source = ruleSource(violation.rule_id);
   const isRemediate = scanType === 'fix' || scanType === 'remediate';

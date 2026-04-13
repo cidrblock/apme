@@ -20,13 +20,13 @@
 | L005 | OPA | low | Community collection module detected; use certified or validated collections. | Yes | Yes | Yes | Yes |
 | L006 | OPA | low | Use dedicated module instead of command. | Yes | Yes | Yes | — |
 | L007 | OPA | low | Prefer command when no shell features needed. | Yes | Yes | Yes | Yes |
-| L008 | OPA | low | "Use delegate_to: localhost instead of local_action." | Yes | Yes | Yes | Yes |
+| L008 | OPA | low | Use delegate_to: localhost instead of local_action. | Yes | Yes | Yes | Yes |
 | L009 | OPA | medium | Avoid comparison to empty string in when. | Yes | Yes | Yes | Yes |
 | L010 | OPA | medium | Use failed_when or register instead of ignore_errors. | Yes | Yes | Yes | Yes |
 | L011 | OPA | low | Avoid literal true/false in when. | Yes | Yes | Yes | Yes |
 | L012 | OPA | low | Avoid state=latest; pin package versions. | Yes | Yes | Yes | Yes |
 | L013 | OPA | medium | command/shell/raw need changed_when or creates/removes. | Yes | Yes | Yes | Yes |
-| L014 | OPA | low | "Use notify/handler instead of when: result.changed." | Yes | Yes | Yes | — |
+| L014 | OPA | low | Use notify/handler instead of when: result.changed. | Yes | Yes | Yes | — |
 | L015 | OPA | low | Avoid Jinja in when; use variables. | Yes | Yes | Yes | Yes |
 | L016 | OPA | info | pause without seconds/minutes prompts for input. | Yes | Yes | Yes | — |
 | L017 | OPA | low | Avoid relative path in src. | Yes | Yes | Yes | — |
@@ -60,8 +60,8 @@
 | L047 | Native | high | Set no_log for password-like parameters. | Yes | Yes | Yes | — |
 | L048 | Native | low | copy with remote_src should set owner. | Yes | Yes | Yes | — |
 | L049 | Native | low | Loop variable should use prefix (e.g. item_). | Yes | Yes | Yes | — |
-| L050 | Native | low | "Variable names: lowercase, underscores." | Yes | Yes | Yes | — |
-| L051 | Native | low | "Jinja spacing: {{ var }} not {{var}}." | Yes | Yes | Yes | — |
+| L050 | Native | low | Variable names: lowercase, underscores. | Yes | Yes | Yes | — |
+| L051 | Native | low | Jinja spacing: {{ var }} not {{var}}. | Yes | Yes | Yes | — |
 | L052 | Native | low | Galaxy version in meta should be semantic. | Yes | Yes | Yes | — |
 | L053 | Native | low | Role meta should have valid structure. | Yes | — | Yes | — |
 | L054 | Native | low | Role meta galaxy_info should include galaxy_tags. | Yes | — | Yes | — |
@@ -129,18 +129,18 @@
 | M011 | OPA | high | Network module may require collection upgrade for 2.19+ compatibility. | Yes | Yes | Yes | — |
 | M014 | Native | medium | Use ansible_facts["name"] instead of injected ansible_* fact variables (removed in 2.24) | Yes | — | Yes | — |
 | M015 | Native | medium | Use ansible_play_batch instead of deprecated play_hosts variable (removed in 2.23) | Yes | — | Yes | — |
-| M016 | OPA | high | "Empty when: conditional is deprecated; remove it or add an explicit condition (2.23)" | Yes | Yes | Yes | — |
-| M017 | OPA | high | "action: with a mapping value is deprecated; use string form or module key directly (2.23)" | Yes | Yes | Yes | — |
+| M016 | OPA | high | Empty when: conditional is deprecated; remove it or add an explicit condition (2.23) | Yes | Yes | Yes | — |
+| M017 | OPA | high | action: with a mapping value is deprecated; use string form or module key directly (2.23) | Yes | Yes | Yes | — |
 | M018 | OPA | high | paramiko_ssh connection plugin is deprecated; use ssh connection instead (removed in 2.21) | Yes | Yes | Yes | — |
-| M019 | Native | low | "!!omap and !!pairs YAML tags are deprecated; standard YAML mappings preserve order in Python 3.7+ (2.23)" | Yes | Yes | Yes | — |
+| M019 | Native | low | !!omap and !!pairs YAML tags are deprecated; standard YAML mappings preserve order in Python 3.7+ (2.23) | Yes | Yes | Yes | — |
 | M020 | Native | low | Use !vault instead of deprecated !vault-encrypted tag (2.23) | Yes | — | Yes | — |
-| M021 | OPA | high | "Empty args: keyword on a task is deprecated; remove it (2.23)" | Yes | Yes | Yes | — |
+| M021 | OPA | high | Empty args: keyword on a task is deprecated; remove it (2.23) | Yes | Yes | Yes | — |
 | M022 | Native | medium | tree and oneline callback plugins are removed in 2.23; choose an alternative | Yes | — | Yes | — |
-| M023 | OPA | high | "follow_redirects: yes/no (string) is deprecated in url lookup; use true/false boolean (2.22)" | Yes | Yes | Yes | — |
+| M023 | OPA | high | follow_redirects: yes/no (string) is deprecated in url lookup; use true/false boolean (2.22) | Yes | Yes | Yes | — |
 | M024 | OPA | high | include_vars ignore_files must be a list, not a string (2.24) | Yes | Yes | Yes | — |
 | M025 | OPA | high | Third-party strategy plugins are deprecated; only ansible.builtin strategies are supported (2.23) | Yes | Yes | Yes | — |
 | M026 | Native | medium | Inventory variable names must be valid Python identifiers (enforced in 2.23) | Yes | — | Yes | — |
-| M027 | Native | low | "Mixing inline k=v arguments with args: mapping is deprecated (2.23)" | Yes | Yes | Yes | — |
+| M027 | Native | low | Mixing inline k=v arguments with args: mapping is deprecated (2.23) | Yes | Yes | Yes | — |
 | M028 | OPA | high | first_found lookup auto-splitting paths on delimiters is deprecated (2.23) | Yes | Yes | Yes | — |
 | M029 | Native | medium | Inventory scripts must include _meta.hostvars in JSON output (enforced in 2.23) | — | — | Yes | — |
 | M030 | Native | medium | Conditional expressions that fail Jinja2 parsing will error in 2.23 instead of being silently ignored | Yes | Yes | Yes | — |
@@ -180,13 +180,13 @@
 | L005 | low | Community collection module detected; use certified or validated collections. | Yes | Yes | Yes | Yes |
 | L006 | low | Use dedicated module instead of command. | Yes | Yes | Yes | — |
 | L007 | low | Prefer command when no shell features needed. | Yes | Yes | Yes | Yes |
-| L008 | low | "Use delegate_to: localhost instead of local_action." | Yes | Yes | Yes | Yes |
+| L008 | low | Use delegate_to: localhost instead of local_action. | Yes | Yes | Yes | Yes |
 | L009 | medium | Avoid comparison to empty string in when. | Yes | Yes | Yes | Yes |
 | L010 | medium | Use failed_when or register instead of ignore_errors. | Yes | Yes | Yes | Yes |
 | L011 | low | Avoid literal true/false in when. | Yes | Yes | Yes | Yes |
 | L012 | low | Avoid state=latest; pin package versions. | Yes | Yes | Yes | Yes |
 | L013 | medium | command/shell/raw need changed_when or creates/removes. | Yes | Yes | Yes | Yes |
-| L014 | low | "Use notify/handler instead of when: result.changed." | Yes | Yes | Yes | — |
+| L014 | low | Use notify/handler instead of when: result.changed. | Yes | Yes | Yes | — |
 | L015 | low | Avoid Jinja in when; use variables. | Yes | Yes | Yes | Yes |
 | L016 | info | pause without seconds/minutes prompts for input. | Yes | Yes | Yes | — |
 | L017 | low | Avoid relative path in src. | Yes | Yes | Yes | — |
@@ -215,11 +215,11 @@
 | M008 | high | Bare include is removed in 2.19+; use include_tasks or import_tasks. | Yes | Yes | Yes | Yes |
 | M009 | high | with_* loops are deprecated; use loop instead. | Yes | Yes | Yes | Yes |
 | M011 | high | Network module may require collection upgrade for 2.19+ compatibility. | Yes | Yes | Yes | — |
-| M016 | high | "Empty when: conditional is deprecated; remove it or add an explicit condition (2.23)" | Yes | Yes | Yes | — |
-| M017 | high | "action: with a mapping value is deprecated; use string form or module key directly (2.23)" | Yes | Yes | Yes | — |
+| M016 | high | Empty when: conditional is deprecated; remove it or add an explicit condition (2.23) | Yes | Yes | Yes | — |
+| M017 | high | action: with a mapping value is deprecated; use string form or module key directly (2.23) | Yes | Yes | Yes | — |
 | M018 | high | paramiko_ssh connection plugin is deprecated; use ssh connection instead (removed in 2.21) | Yes | Yes | Yes | — |
-| M021 | high | "Empty args: keyword on a task is deprecated; remove it (2.23)" | Yes | Yes | Yes | — |
-| M023 | high | "follow_redirects: yes/no (string) is deprecated in url lookup; use true/false boolean (2.22)" | Yes | Yes | Yes | — |
+| M021 | high | Empty args: keyword on a task is deprecated; remove it (2.23) | Yes | Yes | Yes | — |
+| M023 | high | follow_redirects: yes/no (string) is deprecated in url lookup; use true/false boolean (2.22) | Yes | Yes | Yes | — |
 | M024 | high | include_vars ignore_files must be a list, not a string (2.24) | Yes | Yes | Yes | — |
 | M025 | high | Third-party strategy plugins are deprecated; only ansible.builtin strategies are supported (2.23) | Yes | Yes | Yes | — |
 | M028 | high | first_found lookup auto-splitting paths on delimiters is deprecated (2.23) | Yes | Yes | Yes | — |
@@ -251,8 +251,8 @@
 | L047 | high | Set no_log for password-like parameters. | Yes | Yes | Yes | — |
 | L048 | low | copy with remote_src should set owner. | Yes | Yes | Yes | — |
 | L049 | low | Loop variable should use prefix (e.g. item_). | Yes | Yes | Yes | — |
-| L050 | low | "Variable names: lowercase, underscores." | Yes | Yes | Yes | — |
-| L051 | low | "Jinja spacing: {{ var }} not {{var}}." | Yes | Yes | Yes | — |
+| L050 | low | Variable names: lowercase, underscores. | Yes | Yes | Yes | — |
+| L051 | low | Jinja spacing: {{ var }} not {{var}}. | Yes | Yes | Yes | — |
 | L052 | low | Galaxy version in meta should be semantic. | Yes | Yes | Yes | — |
 | L053 | low | Role meta should have valid structure. | Yes | — | Yes | — |
 | L054 | low | Role meta galaxy_info should include galaxy_tags. | Yes | — | Yes | — |
@@ -296,11 +296,11 @@
 | M010 | high | ansible_python_interpreter set to Python 2; dropped in 2.18+. | Yes | Yes | Yes | — |
 | M014 | medium | Use ansible_facts["name"] instead of injected ansible_* fact variables (removed in 2.24) | Yes | — | Yes | — |
 | M015 | medium | Use ansible_play_batch instead of deprecated play_hosts variable (removed in 2.23) | Yes | — | Yes | — |
-| M019 | low | "!!omap and !!pairs YAML tags are deprecated; standard YAML mappings preserve order in Python 3.7+ (2.23)" | Yes | Yes | Yes | — |
+| M019 | low | !!omap and !!pairs YAML tags are deprecated; standard YAML mappings preserve order in Python 3.7+ (2.23) | Yes | Yes | Yes | — |
 | M020 | low | Use !vault instead of deprecated !vault-encrypted tag (2.23) | Yes | — | Yes | — |
 | M022 | medium | tree and oneline callback plugins are removed in 2.23; choose an alternative | Yes | — | Yes | — |
 | M026 | medium | Inventory variable names must be valid Python identifiers (enforced in 2.23) | Yes | — | Yes | — |
-| M027 | low | "Mixing inline k=v arguments with args: mapping is deprecated (2.23)" | Yes | Yes | Yes | — |
+| M027 | low | Mixing inline k=v arguments with args: mapping is deprecated (2.23) | Yes | Yes | Yes | — |
 | M029 | medium | Inventory scripts must include _meta.hostvars in JSON output (enforced in 2.23) | — | — | Yes | — |
 | M030 | medium | Conditional expressions that fail Jinja2 parsing will error in 2.23 instead of being silently ignored | Yes | Yes | Yes | — |
 | P001 | error | Validate module name (Ansible required). | — | Yes | Yes | — |
@@ -413,7 +413,7 @@ Rules without fixers fall to Tier 2 (AI-proposable) or Tier 3 (manual review).
 |---------|----------|-------------|
 | L005 | low | Community collection module detected; use certified or validated collections. |
 | L007 | low | Prefer command when no shell features needed. |
-| L008 | low | "Use delegate_to: localhost instead of local_action." |
+| L008 | low | Use delegate_to: localhost instead of local_action. |
 | L009 | medium | Avoid comparison to empty string in when. |
 | L010 | medium | Use failed_when or register instead of ignore_errors. |
 | L011 | low | Avoid literal true/false in when. |

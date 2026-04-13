@@ -22,12 +22,7 @@ let _fetchStarted = false;
 function _loadFromApi(): void {
   if (_fetchStarted) return;
   _fetchStarted = true;
-  const base =
-    (typeof import.meta !== "undefined" &&
-      (import.meta as unknown as Record<string, Record<string, unknown>>).env
-        ?.VITE_API_BASE) ||
-    "/api/v1";
-  fetch(`${base}/rules`)
+  fetch("/api/v1/rules")
     .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
     .then((rows: { rule_id: string; description: string }[]) => {
       if (!Array.isArray(rows)) return;
@@ -37,7 +32,9 @@ function _loadFromApi(): void {
         }
       }
     })
-    .catch(() => {});
+    .catch((err) => {
+      console.warn("Failed to load rule descriptions from /api/v1/rules:", err);
+    });
 }
 
 _loadFromApi();

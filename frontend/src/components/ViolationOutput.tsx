@@ -48,13 +48,12 @@ interface ViolationOutputProps {
   violations: ViolationRecord[];
   hasFilters: boolean;
   scanType?: string;
-  getRuleDescription?: (ruleId: string) => string | undefined;
   onSectionToggle?: (open: boolean) => void;
   scanId?: string;
   feedbackEnabled?: boolean;
 }
 
-export function ViolationOutput({ violations, hasFilters, scanType, getRuleDescription, onSectionToggle, scanId, feedbackEnabled }: ViolationOutputProps) {
+export function ViolationOutput({ violations, hasFilters, scanType, onSectionToggle, scanId, feedbackEnabled }: ViolationOutputProps) {
   const isRemediate = scanType === 'fix' || scanType === 'remediate';
   const [sectionOpen, setSectionOpen] = useState(true);
   const toggleSection = (open: boolean) => {
@@ -242,7 +241,6 @@ export function ViolationOutput({ violations, hasFilters, scanType, getRuleDescr
           isOpen={!!selectedViolation}
           onClose={() => setSelectedViolation(null)}
           violation={selectedViolation}
-          getRuleDescription={getRuleDescription}
           scanType={scanType}
           scanId={scanId}
           feedbackEnabled={feedbackEnabled}
