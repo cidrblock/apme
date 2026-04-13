@@ -35,7 +35,7 @@ import {
 } from '@patternfly/react-table';
 import { deleteRuleConfig, getRule, getRuleStats, listRules, updateRuleConfig } from '../services/api';
 import type { RuleDetail, RuleStats } from '../types/api';
-import { severityClass, severityLabel, SEVERITY_INT_OPTIONS, SEVERITY_INT_TO_API } from '../components/severity';
+import { severityClass, severityLabel, SEVERITY_INT_OPTIONS, SEVERITY_INT_TO_API, SEVERITY_LABELS } from '../components/severity';
 
 const SEVERITY_OPTIONS = SEVERITY_INT_OPTIONS;
 
@@ -60,7 +60,6 @@ export function RulesPage() {
   const [updatingIds, setUpdatingIds] = useState<Set<string>>(new Set());
   const [selectedRule, setSelectedRule] = useState<RuleDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [resettingId, setResettingId] = useState<string | null>(null);
   const detailRequestRef = useRef(0);
 
   const startUpdating = useCallback((id: string) => {
@@ -123,7 +122,7 @@ export function RulesPage() {
   }, [rules]);
 
   const handleResetOverride = useCallback(async (ruleId: string) => {
-    setResettingId(ruleId);
+    startUpdating(ruleId);
     try {
       await deleteRuleConfig(ruleId);
       refreshRules();
@@ -134,9 +133,9 @@ export function RulesPage() {
     } catch {
       // 404 means no override existed
     } finally {
-      setResettingId(null);
+      stopUpdating(ruleId);
     }
-  }, [selectedRule, refreshRules, refreshStats, openRuleDetail]);
+  }, [selectedRule, refreshRules, refreshStats, openRuleDetail, startUpdating, stopUpdating]);
 
   const categoryOptions = useMemo(() => {
     const fromStats = stats ? Object.keys(stats.by_category) : [];
@@ -186,8 +185,8 @@ export function RulesPage() {
     async (rule: RuleDetail, severityInt: number) => {
       if (severityInt === rule.effective_severity_int) return;
       const prev = { effective_severity_int: rule.effective_severity_int, effective_severity: rule.effective_severity, has_override: rule.has_override };
-      const nextLabel = SEVERITY_INT_TO_API[severityInt] ?? 'medium';
-      const patch = { effective_severity_int: severityInt, effective_severity: nextLabel, has_override: true };
+      const nextSlug = SEVERITY_INT_TO_API[severityInt] ?? 'medium';
+      const patch = { effective_severity_int: severityInt, effective_severity: SEVERITY_LABELS[nextSlug] ?? 'Medium', has_override: true };
       setRules((cur) => cur.map((r) => r.rule_id === rule.rule_id ? { ...r, ...patch } : r));
       setSelectedRule((cur) => cur?.rule_id === rule.rule_id ? { ...cur, ...patch } : cur);
       startUpdating(rule.rule_id);
@@ -388,10 +387,10 @@ export function RulesPage() {
                         variant="link"
                         isInline
                         size="sm"
-                        isDisabled={resettingId === rule.rule_id}
+                        isDisabled={updatingIds.has(rule.rule_id)}
                         onClick={() => handleResetOverride(rule.rule_id)}
                       >
-                        {resettingId === rule.rule_id ? 'Resetting...' : 'Reset'}
+                        {updatingIds.has(rule.rule_id) ? 'Resetting...' : 'Reset'}
                       </Button>
                     )}
                   </Td>
@@ -523,10 +522,10 @@ export function RulesPage() {
             {selectedRule.has_override && (
               <Button
                 variant="warning"
-                isDisabled={resettingId === selectedRule.rule_id}
+                isDisabled={updatingIds.has(selectedRule.rule_id)}
                 onClick={() => handleResetOverride(selectedRule.rule_id)}
               >
-                {resettingId === selectedRule.rule_id ? 'Resetting...' : 'Reset Override'}
+                {updatingIds.has(selectedRule.rule_id) ? 'Resetting...' : 'Reset Override'}
               </Button>
             )}
             <Button variant="link" onClick={() => { detailRequestRef.current++; setSelectedRule(null); }}>Close</Button>
