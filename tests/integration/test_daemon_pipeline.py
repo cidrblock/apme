@@ -550,7 +550,7 @@ def test_ansible_cache_hits_on_second_scan(
 ) -> None:
     """Second scan of the same project gets plugin introspection cache hits.
 
-    The first scan (via ``scan_result`` fixture) warms the daemon's
+    The first scan (via ``scan_data`` fixture) warms the daemon's
     in-memory PluginCache. A second scan of the same fixture with the
     same session reuses the same venv and collection versions, so
     M001-M004/L058/L059 should get cache hits. We verify by reading
