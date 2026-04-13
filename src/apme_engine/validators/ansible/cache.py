@@ -24,6 +24,7 @@ CacheType = Literal["introspect", "docspec", "mockspec"]
 CacheKey = tuple[str, str, str]  # (collection_fqcn, version, plugin_name)
 
 _MAX_ENTRIES = 1024
+_MAX_VERSION_ENTRIES = 256
 
 
 def _collection_version(venv_root: str, namespace: str, name: str) -> str:
@@ -107,8 +108,8 @@ class PluginCache:
         }
         self._hits: dict[CacheType, int] = {"introspect": 0, "docspec": 0, "mockspec": 0}
         self._misses: dict[CacheType, int] = {"introspect": 0, "docspec": 0, "mockspec": 0}
-        self._version_cache: dict[tuple[str, str, str], str] = {}
-        self._core_version_cache: dict[str, str] = {}
+        self._version_cache: OrderedDict[tuple[str, str, str], str] = OrderedDict()
+        self._core_version_cache: OrderedDict[str, str] = OrderedDict()
         self._lock = threading.Lock()
 
     def _resolve_version(self, venv_root: str, namespace: str, name: str) -> str:
@@ -125,15 +126,22 @@ class PluginCache:
         memo_key = (venv_root, namespace, name)
         cached = self._version_cache.get(memo_key)
         if cached is not None:
+            self._version_cache.move_to_end(memo_key)
             return cached
         if namespace == "ansible" and name == "builtin":
             version = self._core_version_cache.get(venv_root)
             if version is None:
                 version = _ansible_core_version(venv_root)
                 self._core_version_cache[venv_root] = version
+                while len(self._core_version_cache) > _MAX_VERSION_ENTRIES:
+                    self._core_version_cache.popitem(last=False)
+            else:
+                self._core_version_cache.move_to_end(venv_root)
         else:
             version = _collection_version(venv_root, namespace, name)
         self._version_cache[memo_key] = version
+        while len(self._version_cache) > _MAX_VERSION_ENTRIES:
+            self._version_cache.popitem(last=False)
         return version
 
     def _make_key(self, venv_root: str, plugin_name: str) -> CacheKey | None:
@@ -254,7 +262,8 @@ class PluginCache:
         """Return hit/miss counts for diagnostics.
 
         Returns:
-            Dict with keys like ``introspect_hits``, ``introspect_misses``, etc.
+            Dict with keys like ``cache_introspect_hits``,
+            ``cache_introspect_misses``, etc.
         """
         with self._lock:
             stores: list[CacheType] = ["introspect", "docspec", "mockspec"]

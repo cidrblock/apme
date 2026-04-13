@@ -277,13 +277,7 @@ def run(
     if uncached:
         fresh_specs = _fetch_specs(uncached, venv_root, env_extra)
         for name, spec in fresh_specs.items():
-            resolved_fqcn = ""
-            if isinstance(spec, dict):
-                for other_name, other_spec in fresh_specs.items():
-                    if other_spec is spec and other_name != name and "." in other_name:
-                        resolved_fqcn = other_name
-                        break
-            plugin_cache.put("mockspec", venv_str, name, spec, resolved_fqcn=resolved_fqcn)
+            plugin_cache.put("mockspec", venv_str, name, spec)
         all_specs.update(fresh_specs)
 
     raw_violations = _check_tasks_against_specs(all_specs, tasks_for_check)
