@@ -458,6 +458,7 @@ def _load_ai_prompts() -> dict[str, str]:
             try:
                 fm = yaml.safe_load(m.group(1))
             except yaml.YAMLError:
+                logger.warning("Failed to parse YAML frontmatter in %s", md_path)
                 continue
             if not isinstance(fm, dict):
                 continue
@@ -466,7 +467,7 @@ def _load_ai_prompts() -> dict[str, str]:
             if rule_id and ai_prompt:
                 prompts[str(rule_id)] = str(ai_prompt).strip()
 
-    logger.info("Loaded ai_prompt hints for %d rules", len(prompts))
+    logger.debug("Loaded ai_prompt hints for %d rules", len(prompts))
     return prompts
 
 
