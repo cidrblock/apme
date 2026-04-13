@@ -131,6 +131,7 @@ export function PlaygroundPage() {
   }, [reset]);
 
   const isRunning = opStatus === 'connecting' || opStatus === 'preparing' || opStatus === 'checking' || opStatus === 'applying';
+  const [dismissedDisconnect, setDismissedDisconnect] = useState(false);
 
   const handleReconnect = useCallback(() => {
     if (sessionId && scanId) {
@@ -146,12 +147,12 @@ export function PlaygroundPage() {
       />
 
       <div style={{ padding: '0 24px 24px' }}>
-        {rawStatus === 'disconnected' && canReconnect && (
+        {rawStatus === 'disconnected' && canReconnect && !dismissedDisconnect && (
           <Alert
             variant="warning"
             isInline
             title="Session disconnected"
-            actionClose={<AlertActionCloseButton onClose={handleReset} />}
+            actionClose={<AlertActionCloseButton onClose={() => setDismissedDisconnect(true)} />}
             style={{ marginBottom: 16 }}
           >
             <p style={{ marginBottom: 8 }}>{error}</p>
