@@ -1,6 +1,6 @@
 """REST + SSE endpoints for project operations (ADR-052).
 
-Provides ``POST /operate``, ``GET /``, ``POST /approve``, ``POST /cancel``,
+Provides ``POST``, ``GET``, ``POST /approve``, ``POST /cancel``,
 ``POST /create-pr``, and ``GET /events`` under
 ``/api/v1/projects/{project_id}/operation``.
 """
@@ -466,8 +466,8 @@ async def _drive_operation(
                     phase=prog.phase or "processing",
                     message=prog.message or "",
                     timestamp=_now_iso(),
-                    progress=prog.progress if prog.progress else None,
-                    level=prog.level if prog.level else None,
+                    progress=prog.progress if prog.progress is not None else None,
+                    level=prog.level if prog.level is not None else None,
                 )
                 if registry.get(operation_id) and registry.get(operation_id).status == OperationStatus.CLONING:  # type: ignore[union-attr]
                     registry.transition(operation_id, OperationStatus.SCANNING)

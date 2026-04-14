@@ -68,7 +68,8 @@ class OperationRegistry:
             if op.grpc_task and not op.grpc_task.done():
                 op.grpc_task.cancel()
             for q in op.sse_subscribers:
-                await q.put({"_close": True})
+                with contextlib.suppress(asyncio.QueueFull):
+                    q.put_nowait({"_close": True})
             op.sse_subscribers.clear()
         self._ops.clear()
         self._by_project.clear()
@@ -163,7 +164,8 @@ class OperationRegistry:
         if self._by_project.get(op.project_id) == operation_id:
             del self._by_project[op.project_id]
         for q in op.sse_subscribers:
-            q.put_nowait({"_close": True})
+            with contextlib.suppress(asyncio.QueueFull):
+                q.put_nowait({"_close": True})
         op.sse_subscribers.clear()
 
     # ── state transitions ─────────────────────────────────────────────
@@ -201,14 +203,13 @@ class OperationRegistry:
             new_status.value,
             op.project_id[:12],
         )
-        self._broadcast(
-            op,
-            SSEEventType.STATUS_CHANGED,
-            {
-                "status": new_status.value,
-                "previous": old_status.value,
-            },
-        )
+        payload: dict[str, Any] = {
+            "status": new_status.value,
+            "previous": old_status.value,
+        }
+        if extra:
+            payload.update(extra)
+        self._broadcast(op, SSEEventType.STATUS_CHANGED, payload)
 
     def add_progress(self, operation_id: str, entry: ProgressEntry) -> None:
         """Append a progress entry and broadcast it.

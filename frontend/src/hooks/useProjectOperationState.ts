@@ -138,9 +138,19 @@ export function useProjectOperationState(projectId: string) {
     es.addEventListener("status_changed", (e: MessageEvent) => {
       if (!mountedRef.current) return;
       try {
-        const data = JSON.parse(e.data) as { status: string; previous: string };
+        const data = JSON.parse(e.data) as {
+          status: string;
+          previous: string;
+          error?: string;
+        };
         setState((prev) =>
-          prev ? { ...prev, status: data.status as ProjectOperationStatus } : prev,
+          prev
+            ? {
+                ...prev,
+                status: data.status as ProjectOperationStatus,
+                ...(data.error ? { error: data.error } : {}),
+              }
+            : prev,
         );
       } catch {
         /* ignore */
@@ -235,11 +245,13 @@ export function useProjectOperationState(projectId: string) {
   const poll = useCallback(async () => {
     const s = await fetchState(projectId);
     if (!mountedRef.current) return;
-    if (s && !TERMINAL_STATUSES.has(s.status)) {
-      setState(s);
-      connect();
-    } else {
+    if (!s) {
       setState(null);
+      return;
+    }
+    setState(s);
+    if (!TERMINAL_STATUSES.has(s.status)) {
+      connect();
     }
   }, [projectId, connect]);
 

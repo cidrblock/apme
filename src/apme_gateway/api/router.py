@@ -585,8 +585,8 @@ async def get_project_detail(project_id: str) -> ProjectDetail:
                 scan_type=op.scan_type,
                 started_at=op.started_at.isoformat(),
             )
-    except Exception:  # noqa: BLE001
-        pass
+    except (ImportError, AttributeError, KeyError):
+        logger.debug("Could not resolve active operation for project %s", project_id, exc_info=True)
 
     return ProjectDetail(
         id=proj.id,
@@ -1188,28 +1188,32 @@ async def list_active_operations() -> list[dict[str, object]]:
 
     registry = get_operation_registry()
     ops = registry.list_active()
-    result: list[dict[str, object]] = []
-    for op in ops:
-        project_name = ""
-        try:
-            async with get_session() as db:
-                proj = await q.get_project(db, op.project_id)
+    if not ops:
+        return []
+
+    project_ids = [op.project_id for op in ops]
+    name_map: dict[str, str] = {}
+    try:
+        async with get_session() as db:
+            for pid in project_ids:
+                proj = await q.get_project(db, pid)
                 if proj:
-                    project_name = proj.name
-        except Exception:  # noqa: BLE001
-            pass
-        result.append(
-            {
-                "operation_id": op.operation_id,
-                "project_id": op.project_id,
-                "project_name": project_name,
-                "scan_id": op.scan_id,
-                "status": op.status.value,
-                "scan_type": op.scan_type,
-                "started_at": op.started_at.isoformat(),
-            }
-        )
-    return result
+                    name_map[pid] = proj.name
+    except (ImportError, AttributeError, KeyError):
+        logger.debug("Could not resolve project names for active operations", exc_info=True)
+
+    return [
+        {
+            "operation_id": op.operation_id,
+            "project_id": op.project_id,
+            "project_name": name_map.get(op.project_id, ""),
+            "scan_id": op.scan_id,
+            "status": op.status.value,
+            "scan_type": op.scan_type,
+            "started_at": op.started_at.isoformat(),
+        }
+        for op in ops
+    ]
 
 
 # ── Dashboard (ADR-037) ─────────────────────────────────────────────

@@ -257,4 +257,4 @@ class SSEEventType(str, Enum):
     RESULT = "result"
     APPROVAL_ACK = "approval_ack"
     PR_CREATED = "pr_created"
-    ERROR = "error"
+    ERROR = "error_event"
