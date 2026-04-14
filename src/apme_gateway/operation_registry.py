@@ -12,6 +12,7 @@ Thread-safety is achieved via the GIL + single-threaded asyncio event loop
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 from datetime import datetime, timezone
@@ -61,10 +62,8 @@ class OperationRegistry:
         """Cancel the reaper and clean up all operations."""
         if self._reaper_task and not self._reaper_task.done():
             self._reaper_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._reaper_task
-            except asyncio.CancelledError:
-                pass
         for op in list(self._ops.values()):
             if op.grpc_task and not op.grpc_task.done():
                 op.grpc_task.cancel()
@@ -202,10 +201,14 @@ class OperationRegistry:
             new_status.value,
             op.project_id[:12],
         )
-        self._broadcast(op, SSEEventType.STATUS_CHANGED, {
-            "status": new_status.value,
-            "previous": old_status.value,
-        })
+        self._broadcast(
+            op,
+            SSEEventType.STATUS_CHANGED,
+            {
+                "status": new_status.value,
+                "previous": old_status.value,
+            },
+        )
 
     def add_progress(self, operation_id: str, entry: ProgressEntry) -> None:
         """Append a progress entry and broadcast it.
@@ -218,13 +221,17 @@ class OperationRegistry:
         if op is None:
             return
         op.progress.append(entry)
-        self._broadcast(op, SSEEventType.PROGRESS, {
-            "phase": entry.phase,
-            "message": entry.message,
-            "timestamp": entry.timestamp,
-            "progress": entry.progress,
-            "level": entry.level,
-        })
+        self._broadcast(
+            op,
+            SSEEventType.PROGRESS,
+            {
+                "phase": entry.phase,
+                "message": entry.message,
+                "timestamp": entry.timestamp,
+                "progress": entry.progress,
+                "level": entry.level,
+            },
+        )
 
     def set_proposals(self, operation_id: str, proposals: list[Proposal]) -> None:
         """Store proposals and transition to AWAITING_APPROVAL.
@@ -242,23 +249,27 @@ class OperationRegistry:
         loop = asyncio.get_running_loop()
         op.approval_future = loop.create_future()
         self.transition(operation_id, OperationStatus.AWAITING_APPROVAL)
-        self._broadcast(op, SSEEventType.PROPOSALS, {
-            "proposals": [
-                {
-                    "id": p.id,
-                    "rule_id": p.rule_id,
-                    "file": p.file,
-                    "tier": p.tier,
-                    "confidence": p.confidence,
-                    "explanation": p.explanation,
-                    "diff_hunk": p.diff_hunk,
-                    "status": p.status,
-                    "suggestion": p.suggestion,
-                    "line_start": p.line_start,
-                }
-                for p in proposals
-            ],
-        })
+        self._broadcast(
+            op,
+            SSEEventType.PROPOSALS,
+            {
+                "proposals": [
+                    {
+                        "id": p.id,
+                        "rule_id": p.rule_id,
+                        "file": p.file,
+                        "tier": p.tier,
+                        "confidence": p.confidence,
+                        "explanation": p.explanation,
+                        "diff_hunk": p.diff_hunk,
+                        "status": p.status,
+                        "suggestion": p.suggestion,
+                        "line_start": p.line_start,
+                    }
+                    for p in proposals
+                ],
+            },
+        )
 
     def set_result(self, operation_id: str, result: OperationResult) -> None:
         """Store the operation result and transition to COMPLETED.
@@ -271,17 +282,21 @@ class OperationRegistry:
         if op is None:
             return
         op.result = result
-        self._broadcast(op, SSEEventType.RESULT, {
-            "total_violations": result.total_violations,
-            "fixable": result.fixable,
-            "ai_proposed": result.ai_proposed,
-            "ai_declined": result.ai_declined,
-            "ai_accepted": result.ai_accepted,
-            "manual_review": result.manual_review,
-            "remediated_count": result.remediated_count,
-            "fixed_violations": result.fixed_violations,
-            "patches": result.patches,
-        })
+        self._broadcast(
+            op,
+            SSEEventType.RESULT,
+            {
+                "total_violations": result.total_violations,
+                "fixable": result.fixable,
+                "ai_proposed": result.ai_proposed,
+                "ai_declined": result.ai_declined,
+                "ai_accepted": result.ai_accepted,
+                "manual_review": result.manual_review,
+                "remediated_count": result.remediated_count,
+                "fixed_violations": result.fixed_violations,
+                "patches": result.patches,
+            },
+        )
         self.transition(operation_id, OperationStatus.COMPLETED)
 
     def set_pr_url(self, operation_id: str, pr_url: str) -> None:
@@ -327,10 +342,8 @@ class OperationRegistry:
         op = self._ops.get(operation_id)
         if op is None:
             return
-        try:
+        with contextlib.suppress(ValueError):
             op.sse_subscribers.remove(queue)
-        except ValueError:
-            pass
 
     # ── internal helpers ──────────────────────────────────────────────
 
@@ -351,21 +364,15 @@ class OperationRegistry:
                 dead.append(q)
                 logger.warning("Dropping slow SSE subscriber for operation %s", op.operation_id[:12])
         for q in dead:
-            try:
+            with contextlib.suppress(ValueError):
                 op.sse_subscribers.remove(q)
-            except ValueError:
-                pass
 
     async def _reap_loop(self) -> None:
         """Periodically evict terminal operations past their TTL."""
         while True:
             await asyncio.sleep(30)
             now = time.monotonic()
-            expired = [
-                op_id
-                for op_id, ts in self._terminal_times.items()
-                if (now - ts) >= self._terminal_ttl
-            ]
+            expired = [op_id for op_id, ts in self._terminal_times.items() if (now - ts) >= self._terminal_ttl]
             for op_id in expired:
                 logger.debug("Reaping terminal operation %s", op_id[:12])
                 self._remove(op_id)

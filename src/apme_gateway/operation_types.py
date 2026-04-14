@@ -47,13 +47,15 @@ class OperationStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-TERMINAL_STATUSES: frozenset[OperationStatus] = frozenset({
-    OperationStatus.COMPLETED,
-    OperationStatus.PR_SUBMITTED,
-    OperationStatus.FAILED,
-    OperationStatus.EXPIRED,
-    OperationStatus.CANCELLED,
-})
+TERMINAL_STATUSES: frozenset[OperationStatus] = frozenset(
+    {
+        OperationStatus.COMPLETED,
+        OperationStatus.PR_SUBMITTED,
+        OperationStatus.FAILED,
+        OperationStatus.EXPIRED,
+        OperationStatus.CANCELLED,
+    }
+)
 
 
 @dataclass

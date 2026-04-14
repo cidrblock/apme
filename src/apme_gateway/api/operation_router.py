@@ -12,7 +12,6 @@ import contextlib
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -300,7 +299,10 @@ async def create_pr_from_operation(project_id: str) -> dict[str, Any]:
         files = {pf.path: pf.content for pf in patched}
         await provider.push_files(project.repo_url, branch_name, files, pr_title, token)
         result = await provider.create_pull_request(
-            project.repo_url, project.branch, branch_name, pr_title,
+            project.repo_url,
+            project.branch,
+            branch_name,
+            pr_title,
             f"Automated remediation by APME — {scan.fixed_count} findings fixed.",
             token,
         )
@@ -432,12 +434,12 @@ async def _drive_operation(
         scan_id: Engine scan identifier.
         galaxy_servers: Galaxy server defs.
     """
-    from apme_gateway.scan.driver import clone_repo, fetch_remote_head, get_clone_head, run_project_operation
+    from apme_gateway.scan.driver import fetch_remote_head, run_project_operation
 
     registry = get_operation_registry()
 
     try:
-        remote_sha = await fetch_remote_head(repo_url, branch)
+        await fetch_remote_head(repo_url, branch)
 
         registry.transition(operation_id, OperationStatus.CLONING)
 
@@ -602,11 +604,16 @@ async def _drive_operation(
             if clone_commit:
                 await q.update_project_commit(db, project_id, clone_commit)
             await q.link_scan_to_project(
-                db, scan_id, project_id,
-                trigger="ui", scan_type=scan_type_str, source="gateway",
+                db,
+                scan_id,
+                project_id,
+                trigger="ui",
+                scan_type=scan_type_str,
+                source="gateway",
             )
             await q.update_ai_counts(
-                db, scan_id,
+                db,
+                scan_id,
                 ai_proposed=ai_proposed_count,
                 ai_declined=ai_declined_count,
                 ai_accepted=ai_accepted_count,
