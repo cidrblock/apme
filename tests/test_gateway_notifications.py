@@ -450,37 +450,46 @@ class TestNotificationEndpoints:
         import json
 
         payload = {"id": 1, "type": "scan_complete", "title": "SSE Test"}
+        got_data: dict[str, object] = {}
 
-        async def _consume() -> tuple[dict[str, str], str | None]:
-            """Open the SSE stream, broadcast a payload, return headers and first data line.
+        async def _consume() -> dict[str, str]:
+            """Open the SSE stream, read until the broadcast payload arrives.
 
             Returns:
-                Tuple of response headers and the first ``data:`` line (or None).
+                Response headers dict.
             """
             async with client.stream("GET", "/api/v1/notifications/stream") as resp:
                 headers = dict(resp.headers)
-                _broadcast(payload)
                 async for line in resp.aiter_lines():
                     if line.startswith("data: "):
-                        return headers, line
-            return headers, None
+                        got_data.update(json.loads(line.removeprefix("data: ").strip()))
+                        return headers
+            return headers
 
-        task = asyncio.create_task(_consume())
+        async def _delayed_broadcast() -> None:
+            """Give the stream consumer a moment to connect, then broadcast."""
+            await asyncio.sleep(0.1)
+            _broadcast(payload)
+
+        consume_task = asyncio.create_task(_consume())
+        broadcast_task = asyncio.create_task(_delayed_broadcast())
         try:
-            headers, data_line = await asyncio.wait_for(task, timeout=5.0)
+            headers = await asyncio.wait_for(consume_task, timeout=5.0)
         except asyncio.TimeoutError:
-            task.cancel()
+            consume_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
-                await task
+                await consume_task
             pytest.fail("Timed out waiting for SSE data event")
+        finally:
+            broadcast_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await broadcast_task
 
         assert headers.get("content-type", "").startswith("text/event-stream")
         assert headers.get("cache-control") == "no-cache"
         assert headers.get("x-accel-buffering") == "no"
-        assert data_line is not None
-        data = json.loads(data_line.removeprefix("data: ").strip())
-        assert data["type"] == "scan_complete"
-        assert data["title"] == "SSE Test"
+        assert got_data.get("type") == "scan_complete"
+        assert got_data.get("title") == "SSE Test"
 
 
 # ---------------------------------------------------------------------------
