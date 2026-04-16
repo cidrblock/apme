@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
+import argparse
+import json
+from collections.abc import Iterable, Iterator
+from pathlib import Path
 from typing import cast
+from unittest.mock import MagicMock, patch
 
+import pytest
+
+from apme_engine.cli._exit_codes import EXIT_VIOLATIONS
 from apme_engine.cli.sarif import violations_to_sarif
 
 _SarifNode = dict[str, object]
@@ -314,3 +322,218 @@ class TestRuleHelpText:
         help_uri = cast(str, rule["helpUri"])
         assert "SEC%3Ageneric-api-key" in help_uri
         assert ":" not in help_uri.split("/rules/")[1]
+
+
+def _check_args(**overrides: object) -> argparse.Namespace:
+    """Build an argparse namespace suitable for run_check().
+
+    Args:
+        **overrides: Override defaults (e.g. ``sarif=True``).
+
+    Returns:
+        Namespace with every attribute run_check reads.
+    """
+    defaults: dict[str, object] = {
+        "command": "check",
+        "target": ".",
+        "verbose": 0,
+        "json": False,
+        "sarif": False,
+        "diff": False,
+        "session": None,
+        "timeout": 300,
+        "ansible_version": None,
+        "collections": None,
+        "no_ansi": False,
+        "skip_dep_scan": False,
+        "skip_collection_scan": False,
+        "skip_python_audit": False,
+    }
+    defaults.update(overrides)
+    return argparse.Namespace(**defaults)
+
+
+def _fake_fix_session(
+    violations: list[dict[str, object]],
+    scan_id: str = "scan-123",
+) -> tuple[MagicMock, MagicMock]:
+    """Build a mock channel and stub whose FixSession yields a single result event.
+
+    Args:
+        violations: Violation dicts to surface as remaining_violations.
+        scan_id: Scan id to emit from the first uploaded chunk.
+
+    Returns:
+        Tuple of ``(channel_mock, stub_class_mock)`` suitable for patch targets.
+    """
+    created_event = MagicMock()
+    created_event.WhichOneof.return_value = "created"
+
+    result_event = MagicMock()
+    result_event.WhichOneof.return_value = "result"
+    result_event.result.remaining_violations = [object() for _ in violations]
+    result_event.result.patches = []
+
+    closed_event = MagicMock()
+    closed_event.WhichOneof.return_value = "closed"
+
+    def _drain_and_yield(
+        cmd_iter: Iterable[object],
+        timeout: float | None = None,  # noqa: ARG001
+    ) -> Iterator[object]:
+        for _ in cmd_iter:
+            pass
+        yield created_event
+        yield result_event
+        yield closed_event
+
+    stub = MagicMock()
+    stub.FixSession.side_effect = _drain_and_yield
+
+    channel = MagicMock()
+    return channel, stub
+
+
+class TestSarifCliFlag:
+    """End-to-end tests for the ``apme check --sarif`` flag (run_check)."""
+
+    @staticmethod
+    def _patched_run_check(
+        violations: list[dict[str, object]],
+        args: argparse.Namespace,
+    ) -> int:
+        """Execute run_check with external dependencies mocked.
+
+        Args:
+            violations: Violation dicts to inject via the FixSession result event.
+            args: CLI args namespace passed to run_check.
+
+        Returns:
+            The exit code raised by run_check (0 for success, else ``SystemExit.code``).
+        """
+        channel, stub = _fake_fix_session(violations)
+
+        upload_chunk = MagicMock()
+        upload_chunk.scan_id = "scan-123"
+
+        with (
+            patch(
+                "apme_engine.cli.check.discover_project_root",
+                return_value=Path("/fake"),
+            ),
+            patch(
+                "apme_engine.cli.check.discover_galaxy_servers",
+                return_value=None,
+            ),
+            patch(
+                "apme_engine.cli.check.load_rule_configs_from_project",
+                return_value=None,
+            ),
+            patch(
+                "apme_engine.cli.check.yield_scan_chunks",
+                return_value=iter([upload_chunk]),
+            ),
+            patch(
+                "apme_engine.cli.check.resolve_primary",
+                return_value=(channel, "localhost:50051"),
+            ),
+            patch(
+                "apme_engine.cli.check.primary_pb2_grpc.PrimaryStub",
+                return_value=stub,
+            ),
+            patch(
+                "apme_engine.cli.check.violation_proto_to_dict",
+                side_effect=list(violations),
+            ),
+        ):
+            from apme_engine.cli.check import run_check
+
+            try:
+                run_check(args)
+            except SystemExit as e:
+                code = e.code
+                return int(code) if isinstance(code, int) else 0
+            return 0
+
+    def test_sarif_emits_valid_json_to_stdout(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """--sarif prints a parseable SARIF 2.1.0 document to stdout.
+
+        Args:
+            capsys: pytest fixture for capturing stdout/stderr.
+        """
+        violation = {
+            "rule_id": "L003",
+            "severity": "low",
+            "message": "Use FQCN",
+            "file": "playbooks/site.yml",
+            "line": 10,
+            "path": "",
+        }
+        exit_code = self._patched_run_check([violation], _check_args(sarif=True))
+        stdout = capsys.readouterr().out
+
+        assert exit_code == EXIT_VIOLATIONS
+        doc = json.loads(stdout)
+        assert doc["version"] == "2.1.0"
+        assert doc["$schema"].endswith("sarif-schema-2.1.0.json")
+        assert len(doc["runs"]) == 1
+        results = doc["runs"][0]["results"]
+        assert len(results) == 1
+        assert results[0]["ruleId"] == "L003"
+        assert results[0]["level"] == "note"
+
+    def test_sarif_exit_zero_when_no_violations(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """--sarif exits 0 when there are no violations.
+
+        Args:
+            capsys: pytest fixture for capturing stdout/stderr.
+        """
+        exit_code = self._patched_run_check([], _check_args(sarif=True))
+        stdout = capsys.readouterr().out
+
+        assert exit_code == 0
+        doc = json.loads(stdout)
+        assert doc["version"] == "2.1.0"
+        assert doc["runs"][0]["results"] == []
+
+    def test_sarif_exit_one_when_violations_present(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """--sarif exits 1 (EXIT_VIOLATIONS) when violations exist.
+
+        Args:
+            capsys: pytest fixture for capturing stdout/stderr.
+        """
+        violation = {
+            "rule_id": "SEC:generic-api-key",
+            "severity": "high",
+            "message": "API key found",
+            "file": "roles/example/tasks/main.yml",
+            "line": 42,
+            "path": "",
+        }
+        exit_code = self._patched_run_check([violation], _check_args(sarif=True))
+        capsys.readouterr()
+
+        assert exit_code == EXIT_VIOLATIONS
+
+    def test_sarif_suppresses_human_readable_output(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """--sarif suppresses the human-readable render and emits only SARIF JSON.
+
+        Args:
+            capsys: pytest fixture for capturing stdout/stderr.
+        """
+        violation = {
+            "rule_id": "M005",
+            "severity": "medium",
+            "message": "Deprecated module",
+            "file": "tasks.yml",
+            "line": 1,
+            "path": "",
+        }
+        exit_code = self._patched_run_check([violation], _check_args(sarif=True))
+        stdout = capsys.readouterr().out
+
+        assert exit_code == EXIT_VIOLATIONS
+        stdout_stripped = stdout.strip()
+        assert stdout_stripped.startswith("{")
+        assert stdout_stripped.endswith("}")
+        json.loads(stdout_stripped)
