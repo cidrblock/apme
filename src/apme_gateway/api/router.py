@@ -10,15 +10,17 @@ REST + SSE endpoints in ``operation_router.py`` (ADR-052).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import uuid
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from typing import cast
 
-from fastapi import APIRouter, HTTPException, Query, WebSocket
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
 from apme_engine.severity_defaults import severity_from_proto, severity_to_label
 from apme_gateway.api.schemas import (
@@ -42,6 +44,7 @@ from apme_gateway.api.schemas import (
     GalaxyServerSchema,
     HealthStatus,
     LogEntry,
+    NotificationSchema,
     PaginatedResponse,
     PatchDetail,
     ProjectDependencies,
@@ -65,7 +68,7 @@ from apme_gateway.api.schemas import (
 )
 from apme_gateway.db import get_session
 from apme_gateway.db import queries as q
-from apme_gateway.db.models import GalaxyServer, PatchedFile, Rule, RuleOverride, Scan, ScanManifest
+from apme_gateway.db.models import GalaxyServer, PatchedFile, Project, Rule, RuleOverride, Scan, ScanManifest
 
 logger = logging.getLogger(__name__)
 
@@ -2055,7 +2058,447 @@ async def delete_rule_config(rule_id: str) -> None:
         raise HTTPException(status_code=404, detail="No override configured for this rule")
 
 
-# ── Project operation endpoints moved to operation_router.py (ADR-052) ──
+# ── Notifications ────────────────────────────────────────────────────
+
+
+@router.get("/notifications")  # type: ignore[untyped-decorator]
+async def list_notifications_endpoint(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    unread_only: bool = Query(default=False),
+) -> PaginatedResponse:
+    """Return notifications ordered newest-first.
+
+    Args:
+        limit: Page size.
+        offset: Row offset.
+        unread_only: When True, return only unread notifications.
+
+    Returns:
+        Paginated list of notifications.
+    """
+    async with get_session() as db:
+        rows, total = await q.list_notifications(db, limit=limit, offset=offset, unread_only=unread_only)
+    items = [
+        NotificationSchema(
+            id=n.id,
+            type=n.type,
+            title=n.title,
+            message=n.message,
+            variant=n.variant,
+            project_id=n.project_id,
+            scan_id=n.scan_id,
+            link=n.link,
+            created_at=n.created_at,
+            read=n.read,
+        )
+        for n in rows
+    ]
+    return PaginatedResponse(total=total, limit=limit, offset=offset, items=items)
+
+
+@router.patch("/notifications/{notification_id}/read")  # type: ignore[untyped-decorator]
+async def mark_notification_read_endpoint(notification_id: int) -> JSONResponse:
+    """Mark a single notification as read.
+
+    Args:
+        notification_id: Notification PK.
+
+    Returns:
+        JSON acknowledgement.
+
+    Raises:
+        HTTPException: 404 if notification not found.
+    """
+    async with get_session() as db:
+        ok = await q.mark_notification_read(db, notification_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return JSONResponse(content={"ok": True})
+
+
+@router.post("/notifications/read-all")  # type: ignore[untyped-decorator]
+async def mark_all_notifications_read_endpoint() -> JSONResponse:
+    """Mark all unread notifications as read.
+
+    Returns:
+        JSON with the count of updated rows.
+    """
+    async with get_session() as db:
+        count = await q.mark_all_notifications_read(db)
+    return JSONResponse(content={"updated": count})
+
+
+@router.delete("/notifications/{notification_id}", status_code=204)  # type: ignore[untyped-decorator]
+async def delete_notification_endpoint(notification_id: int) -> None:
+    """Delete a single notification.
+
+    Args:
+        notification_id: Notification PK.
+
+    Raises:
+        HTTPException: 404 if notification not found.
+    """
+    async with get_session() as db:
+        ok = await q.delete_notification(db, notification_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+
+@router.get("/notifications/stream")  # type: ignore[untyped-decorator]
+async def notification_stream() -> StreamingResponse:
+    """SSE stream for real-time notification delivery.
+
+    Clients connect with ``EventSource`` and receive JSON notification
+    payloads as ``data:`` lines.  The connection stays open until the
+    client disconnects.  A keep-alive comment is sent every 15 seconds
+    to prevent proxy/CDN idle-timeout disconnects.
+
+    Returns:
+        Streaming SSE response.
+    """
+    from apme_gateway.notifications import sse_event_stream, subscribe, unsubscribe  # noqa: PLC0415
+
+    queue = subscribe()
+
+    async def _stream() -> AsyncIterator[str]:
+        stream = sse_event_stream(queue)
+
+        async def _next_chunk() -> str:
+            return await anext(stream)
+
+        pending_chunk: asyncio.Task[str] | None = None
+        try:
+            while True:
+                if pending_chunk is None:
+                    pending_chunk = asyncio.create_task(_next_chunk())
+                done, _ = await asyncio.wait({pending_chunk}, timeout=15.0)
+                if pending_chunk not in done:
+                    yield ": keep-alive\n\n"
+                    continue
+                try:
+                    chunk = pending_chunk.result()
+                except StopAsyncIteration:
+                    break
+                pending_chunk = None
+                yield chunk
+        except asyncio.CancelledError:
+            pass
+        finally:
+            if pending_chunk is not None:
+                pending_chunk.cancel()
+                with contextlib.suppress(asyncio.CancelledError, StopAsyncIteration):
+                    await pending_chunk
+            with contextlib.suppress(Exception):
+                await stream.aclose()
+            unsubscribe(queue)
+
+    return StreamingResponse(
+        _stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ── Project WebSocket (ADR-037) ──────────────────────────────────────
+
+
+@router.websocket("/projects/{project_id}/ws/operate")  # type: ignore[untyped-decorator]
+async def project_operate_ws(
+    websocket: WebSocket,
+    project_id: str,
+) -> None:
+    """Bidirectional WebSocket for project check/remediate operations (ADR-037, ADR-039).
+
+    The client sends ``{"action": "check"|"remediate", "options": {...}}`` (or
+    ``{"remediate": true}``) to start an operation.  The gateway clones the repo,
+    drives Primary ``FixSession`` via gRPC, and streams progress back over the WebSocket.
+
+    Args:
+        websocket: Incoming WebSocket connection.
+        project_id: Target project UUID.
+    """
+    from apme_gateway._galaxy_inject import load_galaxy_server_defs
+    from apme_gateway.config import load_config
+    from apme_gateway.scan.driver import fetch_remote_head, run_project_operation
+
+    await websocket.accept()
+
+    try:
+        msg = await websocket.receive_json()
+        is_remediate = bool(msg.get("remediate", False)) or msg.get("action") == "remediate"
+        options: dict[str, object] = msg.get("options", {})
+
+        async with get_session() as db:
+            proj = await q.resolve_project(db, project_id)
+        if not proj:
+            await websocket.send_json({"type": "error", "message": "Project not found"})
+            return
+
+        remote_sha = await fetch_remote_head(proj.repo_url, proj.branch)
+        if remote_sha and proj.last_scanned_commit and remote_sha != proj.last_scanned_commit:
+            await websocket.send_json(
+                {
+                    "type": "new_commits",
+                    "remote_head": remote_sha[:12],
+                    "last_scanned": proj.last_scanned_commit[:12],
+                    "message": "New commits detected since last scan",
+                }
+            )
+
+        cfg = load_config()
+        galaxy_servers = await load_galaxy_server_defs()
+
+        op_scan_id = uuid.uuid4().hex
+        started_sent = False
+        completed_scan_id: str | None = None
+        captured_patches: list[dict[str, str]] = []
+        ai_proposed_count = 0
+        ai_declined_count = 0
+        ai_accepted_count = 0
+
+        async def _progress_cb(event: object) -> None:
+            """Translate FixSession ``SessionEvent`` protobufs into WebSocket messages.
+
+            Args:
+                event: gRPC SessionEvent protobuf.
+            """
+            nonlocal started_sent, ai_proposed_count, ai_declined_count, ai_accepted_count
+
+            kind = None
+            with contextlib.suppress(Exception):
+                kind = event.WhichOneof("event")  # type: ignore[attr-defined]
+
+            async def _ensure_started() -> None:
+                nonlocal started_sent
+                if not started_sent:
+                    started_sent = True
+                    await websocket.send_json({"type": "started", "scan_id": op_scan_id})
+
+            if kind == "progress":
+                await _ensure_started()
+                prog = event.progress  # type: ignore[attr-defined]
+                await websocket.send_json(
+                    {
+                        "type": "progress",
+                        "phase": prog.phase or "processing",
+                        "message": prog.message or "",
+                        "progress": prog.progress,
+                        "level": prog.level,
+                    }
+                )
+            elif kind == "proposals":
+                await _ensure_started()
+                props = event.proposals  # type: ignore[attr-defined]
+                items = [
+                    {
+                        "id": p.id,
+                        "rule_id": p.rule_id,
+                        "file": p.file,
+                        "tier": p.tier,
+                        "confidence": p.confidence,
+                        "explanation": p.explanation,
+                        "diff_hunk": p.diff_hunk,
+                        "status": p.status or "proposed",
+                        "suggestion": p.suggestion,
+                        "line_start": p.line_start,
+                    }
+                    for p in props.proposals
+                ]
+                ai_proposed_count = sum(1 for i in items if i.get("status") != "declined")
+                ai_declined_count = sum(1 for i in items if i.get("status") == "declined")
+                await websocket.send_json({"type": "proposals", "proposals": items})
+            elif kind == "approval_ack":
+                ack = event.approval_ack  # type: ignore[attr-defined]
+                ai_accepted_count = getattr(ack, "applied_count", 0)
+                await websocket.send_json(
+                    {
+                        "type": "approval_ack",
+                        "applied_count": ai_accepted_count,
+                    }
+                )
+            elif kind == "result":
+                await _ensure_started()
+                res = event.result  # type: ignore[attr-defined]
+                report = getattr(res, "report", None)
+                remaining = getattr(res, "remaining_violations", [])
+                fixed_viols = getattr(res, "fixed_violations", [])
+                fixed = report.fixed if report else 0
+                total = len(remaining) + fixed
+
+                def _extract_line(v: object) -> int | None:
+                    if v.HasField("line"):  # type: ignore[attr-defined]
+                        return v.line  # type: ignore[attr-defined, no-any-return]
+                    if v.HasField("line_range"):  # type: ignore[attr-defined]
+                        return v.line_range.start  # type: ignore[attr-defined, no-any-return]
+                    return None
+
+                fixed_violations_json = [
+                    {
+                        "rule_id": v.rule_id,
+                        "severity": severity_to_label(severity_from_proto(v.severity)),
+                        "message": v.message,
+                        "file": v.file,
+                        "line": _extract_line(v),
+                        "path": v.path,
+                    }
+                    for v in fixed_viols
+                ]
+
+                result_patches = getattr(res, "patches", [])
+                patches_json = [{"file": p.path, "diff": p.diff} for p in result_patches if p.diff]
+                captured_patches.extend(patches_json)
+
+                remediated = fixed if is_remediate else 0
+                remaining_count = len(remaining)
+                await websocket.send_json(
+                    {
+                        "type": "result",
+                        "total_violations": total,
+                        "fixable": fixed,
+                        "ai_proposed": ai_proposed_count,
+                        "ai_declined": ai_declined_count,
+                        "ai_accepted": ai_accepted_count,
+                        "manual_review": remaining_count
+                        if is_remediate
+                        else (report.remaining_manual if report else 0),
+                        "remediated_count": remediated,
+                        "fixed_violations": fixed_violations_json,
+                        "patches": patches_json,
+                    }
+                )
+
+        raw_specs = options.get("collection_specs", [])
+        specs = [str(s) for s in raw_specs] if isinstance(raw_specs, list) else []
+
+        await websocket.send_json({"type": "cloning"})
+
+        clone_commit = ""
+        if is_remediate:
+            approval_queue: asyncio.Queue[list[str]] = asyncio.Queue()
+            op_result: tuple[str, object, str] | None = None
+
+            async def _run_op() -> tuple[str, object, str]:
+                return await run_project_operation(
+                    project_id=proj.id,
+                    repo_url=proj.repo_url,
+                    branch=proj.branch,
+                    primary_address=cfg.primary_address,
+                    remediate=True,
+                    ansible_version=str(options.get("ansible_version", "")),
+                    collection_specs=specs,
+                    enable_ai=bool(options.get("enable_ai", True)),
+                    ai_model=str(options.get("ai_model", "")),
+                    progress_callback=_progress_cb,
+                    approval_queue=approval_queue,
+                    scan_id=op_scan_id,
+                    galaxy_servers=galaxy_servers or None,
+                )
+
+            op_task = asyncio.create_task(_run_op())
+            try:
+                while not op_task.done():
+                    try:
+                        client_msg = await asyncio.wait_for(
+                            websocket.receive_json(),
+                            timeout=1.0,
+                        )
+                    except TimeoutError:
+                        continue
+
+                    msg_type = client_msg.get("type", "")
+                    if msg_type == "approve":
+                        ids = client_msg.get("approved_ids", [])
+                        approved = [str(i) for i in ids] if isinstance(ids, list) else []
+                        await approval_queue.put(approved)
+                    elif msg_type == "cancel":
+                        op_task.cancel()
+                        break
+            finally:
+                if not op_task.done():
+                    op_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    op_result = await op_task
+
+            if op_result is not None:
+                completed_scan_id = op_result[0]
+                clone_commit = op_result[2]
+        else:
+            scan_id, _result, clone_commit = await run_project_operation(
+                project_id=proj.id,
+                repo_url=proj.repo_url,
+                branch=proj.branch,
+                primary_address=cfg.primary_address,
+                remediate=False,
+                ansible_version=str(options.get("ansible_version", "")),
+                collection_specs=specs,
+                progress_callback=_progress_cb,
+                scan_id=op_scan_id,
+                galaxy_servers=galaxy_servers or None,
+            )
+            completed_scan_id = scan_id
+
+        if completed_scan_id:
+            op_scan_type = "remediate" if is_remediate else "check"
+            async with get_session() as db:
+                if clone_commit:
+                    await q.update_project_commit(db, proj.id, clone_commit)
+                await q.link_scan_to_project(
+                    db,
+                    completed_scan_id,
+                    proj.id,
+                    trigger="ui",
+                    scan_type=op_scan_type,
+                    source="gateway",
+                )
+                await q.update_ai_counts(
+                    db,
+                    completed_scan_id,
+                    ai_proposed=ai_proposed_count,
+                    ai_declined=ai_declined_count,
+                    ai_accepted=ai_accepted_count,
+                )
+                if captured_patches:
+                    await q.store_patches(db, completed_scan_id, captured_patches)
+                scan_row = await q.get_scan(db, completed_scan_id)
+                proj_row = (await db.execute(select(Project).where(Project.id == proj.id))).scalar_one_or_none()
+                old_hs = proj_row.health_score if proj_row else None
+                if scan_row is not None:
+                    new_hs = q.compute_health_score(list(scan_row.violations))
+                    if proj_row is not None:
+                        proj_row.health_score = new_hs
+
+                    from apme_gateway.notifications import (  # noqa: PLC0415
+                        broadcast_notifications,
+                        generate_notifications,
+                    )
+
+                    notif_payloads = await generate_notifications(
+                        db,
+                        scan_row,
+                        list(scan_row.violations),
+                        old_health_score=old_hs,
+                        new_health_score=new_hs,
+                    )
+                    await db.commit()
+                    broadcast_notifications(notif_payloads)
+                else:
+                    await q.update_project_health(db, proj.id)
+
+        await websocket.send_json({"type": "closed"})
+    except WebSocketDisconnect:
+        logger.info("WebSocket disconnected for project %s", project_id)
+    except Exception as exc:
+        logger.exception("Error during project operation for %s", project_id)
+        with contextlib.suppress(Exception):
+            await websocket.send_json({"type": "error", "message": f"Operation failed ({type(exc).__name__})"})
+    finally:
+        with contextlib.suppress(Exception):
+            await websocket.close()
 
 
 # ── Playground WebSocket (ADR-028 / ADR-029) ─────────────────────────
