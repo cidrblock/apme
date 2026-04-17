@@ -31,6 +31,7 @@ import fcntl
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -146,7 +147,7 @@ def _spec_to_pip(spec: str) -> str:
     return pkg
 
 
-_FAILED_BUILD_RE = __import__("re").compile(r"Failed to build `([^`]+)`")
+_FAILED_BUILD_RE = re.compile(r"Failed to build `([^`]+)`")
 
 
 def _run_pip_install(
@@ -298,6 +299,7 @@ def _install_collections_via_proxy(
         )
         if result.returncode == 0:
             return []
+        bulk_output = result.stderr or result.stdout
 
     logger.warning(
         "Bulk collection install failed, falling back to individual installs: %s",
@@ -366,8 +368,10 @@ def _retry_without_native(
         CompletedProcess from the last retry attempt.
     """
     if not (use_uv and unbuildable):
+        fallback = "--no-build" if use_uv else "--only-binary :all:"
         logger.warning(
-            "Build failed for native packages; retrying with --no-build: %s",
+            "Build failed for native packages; retrying with %s: %s",
+            fallback,
             original_output,
         )
         return _run_pip_install(pip_python, pip_specs, simple_url, use_uv, no_build=True)
@@ -691,9 +695,8 @@ def list_installed_collections(venv_dir: Path) -> list[tuple[str, str, str, str]
 
 
 _DEFAULT_TTL = 3600
-_re = __import__("re")
-_SAFE_SESSION_RE = _re.compile(r"^[A-Za-z0-9_\-]+$")
-_SAFE_VERSION_RE = _re.compile(r"^\d+\.\d+(\.\d+)?$")
+_SAFE_SESSION_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
+_SAFE_VERSION_RE = re.compile(r"^\d+\.\d+(\.\d+)?$")
 
 
 def _sanitize_session_id(session_id: str) -> str:

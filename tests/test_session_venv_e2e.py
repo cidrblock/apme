@@ -271,7 +271,7 @@ def test_native_violations_with_session_venv(dep_dir: str) -> None:
 
     rule_ids = {str(v.get("rule_id", "")) for v in violations}
     assert len(violations) >= 5, f"Expected at least 5 graph-rule violations, got {len(violations)}"
-    always_expected = {"L043", "L044"}
+    always_expected = {"L043", "L044", "L051"}
     missing = always_expected - rule_ids
     assert not missing, (
         f"Expected rules {sorted(always_expected)} to fire, missing {sorted(missing)}; got {sorted(rule_ids)}"

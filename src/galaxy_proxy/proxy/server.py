@@ -11,6 +11,7 @@ import asyncio
 import configparser
 import logging
 import os
+import re
 import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -173,6 +174,8 @@ def create_app(
             name = s.name.strip()
             if not name:
                 raise HTTPException(status_code=422, detail="Server name must not be empty")
+            if not re.match(r"^[A-Za-z0-9_\-]+$", name):
+                raise HTTPException(status_code=422, detail=f"Invalid server name: {s.name!r}")
             if name.upper() in seen:
                 raise HTTPException(status_code=422, detail=f"Duplicate server name: {s.name!r}")
             seen.add(name.upper())
