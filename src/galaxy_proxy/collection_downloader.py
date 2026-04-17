@@ -172,9 +172,10 @@ def _inject_galaxy_env(env: dict[str, str], servers: list[GalaxyServerConfig]) -
 def _default_ansible_galaxy_bin() -> str:
     """Resolve the best ``ansible-galaxy`` executable for this process.
 
-    Prefers the active interpreter's sibling scripts directory so subprocesses
-    launched from tox/venv contexts can find the entrypoint even when PATH is
-    minimal or sanitized.
+    Checks PATH first via ``shutil.which``, then falls back to the active
+    interpreter's sibling scripts directory (useful in tox/venv contexts
+    where PATH may be minimal), and finally returns the bare name for
+    last-resort PATH lookup.
 
     Returns:
         Executable path or the literal ``"ansible-galaxy"`` for PATH lookup.
