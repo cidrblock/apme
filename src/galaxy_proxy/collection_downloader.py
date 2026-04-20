@@ -262,6 +262,9 @@ async def download_collections(
             try:
                 _inject_galaxy_env(env, servers)
             except ValueError:
+                for key in list(env):
+                    if key == "ANSIBLE_GALAXY_SERVER_LIST" or key.startswith("ANSIBLE_GALAXY_SERVER_"):
+                        env.pop(key, None)
                 temp_cfg_dir = Path(tempfile.mkdtemp(prefix="apme-galaxy-proxy-"))
                 env["ANSIBLE_CONFIG"] = str(write_temp_ansible_cfg(servers, temp_cfg_dir))
                 logger.info("Falling back to temp ansible.cfg for Galaxy config because server names are not env-safe")
