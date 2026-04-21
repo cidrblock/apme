@@ -100,6 +100,21 @@ Six app containers, one pod. All inter-service communication is gRPC. The Galaxy
 
 ## Quick start
 
+### Installation
+
+```bash
+# Install a specific release (recommended)
+pip install apme-engine@git+https://github.com/ansible/apme.git@v2026.4.1
+
+# Install with AI escalation support
+pip install "apme-engine[ai] @ git+https://github.com/ansible/apme.git@v2026.4.1"
+
+# Install the latest development version (main branch)
+pip install apme-engine@git+https://github.com/ansible/apme.git@main
+```
+
+Replace the tag with any [release version](https://github.com/ansible/apme/releases).
+
 ### Local development (no containers)
 
 ```bash
