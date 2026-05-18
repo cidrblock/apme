@@ -13,6 +13,7 @@ import asyncio
 import hashlib
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -52,6 +53,23 @@ _REMOTE_HEAD_CACHE: dict[str, tuple[float, str | None]] = {}
 _REMOTE_HEAD_TTL = 60.0  # seconds
 _REMOTE_HEAD_CACHE_MAX = 256
 
+_CRED_REDACT_RE = re.compile(r"(https?://)[^@]+@")
+
+
+def _redact_credentials(text: str) -> str:
+    """Redact embedded credentials from URLs in text.
+
+    Replaces ``https://user:token@host`` with ``https://[REDACTED]@host``
+    to prevent token exposure in logs or error messages.
+
+    Args:
+        text: Text potentially containing URLs with credentials.
+
+    Returns:
+        Text with credentials redacted.
+    """
+    return _CRED_REDACT_RE.sub(r"\1[REDACTED]@", text)
+
 
 def _git_subprocess_env() -> dict[str, str]:
     """Return environment variables for git subprocesses.
@@ -80,19 +98,32 @@ def _git_subprocess_env() -> dict[str, str]:
 def _inject_token_in_url(repo_url: str, token: str) -> str:
     """Inject an authentication token into an HTTPS git URL.
 
-    Converts ``https://github.com/owner/repo`` to
-    ``https://x-access-token:TOKEN@github.com/owner/repo``.
+    Supports multiple SCM providers with their respective auth schemes:
+    - GitHub: ``x-access-token:TOKEN``
+    - GitLab: ``oauth2:TOKEN``
+    - Bitbucket: ``x-token-auth:TOKEN``
+    - Others: ``git:TOKEN`` (generic fallback)
 
     Args:
         repo_url: Original HTTPS clone URL.
-        token: SCM token (e.g., GitHub PAT).
+        token: SCM token (e.g., PAT, OAuth token).
 
     Returns:
         URL with embedded credentials.
     """
     parsed = urlparse(repo_url)
-    # Use x-access-token as username (GitHub convention), token as password
-    netloc_with_auth = f"x-access-token:{token}@{parsed.hostname}"
+    hostname = parsed.hostname or ""
+
+    if "github" in hostname:
+        username = "x-access-token"
+    elif "gitlab" in hostname:
+        username = "oauth2"
+    elif "bitbucket" in hostname:
+        username = "x-token-auth"
+    else:
+        username = "git"
+
+    netloc_with_auth = f"{username}:{token}@{hostname}"
     if parsed.port:
         netloc_with_auth += f":{parsed.port}"
     return urlunparse(parsed._replace(netloc=netloc_with_auth))
@@ -228,7 +259,8 @@ async def clone_repo(repo_url: str, branch: str, dest: str, scm_token: str | Non
         ),
     )
     if result.returncode != 0:
-        raise RuntimeError(f"git clone failed (exit {result.returncode}): {result.stderr[:500]}")
+        safe_stderr = _redact_credentials(result.stderr[:500])
+        raise RuntimeError(f"git clone failed (exit {result.returncode}): {safe_stderr}")
 
 
 ProgressCallback = Callable[[primary_pb2.SessionEvent], Coroutine[Any, Any, None]]
