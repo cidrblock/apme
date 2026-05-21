@@ -65,6 +65,8 @@ Where:
   - Collapse runs of blank lines between mappings/sequences
   - Do NOT re-order keys, change quoting style, or alter values
 
+**Canonical encoding for hash input**: All components are encoded as UTF-8, normalized to Unicode NFC form, with LF (`\n`) line endings (CRLF is converted to LF before hashing). This ensures consumers on different platforms produce identical fingerprints for the same logical content.
+
 Whitespace and comments have zero effect on what Ansible executes. Stripping them means `apme format`, re-indentation, and comment edits do not invalidate acceptances. Any change to runtime content (variable values, module arguments, conditions, task name) changes the fingerprint and forces re-review.
 
 ### 2. The engine is not involved
@@ -89,10 +91,12 @@ All modes use the `\x00` null byte as a field separator to prevent collisions be
 | Mode | Hash input | Use case |
 |------|-----------|----------|
 | `full` (default) | `SHA-256(rule_id + "\x00" + normalize(original_yaml))` | "I accept this exact content for this rule" |
-| `rule_module` | `SHA-256(rule_id + "\x00" + module_fqcn)` | "I accept all tasks using this module for this rule" |
+| `rule_module` | `SHA-256(rule_id + "\x00" + module_fqcn)` | "I accept all tasks using this module for this rule" (see below for FQCN resolution) |
 | `rule_only` | `SHA-256(rule_id + "\x00")` | "I never care about this rule" (overlaps ADR-041 disable, useful in CLI-file workflows) |
 
 The suppression record stores which mode was used, so the matching logic knows how to compare. The default is maximally specific (safest); users explicitly broaden scope when they understand the implications.
+
+**`module_fqcn` resolution for `rule_module` mode**: Use `metadata.resolved_fqcn` (the fully-qualified collection name after redirect resolution) as the canonical module identifier. If `resolved_fqcn` is not available (e.g. the module could not be resolved), fall back to `metadata.original_module`. This ensures fingerprints remain stable across collection redirect changes (e.g. `community.general.docker_container` → `community.docker.docker_container`).
 
 ### 4. Rule ID permanence
 
@@ -128,13 +132,16 @@ REST endpoints: `POST /api/v1/suppressions`, `GET /api/v1/suppressions`, `DELETE
 `.apme/suppressions.yml` checked into the repo — version-controlled, team-shared:
 
 ```yaml
+version: 1  # Algorithm/normalization version — enables deterministic migration if the fingerprint algorithm changes
 suppressions:
   - fingerprint: "a1b2c3d4..."
     rule_id: L046
+    mode: full  # Optional; defaults to "full" when omitted (backward-compatible)
     reason: "Accepted: legacy module usage in bootstrap role"
     created: "2026-05-21"
   - fingerprint: "e5f6a7b8..."
     rule_id: M014
+    mode: rule_module
     reason: "Deferred: migrating ansible_hostname in Phase 3"
     created: "2026-05-21"
 ```
